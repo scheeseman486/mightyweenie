@@ -17,7 +17,7 @@ and mixing is handled natively by Godot.
 * `3D rink view` - switchable at any moment during play, with exactly the same gameplay as
 2D. The rink is a 3D model textured live from the supplied ROM. Alternate views are
 available via F row keys, though they can cause some visual issues for the moment.
-* `3D nets` - The standard net and the Battle Net are pull colour data and some texture
+* `3D nets` - The standard net and the Battle Net pull colour data and some texture
 information from the ROM too.
 * `3D crowd` - Fans are cut from the ROM's crowd art and seated on 3D stands. Missing front
 and back views, as well as mising pixel information, were drawn by hand and are merged on
