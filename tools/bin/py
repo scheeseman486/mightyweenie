@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Python for this repo, from a per-host virtualenv (.venv-<hostname>).
+# Machines that share the folder (a desktop and a VM, say) don't share
+# interpreters, so each gets its own venv. Created on first use by tools/setup/setup_python.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+venv="$MW_ROOT/.venv-$(hostname -s)"
+[[ -x "$venv/bin/python" ]] || "$MW_TOOLS/setup/setup_python.sh" >&2
+export GHIDRA_INSTALL_DIR="$MW_TOOLS/ghidra" JAVA_HOME="$MW_TOOLS/jdk"
+export PYTHONPATH="$MW_ROOT/harness${PYTHONPATH:+:$PYTHONPATH}"
+exec "$venv/bin/python" "$@"

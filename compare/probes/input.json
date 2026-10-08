@@ -1,0 +1,7 @@
+{
+  "name": "input",
+  "description": "Pad words P1-P4 as the game last read them: high byte held, low byte newly pressed (S A C B R L D U). Always recorded. Compared on the held byte: the game clears newly-pressed bits it has consumed (e.g. the skater code takes A/B/C), so the low byte in RAM is not what the read returned.",
+  "fields": [
+    {"name": "pads", "original": "builtin", "godot": "builtin", "compare": "held"}
+  ]
+}

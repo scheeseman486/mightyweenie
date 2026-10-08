@@ -1,0 +1,60 @@
+[gd_scene format=3 uid="uid://ct2b52ykmxpiu"]
+
+[ext_resource type="Script" path="res://scenes/fight/fight.gd" id="1_ft"]
+[ext_resource type="Script" uid="uid://byvu8s1e345co" path="res://src/rom/rom_backdrop.gd" id="2_bd"]
+[ext_resource type="Script" uid="uid://ciqvum4xeqxg7" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="4_pl"]
+[ext_resource type="Script" uid="uid://dnn3ge8lqsdfn" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rink/sprite_layer.gd" id="6_sl"]
+
+[sub_resource type="Resource" id="pal_ft"]
+script = ExtResource("3_pal")
+screen = 18
+steps = PackedStringArray("screen_palette")
+
+[sub_resource type="Resource" id="tiles_ft"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_03f460", "picture_03c264", "tilebank_02155a")
+fonts = PackedStringArray("font_0447f4", "font_022d66", "font_01f958", "font_022bec")
+
+[node name="Fight" type="Node2D"]
+script = ExtResource("1_ft")
+screen_id = 18
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+script = ExtResource("2_bd")
+palette = SubResource("pal_ft")
+
+[node name="PlaneB" type="TileMapLayer" parent="." node_paths=PackedStringArray("high_cells")]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_ft")
+palette = SubResource("pal_ft")
+high_cells = NodePath("../PlaneBHigh")
+
+[node name="Window" type="TileMapLayer" parent="." node_paths=PackedStringArray("high_cells")]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_ft")
+palette = SubResource("pal_ft")
+high_cells = NodePath("../WindowHigh")
+
+[node name="SpritesLow" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_ft")
+
+[node name="PlaneBHigh" type="TileMapLayer" parent="."]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_ft")
+palette = SubResource("pal_ft")
+
+[node name="WindowHigh" type="TileMapLayer" parent="."]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_ft")
+palette = SubResource("pal_ft")
+
+[node name="SpritesHigh" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_ft")
+high = true

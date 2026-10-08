@@ -1,0 +1,7 @@
+# Main menu -> Play Mode = Playoffs -> bracket -> first matchup.
+@screen 1 +200 P1 DOWN
+@screen 1 +240 P1 DOWN
+@screen 1 +280 P1 RIGHT
+@screen 1 +360 P1 START
+@screen 11 +400 P1 START
+@screen 3 +200 END

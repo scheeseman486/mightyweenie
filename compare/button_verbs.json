@@ -1,0 +1,30 @@
+{
+  "format": "mw-button-verbs/1",
+  "comment": "Original 3-button pad -> verbs per context (docs/re/input.md, approved 2026-10-06). '{p}' = player number. Also the default bindings for plan 04.",
+  "pad_bits": {"UP": 0, "DOWN": 1, "LEFT": 2, "RIGHT": 3, "B": 4, "C": 5, "A": 6, "START": 7},
+  "contexts": {
+    "menu": {
+      "UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right",
+      "A": "ui_option_a", "B": "ui_option_b", "C": "ui_option_c", "START": "ui_accept"
+    },
+    "rink": {
+      "UP": "p{p}_move_up", "DOWN": "p{p}_move_down", "LEFT": "p{p}_move_left", "RIGHT": "p{p}_move_right",
+      "A": "p{p}_check", "B": "p{p}_pass", "C": "p{p}_shoot", "START": "p{p}_pause"
+    },
+    "pause": {
+      "UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right",
+      "A": "ui_option_a", "B": "ui_option_b", "C": "ui_option_c", "START": "ui_accept"
+    },
+    "fight": {
+      "UP": "p{p}_move_up", "DOWN": "p{p}_move_down", "LEFT": "p{p}_move_left", "RIGHT": "p{p}_move_right",
+      "A": "p{p}_fight_block", "B": "p{p}_fight_punch", "C": "p{p}_fight_punch", "START": "ui_accept"
+    },
+    "replay": {
+      "A": "replay_rewind", "B": "replay_slow", "C": "replay_play", "START": "replay_exit"
+    },
+    "zamboni": {
+      "UP": "zamboni_whip", "DOWN": "zamboni_whip", "LEFT": "zamboni_whip", "RIGHT": "zamboni_whip",
+      "A": "ui_option_a", "B": "ui_option_b", "C": "ui_option_c", "START": "ui_accept"
+    }
+  }
+}

@@ -1,0 +1,3 @@
+# Default game: matchup, period start (coach speech, faceoff) and some play.
+@screen 1 +200 P1 START
+@screen 4 +2400 END

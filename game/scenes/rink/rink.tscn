@@ -1,0 +1,80 @@
+[gd_scene format=3 uid="uid://dimcks2is0txi"]
+
+[ext_resource type="Script" path="res://scenes/rink/rink.gd" id="1_rk"]
+[ext_resource type="Script" uid="uid://byvu8s1e345co" path="res://src/rom/rom_backdrop.gd" id="2_bd"]
+[ext_resource type="Script" uid="uid://ciqvum4xeqxg7" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" uid="uid://wpncclp0d58j" path="res://src/rom/rom_tile_map_layer.gd" id="4_tml"]
+[ext_resource type="Script" uid="uid://dnn3ge8lqsdfn" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rink/sprite_layer.gd" id="6_sl"]
+[ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="7_pl"]
+
+[sub_resource type="Resource" id="pal_rink"]
+script = ExtResource("3_pal")
+screen = 4
+steps = PackedStringArray("screen_palette", "rom 1BD8A 3")
+
+[sub_resource type="Resource" id="tiles_rink"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_024cfc")
+
+[sub_resource type="Resource" id="tiles_window"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_024cfc", "picture_01bfc2")
+fonts = PackedStringArray("font_0447f4", "font_01f958", "font_022bec", "font_022ee0", "font_0246fa")
+
+[node name="Rink" type="Node2D"]
+script = ExtResource("1_rk")
+exits = {
+"p1_pause": 14
+}
+show_label = false
+screen_id = 4
+attract_role = 3
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+script = ExtResource("2_bd")
+palette = SubResource("pal_rink")
+
+[node name="PlaneLow" type="TileMapLayer" parent="."]
+position = Vector2(-96, -293)
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_rink")
+palette = SubResource("pal_rink")
+map = "picture_024cfc"
+priority = 1
+
+[node name="SpritesLow" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+
+[node name="PlaneHigh" type="TileMapLayer" parent="."]
+position = Vector2(-96, -293)
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_rink")
+palette = SubResource("pal_rink")
+map = "picture_024cfc"
+priority = 2
+
+[node name="ScreenLow" type="Node2D" parent="."]
+visible = false
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+
+[node name="Window" type="TileMapLayer" parent="."]
+script = ExtResource("7_pl")
+tiles = SubResource("tiles_window")
+palette = SubResource("pal_rink")
+
+[node name="SpritesHigh" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+high = true
+
+[node name="ScreenHigh" type="Node2D" parent="."]
+visible = false
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+high = true

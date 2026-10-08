@@ -1,0 +1,655 @@
+address,name,comment,source,verified
+0006C8,net_setup,"Goal net object at A5: D0 = net style (table $1B8F8), D1 = 0 top / 1 bottom (y = -/+ $149)",own RE (plan 01),disasm
+00070E,net_update,Goal net per pass: the Demon Net (style 0) follows the puck; motion step + animation,own RE (plan 07),
+00078A,net_draw,"Goal net at A5: attr 0 (line 0) for styles 1-2, $20 for the Demon Net; $141C8 with $5AC2",own RE (plan 07),disasm; BlastEm rink recordings
+0007A6,demon_net_check,NE unless the team attacks down and the top net is the Demon Net (style 0),own RE (plan 08),sim-check (55 000 recorded passes)
+0007D2,net_restore_style,the top net back to the stadium's style,own RE (plan 08),sim-check (55 000 recorded passes)
+0007F8,player_create,"a player object for record record (0: the slot stays empty) in on-ice slot index, roster slot slot, position pos: not targeting anyone, AI memory cleared, a random nibble, the staggered think...",own RE (plan 08),sim-check (55 000 recorded passes)
+00086A,player_update,"one player per pass: control (human $19B8 / CPU $3BFE+$8820, gated by the think timer), state step $2050, skating $63D8, bones timer, motion (crease for goalies), collisions $6D02",own RE (plan 08),sim-check (55 000 recorded passes)
+0009AE,player_in_crease,"inside the goalie crease (x' = x - x / 4, y' = |y| - 322, length <= 55)",own RE (plan 08),sim-check (55 000 recorded passes)
+0009DC,player_draw,"Player at A5 with team attr D3: body, shadow $3C8A4 at depth 2 when airborne, weapon swing at hotspot 1 (state 4), impaled overlay $FFBD82 (state $11)",own RE (plan 07),disasm; BlastEm rink recordings
+000B22,lineup_place,"a player at his line-up point for the faceoff spot ($1B904; goalies at their crease), facing from the table, standing",own RE (plan 08),sim-check (55 000 recorded passes)
+000BC8,player_damage,"raw damage, scaled by STAMINA (`$1BA90`; halved for enforcers' rating, halved again for goalies); health 0 -> state 18 (killed)",own RE (plan 08),sim-check (55 000 recorded passes)
+000C1A,player_died,"a death: the team's deaths +1, then as `$C1E`",own RE (plan 08),sim-check (55 000 recorded passes)
+000C1E,player_off_ice_dead,"health 0, off the ice (`$D2C`), a substitute (`$F6A8`) who skates on from the bench (state 20), else the slot stays empty; in open play the forfeit check (`$F7C8`)",own RE (plan 08),sim-check (55 000 recorded passes)
+000C66,player_own_motion,"p's own entry of the geometry: (speed, velocity angle)",own RE (plan 08),sim-check (55 000 recorded passes)
+000C7C,player_to_opponent,"p's geometry entry for opponent o: (distance, angle)",own RE (plan 08),sim-check (55 000 recorded passes)
+000CE4,puck_drop,p lets go of the puck if he carries it: the puck keeps his velocity; the y of the drop is kept for the 2-point rule,own RE (plan 08),sim-check (55 000 recorded passes)
+000D1C,human_lose_control,a human player out of the action hands control on (`$1856`),own RE (plan 08),sim-check (55 000 recorded passes)
+000D2C,player_off_ice,"off the ice: to the bench door (265, 10), control handed on, the puck dropped, out of the penalty box, the slot emptied",own RE (plan 08),sim-check (55 000 recorded passes)
+000D68,credits_poll_skip,Credits: reads the pads; a new A/B/C/Start on any of the 4 pads sets credits_skip ($FFB000),own RE (plan 05),disasm
+000D88,wait_ticks,"Busy-waits until D0.w ticks have elapsed, calling two per-iteration helpers ($4BC6, $0D68) each tick",own RE (plan 01),
+000DC0,credits_wait_fade,"Credits: waits tick by tick until no colour is fading (fade_busy), or until skipped",own RE (plan 05),disasm
+000DD4,credits_draw_page,"Credits page A3 (strings, 0-terminated, page ends with an empty one): heading centred on row 7 (font $22BEC, or A5 when D0 != 0), lines centred from row 11 every 3 rows (font $22EE0, or A5)",own RE (plan 05),disasm; GPGX screenshots
+000E46,credits_clear,Clears plane $B0CA (credit text),own RE (plan 05),disasm
+000E56,credits_run,"Credits: screen palette, starfield, 19 pages from $1BB5C (first in font $447F4, last with sprites $FB4): per page line 0 -> $1BD6A (+ colours 9-10 code constants) and line 1 -> $1BB22 over 30, hold 120, out over 30; skip or end: music fade 30, full fade 30",own RE (plan 05),disasm; BlastEm trace (plan 05)
+000FB4,credits_last_page_sprites,"Draws the last credit page's two sprite frames (records at $1BB42: x, y, depth, attr, frame)",own RE (plan 05),disasm
+000FF0,screen_00_title,"Screen 0: title (fade in, loop until Start/A/B/C newly pressed by any player or a 2100-tick timeout), then legal text and credits pages",own RE (plan 01),harness screenshots; tracer
+001160,title_band_init,Title: copies picture $30148 map rows 0-10 and 11-20 to plane B (table $1BABA) and the first frame of the animated band,own RE (plan 05),disasm
+001194,title_band_step,"Title: every 7 ticks (remainder kept, one step per pass) copies the next 7-row band (map rows 21-48, 4 frames) to plane B row 11",own RE (plan 05),disasm
+0011D2,title_anims_set,"Title: sets the sprite animations ($4B694, $4B70E x2) playing and the 3 sparkles ($4B748) idle",own RE (plan 05),disasm
+001236,title_anims_advance,Title: advances the title animations by D0 elapsed ticks; marks finished sparkles idle,own RE (plan 05),disasm
+001288,title_draw_sprites,Title: draws the title sprites at $1BB16/$1BB0E/$1BB10 and the playing sparkles at their positions ($FFB04A),own RE (plan 05),disasm
+00130E,title_sparkle_position,"Title: random sparkle position: y = rng(24, 104), x = rng(24, 296), x re-rolled while y > 27 and 76 <= x <= 209; returns D0 x, D1 y",own RE (plan 05),disasm
+00134C,title_sparkles_spawn,"Title: each idle sparkle starts when rng_main_next & $15A2 == 0, at title_sparkle_position",own RE (plan 05),disasm
+001398,title_load,Title: loads picture $30148 (tiles) and clears the window plane,own RE (plan 05),disasm
+0013EA,title_free,"Title: display off, frees picture $30148",own RE (plan 05),disasm
+001434,dev_logo_show,"Developer logo: instant fade-out, map $39BAA (11 rows) to the window at row 8, picture $39B9E, line 2 fades to $3BF7A over $20",own RE (plan 05),disasm; GPGX screenshot
+0014CE,dev_logo_hide,"Developer logo: full fade-out over $20, waits, display off, frees the picture",own RE (plan 05),disasm
+001520,ai_defence,"the defence (roles 3 LD, 4 RD)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0016FA,rink_tick_clock,true while the clock runs and has not just expired,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+001738,hold_timers_clear,the four pads' tap / hold timers ($FFB056) cleared,own RE (plan 08),sim-check (55 000 recorded passes)
+0017FC,human_target,"the target point from the held D-pad: 100 px that way, or coasting 15 px ahead (goalies stop); none at a faceoff",own RE (plan 08),sim-check (55 000 recorded passes)
+001856,human_change_player,"control to the team-mate best placed for the puck's point a few ticks ahead (16 when defending, 6 attacking; a bias towards the own end when attacking; off-screen players x4, goalies x16 more); no...",own RE (plan 08),sim-check (55 000 recorded passes)
+0019A6,human_pad_word,the team's copy of p's pad (held << 8 | newly pressed),own RE (plan 08),sim-check (55 000 recorded passes)
+0019B8,skater_buttons,"Buttons for a human-controlled skater: takes A/B/C newly-pressed bits from its pad (team+$66/$67), tap vs hold with per-pad timers at $FFB056 (thresholds in ticks from $1BC1E: 20 for B/C with the puck, 15 for A). Context tables: $1BBDE faceoff, $1BBEE puck carrier, $1BBFE no puck, $1BC0E goalie (role $69 = 5). Priority B > C > A when pressed together. Actions are code at $1B24 + offset",own RE (plan 01),disasm; harness stat counters
+001ADE,human_context,"the situation table: goalie, faceoff (phases 1 and 9), with the puck, without",own RE (plan 08),sim-check (55 000 recorded passes)
+001B24,button_actions,base of the human button actions (offsets in the $1BC1E entries),own RE (plan 08),sim-check (55 000 recorded passes)
+001BBA,puck_release,the B-hold release: the puck left moving along the carrier's velocity at its speed - 2 px (reversed when slower: left for a trailer),own RE (plan 08),sim-check (55 000 recorded passes)
+001CAC,human_save,where the puck crosses the goal line 30 ticks ahead decides the save (`$419A`),own RE (plan 08),sim-check (55 000 recorded passes)
+001D36,human_punch,"punch: at a target found by `$4298` (a weapon's reach), else a swing at the air (weapon 0-2, 4: state 4 and no target; bare: state 3, the old target kept)",own RE (plan 08),sim-check (55 000 recorded passes)
+001D78,special_play_fire,"Fires the team's armed special play (team+$4A5; names at $66B9B..: 1 exploding puck, 2 rocket puck, 3 waste the goalie, 4 nasty goalie, 5 player blast, 6 confusion, 7 armed force, 8 skunk, 9 bribe referee, 10 waste the ref, 11 jail break) through table $1D90. Phase 0 only. Humans fire it by holding A (>= 15 ticks) with the puck",own RE (plan 01),"disasm; harness (out/explore/splay.py, tour_c.py)"
+001DEC,special_waste_goalie,"Waste the Goalie (needs the other goalie on the ice, else nothing fires): that team's human control passes to its goalie (`$53F0` picks the human as on a pick-up; pad and Player Blast bombs go...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+001E7A,special_waste_ref,"Waste the Ref: team +5 bit 0, the carrier lets go, phase 12 with `$FFBD90` = the player, the bribe forgotten",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+001EFC,special_armed_force_1efc,"Armed Force: team +4 bit 6, and a random weapon (`rng & 3`, 3 -> 4: no bombs) for every skater of the team without one (one draw each)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+001F4A,special_jail_break,"Jail Break (needs someone in the box: team +$39F, else nothing fires): the three box entries (team +$362 + $14 i) in use get their +$C word = 5, 3, 1 (plan 10 lets them out), and `$A9F2` counts...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+001F9E,special_used,"the play leaves the team's list (+$330..+$337: the highest index holding it, `dbeq`; none: index -1, i.e",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+001FDC,special_armed_force,"the Armed Force / skunk ""poot"" (plan 09)",own RE (plan 08),sim-check (55 000 recorded passes)
+002050,player_state_step,state machine dispatch: $1BC66[state] -> substate handler (21 states),own RE (plan 08),sim-check (55 000 recorded passes)
+00207E,run_screens,"Top-level loop after boot: screen = table[$1BCBA][screen](); D6 = current screen (also stored at $FFB05E), D7 = previous; each handler returns the next screen ID in D0. Between screens: $14FD0, $15972 (reset sprite/object lists)",own RE (plan 01),disasm
+0020C0,boot_init,"One-time init after the EA logo: VDP register shadow, VDP regs (inline list), subsystem inits, clears VSRAM",own RE (plan 01),disasm
+00215E,screen_palette,"Builds all 4 palette lines on the stack (default $1BD0A, the stadium's 16 ice colours (line 0), colour pair, team A colours) and fades to them. docs/re/graphics.md",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+002272,team_a_line,Team A ($FFB0DE) colours on line 1 via team_line ($22A6),own RE (plan 03),disasm
+002284,team_b_line_plain,Line 2 from $1BD4A without team colours (team_line style 2),own RE (plan 03),disasm
+002296,team_b_line,Team B ($FFB0DF) colours on line 2 via team_line style 1,own RE (plan 03),disasm
+0022A6,team_line,"D0 team, D2 line, D3 style, A0 base line: colour pair, team colours (+$80, style 1 only), ice colour 5 as colour 11; fade",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+00235E,ice_line,"Line 0 = the stadium ice palette, colour 0 set to black",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+002398,menu_line,Line 3 from the main menu table $1BE0A[D0] (the menu cycles it),own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+0023B0,panel_line,"A0 = 7 team colours (team record +$7C), D2 line: panel colours $1BE6E around them; fade",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+002524,phase_next_period_clock,"the next period, the clock full (`$16C0`: stopped, expired at 0)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+002542,phase_clock_start,the clock runs unless it has expired; stamped now,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+002552,phase_clock_stop,the clock stops,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+002562,phase_unpause,"the pause over: unpaused, the clock's stamp now if it runs",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0025AA,clock_widget_draw,"Window clock widget: map $49136 at (2,22) (power play: $49194 at (2,19) + its clock), period text (5,25), game clock (4,24), font $447F4 attr $E0",own RE (plan 07),disasm; GPGX pixel check
+00261C,clock_widget_update,Per pass: redraws the clock widget's texts (or swaps the widget when the power play starts/ends),own RE (plan 07),disasm
+0026F6,clock_widget_erase,Fills the clock widget's cells with $8000,own RE (plan 07),disasm
+002748,clock_period_text,Period byte -> '1st'..'3rd' (suffixes $1BFDC) or 'OT1'..; drawn at $1BFD6,own RE (plan 07),disasm
+0027D8,clock_time_text,Timer +4 seconds -> 'MM:SS' at $B060,own RE (plan 07),disasm
+002824,power_play_seconds,`$FFB07C` = d0 (the power-play clock's seconds),own RE (plan 10),visit-check (soak recordings)
+00282A,ea_logo_intro,EA logo sequence before the screen loop; polls VDP status for vblank (tick_counter not running yet),own RE (plan 01),disasm; harness: tick_counter stays 0 until frame ~455
+00368A,team_record,A0 = ROM team record for team D0 ($18D8A + D0 * $9E),own RE (plan 01),disasm
+003698,team_setup,"team set-up at a new match (with $3700): record, pads, markers, health, the first six roster players created",own RE (plan 08),sim-check (55 000 recorded passes)
+003836,team_update,"Team pass (D0 elapsed): players, marker/plate update for human players and a CPU puck carrier ($6166), health regeneration",own RE (plan 07),disasm
+0038E0,team_draw,"Draws a team's on-ice players ($9DC), then per player the off-screen arrow ($4B14) and marker ($61CA) if human, or the marker of a CPU carrier",own RE (plan 07),disasm; BlastEm rink recordings
+003960,team_period_change,"between periods, per team: special play, impaled, under-ice, empty slots, health refill, Demon Net undone, ends switched",own RE (plan 08),sim-check (55 000 recorded passes)
+0039BC,team_under_ice_return,"between periods: under-ice players back to health, empty slots refilled with living players not in the box",own RE (plan 08),sim-check (55 000 recorded passes)
+003A28,team_lineup,"free the impaled, place every player on the ice (`$B22`), the first one is the team's nearest to the puck, and the team's pads take the first players in order (a random draw picks the pad slot)",own RE (plan 08),sim-check (55 000 recorded passes)
+003AD2,phase_timeout,"team's timeout used (+4 bit 4 cleared), everyone's health full (`$3B08`: $80 in the high word, the low word d0's high word left by `$AF12`'s distances: 0), the impaled freed (`$3ADE`)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+003ADE,team_free_impaled,every impaled player of the team freed ($6F22),own RE (plan 08),sim-check (55 000 recorded passes)
+003B08,team_health_refill,"every living roster slot: $80 in the high word, a register leftover in the low one",own RE (plan 08),sim-check (55 000 recorded passes)
+003B6C,collide_skaters,players on the ice minus goalies,own RE (plan 08),sim-check (55 000 recorded passes)
+003BA6,team_reset_weapons,"the skaters drop what they picked up; enforcers keep their own weapon (record +$E, low nibble), the others none; nobody holds the Player Blast",own RE (plan 08),sim-check (55 000 recorded passes)
+003BDE,team_rating_avg,a rating averaged with the team's skulls ((r + `$3BF6`team record +$B) / 2),own RE (plan 08),sim-check (55 000 recorded passes)
+003BFE,ai_think,CPU think by phase ($1C016) - plan 09,own RE (plan 08),sim-check (55 000 recorded passes)
+003C38,ai_open_play,"open play (notes 5): the goalie; nothing while `$C31E` is set; the role (+$6A, `$3EB0`, written on every skater think); then the first of carrier, pass receiver (puck +$3A, also a stale one),...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+003CF6,ai_faceoff,"the team's nearest skater rolls (`$1C11E`): swipe (state 2, 3/16), punch (3, 6/16) or nothing (7/16), +$3A = the other team's nearest either way; then `$508E` (returns at once outside phase 0) and...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+003D3C,ai_fight,fighters at the first fighting opponent; the others gather 24 px short of him and may check,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+003DAA,ai_coast,CPU idle think: target 15 px ahead (goalie: stay),own RE (plan 08),sim-check (55 000 recorded passes)
+003DE4,ai_waste_ref,"the side playing it (team +5 bit 0) goes for the referee (by position, `$1545A`); goalies and the other side coast",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+003E22,ai_waste_goalie,the side playing it (team +5 bit 1) goes for the other goalie (`$453E`) and its goalie coasts; the other side's skaters coast and its goalie may slash,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+003E7A,player_formation,the positions on the ice (team +$4A7) and the strength key `$1C05E`mask * 6 + 5 (+$4A8),own RE (plan 08),sim-check (55 000 recorded passes)
+003ED0,ai_wing,"the wings (roles 1 LW, 2 RW; everyone in phase 14)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+003FCA,ai_goalie,"outside the crease back to the goal line; a loose puck heading into the goal (90 ticks ahead): save pose or dive; with the puck: a pass, then to the goal mouth; slashes at a close carrier; else...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0040E6,ai_position,"on the line from the goal mouth (y 319) towards the puck, or where it will be 8-24 ticks ahead when it is more than 67 px from the line (one roll), about 26 x / 20 y px out (22 / 16 during a...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00419A,human_save_to,"a save pose by side (anim 5 / 4, +2 for a high puck), or a dive save (state 11) when the puck crosses far to the other side and is far",own RE (plan 08),sim-check (55 000 recorded passes)
+004216,human_end_save_pose,a goalie's save pose ends when A is let go,own RE (plan 08),sim-check (55 000 recorded passes)
+00422E,human_goal_crossing,"does (x0, y0) -> (x1, y1) cross the goal line of the end neg (y < 0: top) within 34 px of the middle? (hit, crossing x)",own RE (plan 08),sim-check (55 000 recorded passes)
+00426A,puck_crease,"inside the goal crease as the AI and pick-ups see it (x' = x - x / 4, |y| - 329, length <= 45)",own RE (plan 08),sim-check (55 000 recorded passes)
+004298,human_punch_search,a skater's target within 36 px (a weapon's `$1C15A` reach) -> state 3 (4 with a weapon),own RE (plan 08),sim-check (55 000 recorded passes)
+0042E0,human_check,a check within 40 px (goalie: a slash within 50) -> state 8 / 13,own RE (plan 08),sim-check (55 000 recorded passes)
+00430E,human_find_target,the nearest opponent within reach and within $60 of the facing -> +$3A. A CPU skater first rolls against the Death Index (`rng < $4000 + DI x $1000`); no target (or a failed roll) aborts the action,own RE (plan 08),sim-check (55 000 recorded passes)
+00439C,human_zone,"the puck's zone for a team (d4 = attacks down): 0-1 own end, 2 neutral (|y| < 108), 3-4 attacking end (0 / 4 past the goal lines)",own RE (plan 08),sim-check (55 000 recorded passes)
+0043C6,human_predict,the puck's point ticks ahead (its carrier's velocity),own RE (plan 08),sim-check (55 000 recorded passes)
+0043F4,ai_goon,"with the puck in the attacking end, an enforcer rolls (aggression) to pick a victim among the opposing skaters in range and in the cone (rel < $40 or >= $80), scored by a roll and the victim's...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0044BC,ai_hunt,"hunting +$3A while the puck is out of the own end: at him; with a weapon, a swing (state 4) when within its reach and in the cone",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00453E,ai_attack,"a punch (state 3, 36 px) or a weapon swing (state 4, `$1C15A` reach) at o at angle a, distance d when within reach and in the cone (rel < $40 or >= $80)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00458E,setup_defaults,Game setup A5 (10 bytes) = boot defaults at $1C190,own RE (plan 05),disasm; GPGX watch
+00459C,attract_setup_begin,"Attract demo: saves the setup to $FFB082, loads the demo setup $1C19A, then random team A (0-22, also the stadium), team B != A, Death Index 0-4",own RE (plan 05),disasm; GPGX watch
+0045E4,attract_setup_end,Attract demo: restores the setup saved by attract_setup_begin,own RE (plan 05),disasm; GPGX watch
+00478C,puck_shoot,"the shot: power (`$1C216`avg(POWER), slap x1.5), spread by ACCURACY, aimed at the attacked net (a human's held d-pad picks the corner and lift, the CPU's a random nibble), statistics",own RE (plan 08),sim-check (55 000 recorded passes)
+0048FC,pause_menu,"In-game pause (called by the phase-0 handler $FCC0). Newly pressed Start on any active pad (count from $1C24C[pad_mode]) opens PAUSE / A - REPLAY / B - TIMEOUT. B is offered only if the pausing player's team has the puck and a timeout left. Returns D0: 0 no pause, 1 Start resume, 2 A replay (-> screen 7), 3 B timeout (-> screen 10)",own RE (plan 01),disasm; harness tour (out/explore/tour_a.py)
+004A8A,player_play,play animation id from its start (variant kept),own RE (plan 08),sim-check (55 000 recorded passes)
+004AA6,player_stop,"stopped (animation 0 at frame 0, id $FF)",own RE (plan 08),sim-check (55 000 recorded passes)
+004ABE,player_anim_record,the animation record of id for p's species,own RE (plan 08),sim-check (55 000 recorded passes)
+004B14,offscreen_arrow_draw,"Arrow for a human player off screen (outcode vs 304x208 after -8), at $1C4A8[direction], depth $7FFF; a human goalie's blinks (tick bit 4) at y 32/192 while on screen",own RE (plan 07),disasm; BlastEm rink recordings
+004BB4,rng_seed_from_hw,rng_seed(0) on the main stream $FFB096,own RE (plan 01),disasm
+004BC6,rng_main_next,rng_next on the main stream $FFB096,own RE (plan 01),disasm
+004BD6,rng_main_range,rng_range on the main stream $FFB096,own RE (plan 01),disasm
+004DBE,puck_aim_pass,the pass's aim: the facing; a human's held d-pad (a goalie can't aim at his own end) and his receiver (`$4E94`: the team-mate - an opponent for an exploding puck - closest to the aim within 32...,own RE (plan 08),sim-check (55 000 recorded passes)
+004E32,puck_pass_release,"the pass leaves the stick: to the receiver (`$4EDE`), else straight along the aim at 6 px per tick (goalies 3.5)",own RE (plan 08),sim-check (55 000 recorded passes)
+004EDE,puck_lead_pass,"lead the receiver by 2^k ticks (k from his distance to the puck, +1 when he faces away), at the speed that gets there, spread by the passer's PASSING + OFFENSE",own RE (plan 08),sim-check (55 000 recorded passes)
+004FFE,puck_stick,p's stick: his position + hotspot 0 of his frame (px),own RE (plan 08),sim-check (55 000 recorded passes)
+005020,puck_stick_reach,the puck within the stick's reach: |puck - stick| + (start-of- pass distance to the puck) - |player - stick| between 0 and 14 (20 for the pass receiver),own RE (plan 08),sim-check (55 000 recorded passes)
+00508E,puck_contact,"p's stick meets a low puck: take a loose puck, steal from an opponent (rating roll; a success pokes it loose), goalies in their crease take it",own RE (plan 08),sim-check (55 000 recorded passes)
+0050FC,puck_challenge,"the puck is (or was, for a shot) the p's opponent's: a goalie takes it from him; a skater rolls `rng_range(0, 6c + p - 1) < p` (c = avg(carrier's OFFENSE), p = avg(own DEFENSE)) to poke it loose",own RE (plan 08),sim-check (55 000 recorded passes)
+00519A,puck_poke,"knocked loose between the two (mean of their velocity angles, their mean speed, at least 1 px per tick), popping up; skaters can't touch it for 30 ticks",own RE (plan 08),sim-check (55 000 recorded passes)
+005216,puck_catch,a goalie in his crease catches the puck (not from himself),own RE (plan 08),sim-check (55 000 recorded passes)
+00523A,puck_take,"p gets a loose puck: a shot from the own team passes him by, from the other team it may be knocked; a pass may be fumbled (rng 0-40 < 4 avg(OFFENSE)) or blow up (exploding puck); then possession,...",own RE (plan 08),sim-check (55 000 recorded passes)
+00529A,puck_explode,"an exploding puck blows up on an opponent: he is killed, the puck stops, out of play (phase 14), faceoff at centre ice",own RE (plan 08),sim-check (55 000 recorded passes)
+0053F0,human_pickup_switch,"when a CPU player of a team with a pad picks up the puck, the human to take control from: the passer if a human of this team passed it, else (two pads: alternating) the human of that pad slot",own RE (plan 08),sim-check (55 000 recorded passes)
+005572,rink_setup,"Sets up the rink state at A5 ($FFB0E8) from the stadium record at A0: nets (+5), in-ice hazards (+9, $8198), rink objects (+$A, $66EE), crowd (+7, $B014). See docs/re/rinks.md",own RE (plan 01),disasm; harness test_stadiums.py
+0056EA,rink_update,"Rink pass: camera (target + 16 ticks of velocity, look-ahead +-56, distance-limited acceleration, 32 px y cap, shake), plane B scroll and streaming, nets, crowd throws, rink objects, lamps, crowd decay, impale anim",own RE (plan 07),disasm; BlastEm recordings (camera pass for pass)
+00591E,rink_draw,"Draws nets, in-ice hazards, rink objects (phases 1/9: kind 11 only), lamp stands $3DC6C ($1C524/$1C52C) and lamps (z +12 / +45)",own RE (plan 07),disasm; BlastEm rink recordings
+005A48,match_drop_objects,"screen 4) / `$5A82`: rink objects beyond the stadium's own: at a period start explosions, fires, kind 5, bombs, under-ice players, corpses and thrown items go (spikes, sharks, kind 2 stay); at a...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+005AC2,rink_project,"Rink point D0-D2 -> map x = x+256, y = y+461-z, depth D2 = y+461 (side view when $FFBDBA)",own RE (plan 07),disasm; BlastEm rink recordings
+005B12,crowd_throw,"Chance (rng 0-32000 < crowd level) that fans throw an item onto the ice: kind 12-23 from weights $1C574, at x = +/-225, random y; spawned with $66EE",own RE (plan 01),disasm
+005BA6,rink_object_alloc,"a free rink object slot (else the first thrown item, removed); null: none",own RE (plan 08),sim-check (55 000 recorded passes)
+005BF6,camera_place,"Camera at A5 centred on rink point (D0, D1): map point - (160, 112), clamped to 0..192 x 0..680; speed and look-ahead 0",own RE (plan 07),disasm; BlastEm rink recordings
+005C3C,collide_on_screen,o is on screen (its map point minus the camera within 320 x 240),own RE (plan 08),sim-check (55 000 recorded passes)
+005E14,puck_faceoff_drop,"the puck 112 px above (x, y), hidden until the faceoff sequence drops it (`$AE68` clears the bit), falling with `$1C58C`'s parameters as the shrinking drop sprite",own RE (plan 08),sim-check (55 000 recorded passes)
+005E74,puck_update,"the puck per pass: hidden / dropping / carried (held at the stick) / loose (motion, environment $7A50), the pick-up lock",own RE (plan 08),sim-check (55 000 recorded passes)
+00605A,puck_draw,"Puck: nothing in phase 14 or when hidden (+$3D bit 5); attr $20, or $E0 + $60C4 for the faceoff drop; shadow $3C8CC at depth 2 when airborne",own RE (plan 07),disasm; BlastEm rink recordings
+0060C4,rink_project_top,"$5AC2, then depth $FFFF while z > 50 (the dropping faceoff puck)",own RE (plan 07),disasm
+0060DC,puck_possess,"p has the puck (first touch after a faceoff: a faceoff won), the previous carrier noted, touches counted",own RE (plan 08),sim-check (55 000 recorded passes)
+006146,marker_init,"Marker A5 on plate slot D0 (pad & 3): values $FF, plate RAM $FFBE80 + 256 * slot cleared",own RE (plan 07),disasm
+006166,marker_update,"Marker A5 for player A3: redraws the plate's health bar (Reserves), number and position letter when they change; copies the player's x/y",own RE (plan 07),disasm; BlastEm rink recordings (plates)
+0061CA,marker_draw,"Marker A5 of player A3 at depth 3, attr $60: possession arcs $3C25C (carrier), crossbones $1C5C2[slot + 1 or 0], info plate $1C59C + 8 * slot",own RE (plan 07),disasm; BlastEm rink recordings
+00625C,rink_replay_marker,one marker (the number's top bit falls off the word),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00630A,plate_health_bar,"Plate bottom row rows 1-5: D0 pixels of colour 1, the rest colour 7 (4 tiles of 8 px)",own RE (plan 07),disasm; BlastEm rink recordings
+006362,plate_number,Plate tiles 0 and 2: the two decimal digits of D0 (font $4CACC),own RE (plan 07),disasm
+006388,plate_position,Plate tile 6: 'CLRDDG'[D0] ($1C5BC),own RE (plan 07),disasm
+0063A2,plate_glyph,Copies the glyph tile of character D0 (font $4CACC) to A2,own RE (plan 07),disasm
+0063D8,skate,"steer toward the target point: facing turn, acceleration by speed, burst x1.5, black bone slow; D0 = ticks",own RE (plan 08),sim-check (55 000 recorded passes)
+0066B6,player_goalie_variant,"a moving goalie's variant from his facing, mirrored by his end",own RE (plan 08),sim-check (55 000 recorded passes)
+0066EE,rink_object_spawn,"Rink object A5: kind D2, flags D3, motion at (D0, D1, 0), animation $1C626[kind-1], spawn hook",own RE (plan 07),disasm; harness test_stadiums.py
+006734,rink_object_update,"Rink object pass: update hook, motion step (params $FFB174), animation",own RE (plan 07),disasm
+006752,rink_object_draw,"Rink object: attr $1C626[kind-1]+4 | flags (bit 3 mirror), projection $67A8 (depth 0) for kinds 8-10; skipped during replay playback",own RE (plan 07),disasm; BlastEm rink recordings
+0067A8,rink_project_under_ice,$5AC2 with depth 0 (under-ice silhouettes),own RE (plan 07),disasm
+00683C,rink_object_hook,"Jumps to hook D3 (0 spawn, 2 update, 4 pre-draw) of the object's kind (table $67B2); every pre-draw hook is an rts",own RE (plan 07),disasm
+0068AE,rink_shark,"a shark swims (speed $80, then friction) towards the point the two global oscillators give now; its variant shows the direction",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0069D8,rink_under_ice,a player under the ice drifts at speed $20; after his first 30 ticks (+$26 counts down and is never reset) he turns 16 (1/16 turn) left or right at random every pass,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+006A6A,rink_fire_starter,"a fire starter rolls (animated by its speed) until it stops, then (+$26 high byte 1) waits 90 ticks and becomes a fire (`$66EE` kind 4: sound, playing) - the only way fires spread",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+006ACE,rink_speed_anim,"a thrown item's animation runs at its speed: stopped when it does not move, else the record's speed x min(speed, $140) / $140",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+006CA2,player_direction,"the direction of angle relative to facing: 0 ahead, 2 right ($40 side), 4 behind, 6 left (odd octants rounded up)",own RE (plan 08),sim-check (55 000 recorded passes)
+006CB6,collide_radius,"a player's radius: 36 while diving / tripped / goalie-diving, skaters 10, goalies 10 + avg(overall) capped at 18 - averaged with the skulls of team, the team in A4 (the colliding player's: an...",own RE (plan 08),sim-check (55 000 recorded passes)
+006D02,collide_player,"a player after his motion: on-screen gate, team-mates and opponents (bumps, dive trips, fight test), the puck, rink objects, nets, hazards, boards",own RE (plan 08),sim-check (55 000 recorded passes)
+006D86,collide_boards,"straight boards (position pushed back in, that velocity stopped) and the rounded corners",own RE (plan 08),sim-check (55 000 recorded passes)
+006E40,collide_opponent,"an opponent: a diver ahead trips us, else maybe a fight starts, then the bump",own RE (plan 08),sim-check (55 000 recorded passes)
+006ED6,collide_bump,a bump frees an impaled player and exchanges momentum,own RE (plan 08),sim-check (55 000 recorded passes)
+006F22,impaled_free,off the spike (`$5DCE` frees the spike in the same quadrant),own RE (plan 08),sim-check (55 000 recorded passes)
+006F3A,collide_fight_test,"a human and a CPU or human opponent, neither a goalie, both teams with 3+ skaters, in open play: a Death Index chance of a fight (phase 4)",own RE (plan 08),sim-check (55 000 recorded passes)
+006FD6,collide_puck,"a player and the puck: goalie catch / save, body hits, stick contact",own RE (plan 08),sim-check (55 000 recorded passes)
+00715C,collide_save,"a goalie's body save: the stat, the crease mark, then as a body hit",own RE (plan 08),sim-check (55 000 recorded passes)
+00716E,collide_body,an exploding puck in flight from the other team kills; else the puck bounces off the body (`$15470` puck 10 : player 200),own RE (plan 08),sim-check (55 000 recorded passes)
+00726E,collide_objects,"a player and the rink objects: bombs, spikes, pick-ups (coin, bones, weapons)",own RE (plan 08),sim-check (55 000 recorded passes)
+007362,collide_burn,"fire / explosion damage, (4 + DI) * e << 12 per pass",own RE (plan 08),sim-check (55 000 recorded passes)
+007382,collide_spikes,"impaled on a free spike at speed, while the team has 3+ skaters",own RE (plan 08),sim-check (55 000 recorded passes)
+00744C,collide_reach,a pick-up needs the object 0-39 px above the player's feet,own RE (plan 08),sim-check (55 000 recorded passes)
+0074E2,collide_net,a player and the goal nets (Battle Nets hurt at speed),own RE (plan 08),sim-check (55 000 recorded passes)
+00765C,collide_battle_net,the Battle Net hurts at speed,own RE (plan 08),sim-check (55 000 recorded passes)
+007684,collide_hazards,"a player and the in-ice hazards (thin ice, pits, holes, mines; a human auto-jumps)",own RE (plan 08),sim-check (55 000 recorded passes)
+007752,collide_inside,"the frame's point inside hazard h's box grown by the radius (half sizes from `$1C88E` minus 15): its kind, else 0",own RE (plan 08),sim-check (55 000 recorded passes)
+0077AC,collide_fall,into the hole at its centre (state 19),own RE (plan 08),sim-check (55 000 recorded passes)
+007820,collide_bounce,bounced back at the same speed,own RE (plan 08),sim-check (55 000 recorded passes)
+007868,rink_objects_vs_rink,"every rink object against the nets and in-ice hazards (moving ones low enough: thrown items, bombs), the straight boards and the rounded corners (all but sharks, kind 2 and spikes, up to 30 px high)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00795A,rink_net_hit,"the net at o's end (bottom for y >= 0): inside its frame's box (|y| between 320 and back + 10, |x| below the half width + NET_SLACK) the object bounces off it (`$15470`, restitution $8000, the net...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0079BE,rink_hazard_hit,"the in-ice hazards (pits, holes, mines; thin ice is ignored) against o at (x, y): inside a pit or hole the object is gone (kind 0; the loop goes on); a mine bounces it back at half speed, pushed...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+007A50,puck_environment,"a loose puck after its step: crease, corpses, nets and goals, hazards, boards / out of play, corners",own RE (plan 08),sim-check (55 000 recorded passes)
+007B62,puck_corpses,a corpse (kind 11) at the puck's height bounces it back,own RE (plan 08),sim-check (55 000 recorded passes)
+007BC6,puck_bounce_back,"back to where the puck was, popping up, reversed at 2 px per tick",own RE (plan 08),sim-check (55 000 recorded passes)
+007C4E,puck_nets,"the net of the puck's half: through its back from behind, through the goal line (a goal; the Demon Net may bounce it), or its sides",own RE (plan 08),sim-check (55 000 recorded passes)
+007E06,puck_goal,"a goal through the top net's goal line: in open play phase 3, the scorer (the last carrier; an own goal counts as not real), 2 points from 221+ px, statistics, the score; always: the puck put in...",own RE (plan 08),sim-check (55 000 recorded passes)
+007FA0,puck_hazards,"pits and holes let a fast puck hop over; slower, or a mine: bounced back",own RE (plan 08),sim-check (55 000 recorded passes)
+008066,collide_corner,"the rounded corners (and the straight boards' ends) as a wall point 32 px out along the table's normal, met with `$15470` (velocity only)",own RE (plan 08),sim-check (55 000 recorded passes)
+008152,puck_cross,"does segment A -> B cross the line at ±line (sign neg) going outwards (A on the centre side)? (hit, crossing)",own RE (plan 08),sim-check (55 000 recorded passes)
+008198,ice_hazard_set,"In-ice hazard slot A5 = (D0, D1), kind D2, flags D3",own RE (plan 07),disasm
+0081AA,ice_hazard_draw,"In-ice hazard: frame $1C88E[kind-1] at (x, y, 0), depth 1, attr 0",own RE (plan 07),disasm; BlastEm rink recordings
+008560,ai_carrier,"shoot, else pass (an exploding puck swaps the teams: the ""mate"" is an opponent, the lane checked against the own team), else skate to the possession's attack point (`$1C8D6`, drawn once into +$2C;...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0085D4,ai_shoot,"a shot (state 5 slap / 6 wrist)? Unless ACCURACY (with the skulls) is 7+, a roll by the distance to the current target (the attack point: 1/4 far away, ~1 at it); not past the goal mouth line...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00868E,ai_pass,"a pass (state 1)? On 1 think in 4; not from the slot in front of either net (skaters); a random slot of mates (goalie: 0-9, 6-9 -> the defence slots 3 / 4) that is someone else, a skater, free;...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+008776,ai_lane,"the lane from the puck to (tx, ty): (word angle, distance, the skaters of opps no farther from the puck whose start-of-pass bearing from it is within 16 of the lane's - no wrap-around at 0/$FF -,...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0087D8,ai_special_roll,"one roll per carrier think: the skunk's poot (team +4 bit 7 and rng < $400, `$1FDC`), else the team's armed special play (rng < $1000, `$1D78`) - gated by the byte at PLAYER +$4A5 (quirk 6: the...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+008810,ai_receiver,the pass receiver: to the puck 8 ticks ahead,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+008820,ai_avoid,CPU avoidance after the think - plan 09,own RE (plan 08),sim-check (55 000 recorded passes)
+008A20,ai_on_path_at,"the same for the point (ox, oy) (current positions; `$14290`'s word angle)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+008A50,ai_on_path,"an obstacle at word angle a, distance d is on the path: nearer than the limit, within 8 of the target's bearing",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+008B48,scoreboard_comment_setup,"Screen 12: the scorer's portrait, quote (category 10 by $C63A) and frame; own goal: menu at once",own RE (plan 11),disasm; BlastEm
+008BEE,scoreboard_comment_pass,"Screen 12 intro: portrait talk, frame, quote text, bubble tail, scorer's name",own RE (plan 11),disasm; BlastEm
+008C96,scoreboard_comment_end,"Screen 12 menu: the comment erased once (frame, name row, portrait stopped)",own RE (plan 11),disasm
+008CEE,screen_12_scoreboard_flagged,"Scoreboard, flag 1 (IDs 12, 15, 16): 12 after a goal (coach comment via $8B48), 15 end of a regular game (Start -> 1), 16 end of a playoff game (Start -> 11). Menu after any button or 600 ticks: A stats (8), B special plays (10; not on 15/16), C replay (7), Start -> table $1C968",own RE (plan 01),harness tour; disasm $8E94
+008CF2,screen_13_scoreboard,"Scoreboard, flag 0 (IDs 13, 14): 14 between periods (Zamboni monster; any D-pad press makes the rider crack the whip, $F224). No code path returns 13 (probably unused); Start from 13 would go to 4",own RE (plan 01),harness tour; disasm (no literal 13 returned anywhere)
+008CF4,scoreboard_body,"Scoreboards 12-16: set-up ($9034), event team's players, 12's comment, the pass loop (locals at a6 = $FFFFF8: -$C menu shown)",own RE (plan 11),disasm; BlastEm
+008E42,scoreboard_menu_show,"Scoreboards: menu shown (-$C += 1), panel opening, music $1B",own RE (plan 11),disasm; BlastEm
+008E68,scoreboard_music,"Scoreboards: music $1B again when it stopped, else the crowd on (no talking comment)",own RE (plan 11),disasm; BlastEm
+008E94,scoreboard_menu_input,"Scoreboard menu: new Start (screen by $1C968) / A 8 / B 10 (12-14) / C 7, any pad",own RE (plan 11),disasm; BlastEm
+008EF4,scoreboard_numbers,"Score panel on plane B: names, scores, box entries (number, m:ss), game clock unless phase 4",own RE (plan 11),disasm; BlastEm
+008FD8,scoreboard_menu_texts,Scoreboard menu texts on the window (B line by Reserves; 15/16 without B),own RE (plan 11),disasm; BlastEm
+009034,scoreboard_backdrop,"Screens 12-19 set-up: planes, scoreboard picture $3F460, panel picture by screen ($1C948), score panel, Zamboni (14), palette, side view on",own RE (plan 11),disasm; BlastEm
+00910E,scoreboard_backdrop_off,"Screens 12-19 teardown: side view off, display off, pictures freed, planes off, S/H off",own RE (plan 11),disasm
+009168,scoreboard_team_players,"Flag screens 12/15/16: the event team's ($C640) slots with +$36: scorer celebrates (12), rng celebrators (15/16), others $114CC",own RE (plan 11),disasm; BlastEm
+0091C4,scoreboard_players_step,Flag screens per pass: anim_advance per slot; a stopped non-celebrating one rolls $114CC (rng_next),own RE (plan 11),disasm; BlastEm
+009216,scoreboard_players_draw,"Flag screens: players at (50 + 45 * position, 188), celebrating at 212 in front",own RE (plan 11),disasm
+00928C,phase_goal_step,"one step of the goal sequence (`$FFC2B6`); returns the state (signed word, -1 when done)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00931C,phase_demon_net_sounds,the swallowing Demon Net's sounds (frames $E and $3C),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00946E,phase_goal_panel,"the goal panel (""GOAL SCORED BY"" and the scorer's name, none for an own goal: the puck's +$2A)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0094C0,phase_panel,"the panel - title a0 and a1 (on one line at a faceoff, mode 1; two lines for a goal, mode 0), the bar, both teams' names and scores",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0095AC,phase_panel_erase,the panel's rows (13-26) cleared,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0095C8,geometry_snapshot,"start of the segment: per player distance / angle to the puck, team-mates (own velocity in its own entry) and opponents; team +$4A0 nearest eligible skater",own RE (plan 08),sim-check (55 000 recorded passes)
+0096B0,nearest_eligible,"not a goalie, state below $11, not carrying the puck",own RE (plan 08),sim-check (55 000 recorded passes)
+0097D6,player_face_target,face the target (+$3A); its distance (no target: $50),own RE (plan 08),sim-check (55 000 recorded passes)
+00982E,player_hit_referee,"a punch on the referee (Waste the Ref, plan 09: `$EFC8`)",own RE (plan 08),sim-check (55 000 recorded passes)
+009BCA,player_injury_wait,"after 10 game-clock seconds, animation anim",own RE (plan 08),sim-check (55 000 recorded passes)
+009D34,rink_replay_head,"a frame opened with the pass's elapsed ticks, the camera point as shown (camera px + the shake amplitude, clamped), the four hazards (flags & $F8 | kind), each team's first marker and, for a team...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+009DA4,ring_drop_open_frame,Replay ring: the pass's open frame dropped (rink exit to 7),own RE (plan 11),disasm
+009DD0,instant_replay_player,"Replay controls: A rewind (held), B slow forward (held), C play, Start exit. Controlling pad = first pad with A newly pressed (entered from the pause menu) or C (from a scoreboard, D7 >= 12)",own RE (plan 01),disasm; harness screenshots of the A/B/C widget
+009F5E,replay_leave,"Instant replay Start: ring read/used restored, crowd off, tiles freed",own RE (plan 11),disasm; GPGX
+009F82,replay_draw_frame,"Instant replay: one ring frame drawn (camera, hazards, markers/plates, sprite records, widget)",own RE (plan 11),disasm; GPGX
+009FEA,replay_peek,"Instant replay: the frame header at the read offset (e -> wait, frame end)",own RE (plan 11),disasm; GPGX
+00A01A,replay_back,Instant replay: read offset back one frame (trailer word),own RE (plan 11),disasm; GPGX
+00A04A,replay_widget_text,Instant replay: the A B C widget's text (static),own RE (plan 11),disasm; GPGX
+00A07E,draw_frame,Draws sprite frame A5 (pieces.w + 6-byte pieces) at D0/D1 with depth D2 and flips D3; records it for the instant replay,own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+00A0FE,replay_sprite_records,Instant replay: the frame's sprite records through draw_frame's piece loop,own RE (plan 11),disasm; GPGX
+00A142,frame_hotspot,"Hotspot D0 of frame A5 (byte pairs after the pieces), negated by flips D3",own RE (plan 07),disasm; BlastEm rink recordings
+00A16C,ai_chaser,"the team's nearest skater when the puck is loose or the opponents': at the loose puck; at the red line when their goalie has it; else every so often (counter +$2C, -240 after a DEFENSE-weighted...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00A212,player_in_box,roster slot i sits in one of the 3 penalty box entries,own RE (plan 08),sim-check (55 000 recorded passes)
+00A23A,team_box_count,"d0 = team +$39F (players in the box), extended",own RE (plan 10),visit-check (soak recordings)
+00A242,puck_power_play,a power-play goal: the conceding team has more players in the penalty box (team +$39F) than the scoring team,own RE (plan 08),sim-check (55 000 recorded passes)
+00A252,box_clear,"the box object's fields cleared (+$3C..+$3F, entry words) and the penalty step `$FFC2F0`",own RE (plan 10),visit-check (soak recordings)
+00A27C,penalty_icon_setup,the penalty icon overlay `$FFC2DC` set up from `$1CA58` and shown,own RE (plan 10),visit-check (soak recordings)
+00A29A,box_clock_stamp,`$FFC2F2` = the game clock (the box counts from here; period start),own RE (plan 10),visit-check (soak recordings)
+00A2A4,put_in_box,"a called player to the box (screen 17, for each called player, team A's then B's): penalties +1, a free entry (seconds `$A482`, slots, position, code, his animation copy for the display), penalty minutes (team, his `$CB30`), off the ice `$D2C`, count +1 and rank; returns the entry (3: full)",own RE (plan 10),visit-check (soak recordings)
+00A3A0,box_release,"box entry a0 frees its player: cleared, count -1, the player object made again in his slot (`$7F8`, the record the slot's object has), state 20",own RE (plan 10),visit-check (soak recordings)
+00A3FA,box_add,"count +1, then `$A40A`",own RE (plan 10),visit-check (soak recordings)
+00A40A,box_rank,"the 3 entries ranked by seconds left into +$13 (compare-and-swap x3, equal ones swap; a free entry counts as $FFFF)",own RE (plan 10),visit-check (soak recordings)
+00A482,penalty_seconds,"d1 = the seconds a code costs by the period length row `$FFB0E2` (table `$A476`: minor 60/60/120, major 120/180/300; 0 none)",own RE (plan 10),visit-check (soak recordings)
+00A4AA,penalty_call,"a penalty call (code: 2 kill, 3 Waste the Goalie, 1, 4; -2 goalie check, -3 check, -4 weapon, -5 dive, -6 from behind, -7, -8..-11 the bribed referee's phantoms) on a5: the bribed referee (`$174E`, `rng_range(-11, -8)` at `$A52E`), then the ruling `$A536` (docs/re/penalties.md)",own RE (plan 08); plan 10,visit-check (soak recordings)
+00A5EC,rink_penalties,"the Jail Break banner (`$AA02`), the penalty icon's timer (`$A782`), the icon's animation, and once per clock second (`$C2F2`): the box countdowns and the power-play widget state (`$A888`)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00A66A,rink_penalties_start,"penalties on: the Jail Break banner (`$AA02`); in open play `$A7C2`, a box marked to stop play -> phase 2",own RE (plan 09); plan 10,visit-check (soak recordings)
+00A682,penalty_after_fight,After the fight card: $A7C2 (a marked box -> phase 2),own RE (plan 11),disasm
+00A6C2,phase_penalty_call,"0: the crowd up, the whistle (the visitors' sound $1A is dead code: it tests phase 0 inside phase 2), the clock stopped, the penalty icon shown and stamped; 1: ""PENALTY"" until 240 ticks, the icon...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00A782,penalty_icon_timer,open play: a shown penalty icon goes after 240 ticks from `$FFC2D8`; hidden: the stamp follows the tick,own RE (plan 10),visit-check (soak recordings)
+00A7C2,penalty_decide,"a call that stops play now (team A first; both teams' waiting minors cancelled, the other's call too) or a waiting minor once the offending team carries the puck (the other's cancelled): box bit 0",own RE (plan 10),visit-check (soak recordings)
+00A852,penalty_cancel_minors,"a box with a waiting minor (+$3A1 bit 1): the bit cleared, the team's minor calls (code < 0) undone, calls -1 each",own RE (plan 10),visit-check (soak recordings)
+00A888,power_play_state,"equal boxes: no power play (`$2824(0)` when one ends); else the team with fewer in the box plays one (+$488 for a new one), the power-play clock = the seconds of the other box's entry ranked (difference - 1)",own RE (plan 09); plan 10,visit-check (soak recordings)
+00A950,team_box_marks,"the box's pending marks (+$3A1 bits 0-2) cleared; if players were sent (+$3A0), their in-box flags and penalty bytes too; the penalty icon hidden",own RE (plan 08),sim-check (55 000 recorded passes)
+00A9AC,power_play_goal_release,"a power-play goal (`$7C4E`): the box entry with the least seconds frees its player, rank, `$A888`",own RE (plan 10),visit-check (soak recordings)
+00A9F2,jail_banner_start,"the Jail Break banner: `$FFC2F8` + 1, its stamp `$FFC2F4` = now",own RE (plan 10),visit-check (soak recordings)
+00AA02,rink_jail_banner,the Jail Break message (`$FFC2F8`) goes after 120 ticks,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AA58,penalty_icon_stamp,`$FFC2D8` = now (rink entry),own RE (plan 10),visit-check (soak recordings)
+00AA66,ai_centre,the centre (role 0),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AB2C,faceoff_setup,"a faceoff at spot $FFC31D ($1CA9A): clock widget erased, puck up above the spot, portrait, camera, both teams lined up, crowd, hold timers",own RE (plan 08),sim-check (55 000 recorded passes)
+00ABDC,phase_faceoff_panel_done,the faceoff sequence's states 0-1 (the panel); true once state 2 is reached,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AC1C,phase_faceoff_step,"one step of the faceoff sequence (`$FFC31C`; at most one state per call, states 0-1 together); returns the state (sign-extended byte, -1 when done)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AC7C,phase_faceoff_panel,"the period / score panel every pass (""PERIOD n"" or, with the clock full, ""START OF PERIOD n""; ""OVERTIME"" from period 4); after 90 ticks the panel goes and the FACE OFF! drop is set up (180 px up,...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AD08,phase_drop_step,"the FACE OFF! letters fall with the puck's motion parameters and bounce; at the first bounce a thud (once, x.l as the flag); while bouncing up plane B shakes sideways (twice the upward speed in...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00ADC2,phase_drop_draw,"the pass counter (y.l) + 1, the letters at the height",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00ADDC,phase_drop_text,"""FACE"" at (64 - dz, 100) and ""OFF!"" at (160 + dz, 100), screen pixels, big font, depth $FFFF, attr $A0",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AE68,faceoff_release_puck,the faceoff drops the puck (it falls from 112 px),own RE (plan 08),sim-check (55 000 recorded passes)
+00AF12,puck_out_of_play,the puck leaves the rink: FACE OFF (phase 14) at a spot by where it left,own RE (plan 08),sim-check (55 000 recorded passes)
+00AF1C,phase_nearest_spot,"the faceoff circle of the quadrant of (x, y) (`$1CA9E`: two per quadrant) - the second when it is not farther",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AF62,match_portrait,"the faceoff portrait `$1CAE61` at the map point of (x - 28, y - 64, 96) (`$5AC2`), depth $FFFE, attr $E0, flags 0",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00AFAC,overlay_update,Advances an overlay's animation while shown (+$13 bit 7),own RE (plan 07),disasm
+00AFBC,overlay_draw,"Overlay A5 (faceoff portrait, ref icons): border $20370 (small $3C88A) at (x, y-2) attr | $60, then its animation at (x, y), depth +$10; camera A1 or none",own RE (plan 07),disasm; BlastEm rink recordings
+00B014,crowd_reset,"Crowd state at A5 ($FFB35E): level = 50, byte +2 = D0 (stadium +7)",own RE (plan 01),disasm; harness
+00B01E,crowd_decay,Crowd level -= elapsed ticks * 4 (5 above 525); clamp 50..1250,own RE (plan 01),disasm
+00B052,crowd_sound,Crowd noise at the current level (capped at 1000) unless $FFC644 is set,own RE (plan 01),disasm
+00B136,player_state_celebrate,"Player state $10, step 0 (from the step table $B132): a random celebration anim $17-$19 (rng_range(0, 2) + $17), step 1",own RE (plan 11),disasm; BlastEm
+00B172,screen_03_matchup,"Matchup intro: teams, stadium, hazards",own RE (plan 01),harness
+00B260,matchup_team_text,"Matchup: a team's city and name in the big font, centred, 3 rows apart",own RE (plan 06),disasm; screenshots
+00B28C,matchup_centred_text,"Matchup: string A0 centred on the 40-cell window at row D2, attr D3 | $80",own RE (plan 06),disasm; screenshots
+00B2B0,matchup_setup,"Matchup (3): attract_setup_begin when the attract flag is set, then team setup",own RE (plan 05),disasm
+00B33A,matchup_load,"Matchup: planes ($1CB0E), window cleared, rink picture $24CFC on plane B at camera ($60, $15D), screen palette",own RE (plan 06),disasm; screenshots
+00B3BE,matchup_free,"Matchup: display off, frees the rink picture and planes",own RE (plan 06),disasm
+00B3FE,matchup_stadium_text,"Matchup screen: stadium name and the hazard list built from the stadium mask (+$B, names via $1CB20; ""no hazards"" when 0)",own RE (plan 01),disasm; harness screenshots
+00B472,matchup_round_text,"Matchup in the playoffs: the round ($1CB40, two lines) and in a best of 3 the series ($1CB60 / $1CB70)",own RE (plan 06),disasm
+00B51E,portrait_set_player,Portrait object A5: the portrait of player A0's record (+$36) at border size D0 (entry $B522: record in A0),own RE (plan 06),disasm
+00B542,portrait_start,Portrait A5: starts the talking (D0 = 0) or expression (1-3) animation; talking waits 40 ticks,own RE (plan 06),disasm
+00B572,portrait_advance,"Portrait A5: D0 elapsed ticks - talking mouth (main stream) while the voice plays, two voices then 480 ticks pause; expression sounds on listed frames",own RE (plan 06),disasm
+00B61C,portrait_draw,"Portrait A5 at plane coordinates (D0, D1) of plane A1: border $1CDEE[size - 1] at (x + 1, y + 3 - size) on line 3, face with D3",own RE (plan 06),disasm; screenshots
+00B656,portrait_stop,Portrait A5: stops its animation and voice,own RE (plan 06),disasm
+00B670,star_entry,"A1 = the star portrait entry ($1CC2C) of player record A0, D1 its word; D0 = 0 when not a star",own RE (plan 06),disasm
+00B690,portrait_data,"A1 = portrait data of player record A0: star's, by species ($1CC68), or $1CC20 without a player",own RE (plan 06),disasm
+00B6D2,coach_portrait_set,"Portrait A5 of coach record A0 ($1CD26: coach, data, word; others $1CCA2) at size D0",own RE (plan 06),disasm
+00B70C,coach_portrait_draw,"Like portrait_draw, border $1CDF6[size - 1] at (x + 1, y) (the team description's coach has size 0: none)",own RE (plan 06),disasm
+00B742,td_draw_hook,Team description: calls $FFC3B8 when set - the last page's portrait drawn while the next page rises,own RE (plan 06),disasm; screenshots
+00B750,td_logo,"Team description: the team's logo frame (+$78) at plane ($10, $B0)",own RE (plan 06),disasm; screenshots
+00B772,big_text,"String A0 in the big sprite letters ($246FA) at plane (D0, D1): one piece per letter, 24 px apart, spaces 8, attr D6",own RE (plan 06),disasm; screenshots
+00B7C2,td_city_name,"Team description: city at plane ($40, $A8), name at ($40, $C0) in big letters",own RE (plan 06),disasm; screenshots
+00B7DE,td_header,Team description: logo + city and name,own RE (plan 06),disasm
+00B7E8,two_digits_blank,"$FFC328 = D0 as two digits, a leading 0 blank",own RE (plan 06),disasm
+00B812,two_digits,$FFC328 = D0 as two digits,own RE (plan 06),disasm
+00B832,td_coach_portrait_start,"Team description: the coach's portrait (size 0), talking, mark $FFC36E",own RE (plan 06),disasm
+00B858,td_coach_portrait_pass,"Team description: coach portrait advanced by the ticks since $FFC36E, then td_coach_portrait_draw",own RE (plan 06),disasm
+00B874,td_coach_portrait_draw,"Team description: coach portrait at plane ($44, $58), bubble tail at ($7C, $49)",own RE (plan 06),disasm; screenshots
+00B89E,td_player_portrait_start,"Team description: the player's portrait (size 1), talking, mark $FFC36E",own RE (plan 06),disasm
+00B8C2,td_player_portrait_pass,"Team description: player portrait advanced, then td_player_portrait_draw",own RE (plan 06),disasm
+00B8DE,td_player_portrait_draw,"Team description: player portrait at plane ($10, $54), tail at ($24, $39), frame $214CE at ($10, $80) when +$D high nibble != 0",own RE (plan 06),disasm; screenshots
+00B93A,td_player_name,"Team description: the player's name in big letters - wider than 30 cells: first word (<= 10) at ($48, $A8), the rest at ($48, $C0); else at ($48, $B4)",own RE (plan 06),disasm; screenshots
+00B9B2,td_player_header,"Team description: number (two digits) at ($10, $B4) and name",own RE (plan 06),disasm; screenshots
+00B9CA,frame_glyph,One glyph of a menu frame; $FFC3BC set: the light font's blank '=' instead (rubbing a frame out),own RE (plan 06),disasm
+00BA8E,td_framed_box,Team description: filled frame around rect A0 and the text box $FFC336 there in font $1F958,own RE (plan 06),disasm; screenshots
+00BA98,menu_frame,"Frame of $1F958 glyphs around (x, y, w, h) at A0; inside filled with $E0DD when $FFC3B4",own RE (plan 06),disasm; screenshots
+00BB2E,td_box_text,"Team description: text box home, then td_box_more",own RE (plan 06),disasm
+00BB3C,td_box_more,"Team description: string A0 into the text box, attr $E0",own RE (plan 06),disasm
+00BB4C,td_text_plain,"Team description: draw_text on plane A, attr $60",own RE (plan 06),disasm
+00BB5C,td_text_line,"Team description: draw_text on plane A, attr $FFC3B6 (the text line)",own RE (plan 06),disasm
+00BB94,td_load,"Team description: planes (64x64 VDP, plane A object 64x48, $1CF7C), pictures $41BF2 / $48738, starfield, screen palette, colour 0 black",own RE (plan 06),disasm
+00BC2C,td_leave,"Team description: fade-out over 32, waits, frees the pictures, planes back to 64x32",own RE (plan 06),disasm
+00BC9A,td_bio_text,"Team description, bio page: heading $1CE3C[side], bio (+$96) in the box, NASTY PLAYS and the three play names",own RE (plan 06),disasm; screenshots
+00BD2E,td_bubble_tail,"Team description: speech bubble tail piece $1FB02 at plane (D0, D1), attr $E0",own RE (plan 06),disasm; screenshots
+00BD32,speech_tail,Speech bubble tail piece $1FB02,own RE (plan 11),disasm
+00BD4C,td_coach_text,"Team description, coach page: header, quote (+$9A), the coach's name at ($13, $E)",own RE (plan 06),disasm; screenshots
+00BD82,speech_frame_erase,Speech bubble frame erased,own RE (plan 11),disasm
+00BD96,td_bar,Team description: the roster cursor's bar (filled frame),own RE (plan 06),disasm
+00BD9E,speech_frame,Speech bubble frame on the window (no fill),own RE (plan 11),disasm
+00BDB2,td_bar_erase,Team description: rubs the bar out ($FFC3BC),own RE (plan 06),disasm
+00BDCE,td_copy_over,Copies string A0 over the buffer at A6 (spaces leave what is there) until the buffer's end,own RE (plan 06),disasm
+00BDE2,td_roster_text,"Team description, roster page: headings and the line's six rows (number, name, position over a row of '='), the cursor's row dark",own RE (plan 06),disasm; screenshots
+00BEE2,td_player_quote,Team description: a star's own quote ($F420 category 12) or I'M <name> AND I PLAY <line> <position> FOR THE <city> <name> - <verdict>,own RE (plan 06),disasm; screenshots
+00BFF2,td_rating_value,"Team description: a rating at ($FFC34C, $FFC34E), then 2 rows down",own RE (plan 06),disasm
+00C008,td_skater_ratings,Team description: skater rating labels and values (a sixth row when +$D high nibble != 0),own RE (plan 06),disasm; screenshots
+00C110,td_goalie_ratings,Team description: goalie rating labels and values,own RE (plan 06),disasm; screenshots
+00C1E6,td_text_palette,"Team description: line 2 - side fades to $1BD6A over D1, colour 9 = $EE; $FFC3B6 = its attr",own RE (plan 06),disasm
+00C226,td_select_team,"Team description: team of the side ($FFB0DE[side]), panel colours on line 0, cursor and line 0, D6 = sprite attr",own RE (plan 06),disasm
+00C278,td_player_text,"Team description, player page: header, quote, ratings",own RE (plan 06),disasm
+00C28E,td_pads,"Team description: reads the pads, D0 = all four newly-pressed bytes; Start pops the caller's return address (back to the bio / leave)",own RE (plan 06),disasm; td-cases
+00C2AE,td_plate,Team description: header plate map ($48744) to plane A rows 20-27,own RE (plan 06),disasm; screenshots
+00C2E0,td_clear_upper,Team description: clears plane A rows 0-19,own RE (plan 06),disasm
+00C304,td_clear_lower,Team description: clears plane A rows 28-47,own RE (plan 06),disasm
+00C328,td_frame,"Team description: sprites, DMA, waits for the queue (the pass boundary $C340)",own RE (plan 06),disasm
+00C348,td_move_cursor,"Team description: Down/Up player, Right/Left line, wrapping; $FFC320 += 1",own RE (plan 06),disasm; td-cases
+00C3B6,td_motion_start,"Team description: motion params $1CE26, motion at $1CE2E (z 160), vscroll $A0",own RE (plan 06),disasm
+00C3FC,td_scroll,"Team description: one pass of the plane's move to vscroll D0 (speed D1 on a new target): drops bounce (sound $15), rises clamp; D0 = 0 when there",own RE (plan 06),disasm; td-cases
+00C4AA,td_page_bio,"Team description: bio page (rises to $A0); D-pad other team, A/B/C coach",own RE (plan 06),disasm; td-cases
+00C546,td_page_coach,"Team description: coach page (drops to 0); D-pad other team, A/B/C roster",own RE (plan 06),disasm; td-cases
+00C5F4,td_page_roster,"Team description: roster page (rises; $C5EC from a player: plate and header first); D-pad cursor, A/B/C player",own RE (plan 06),disasm; td-cases
+00C6C0,td_page_player,"Team description: a player's page (drops); D-pad next player, A/B/C roster",own RE (plan 06),disasm; td-cases
+00C75A,screen_02_team_description,"Team description: bio, coach, roster and player pages on one 64x48 plane that drops and rises with a motion object (docs/re/menus.md); play mode 'Team Description'; returns 1","own RE (plan 01, plan 06)",harness; disasm; td-cases
+00C7C2,td_crowd,Team description: crowd sound $10 again when it stopped,own RE (plan 06),disasm
+00C7DE,td_effect,"Team description: stops the last effect, plays D0",own RE (plan 06),disasm
+00C810,phase_rules_reset,the puck rules start over from the spot,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00C82A,phase_note_carrier,a carried puck's y and carrier's team are noted,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00C84A,puck_rules,"Open play: icing-like rule machine ($FFC3E2) - shows the stoppage ref icon ($FFC3C8) while pending, goalie-hold stoppage (phase 8)",own RE (plan 07),disasm; BlastEm rink recordings
+00CA12,phase_stoppage,"state 0 (with state 1 at once): the stoppage icon shown, the crowd up, the whistle, the clock stopped; state 1: ""ICING"" or ""FACE OFF"" (a goalie hold) for 180 ticks; state 2: the icon hidden, the...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00CB2A,player_stat_add,p's statistics entry (team +$3A2 + 8 x roster slot): word off += n,own RE (plan 08),sim-check (55 000 recorded passes)
+00CB3C,stats_sound,Stats screens: sound $25,own RE (plan 11),disasm
+00CB56,screen_08_game_stats,Game stats (scoreboard A),own RE (plan 01),harness
+00CD34,game_stats_title,Screen 8: GAME STATS on the window,own RE (plan 11),disasm
+00CD4E,game_stats_team_names,"Screen 8: team names on the window, row 7",own RE (plan 11),disasm
+00CEB8,game_stats_arrows,Screen 8: scroll arrows by $FFB0DA,own RE (plan 11),disasm; BlastEm
+00CF38,stats_number,"Stats: 1-3 digit number, no leading zeros",own RE (plan 11),disasm
+00CF78,stats_power_plays,"Screen 8 row: ""+$486/+$488""",own RE (plan 11),disasm
+00CF9A,stats_penalties,"Screen 8 row: ""+$48A/+$48C:00""",own RE (plan 11),disasm
+00CFDC,stats_passing,"Screen 8 row: passes ""a/b (p%)""",own RE (plan 11),disasm
+00D06A,game_stats_setup,"Screen 8 set-up: planes, starfield, scroll -80, palettes, display on",own RE (plan 11),disasm; BlastEm
+00D126,game_stats_cleanup,"Screen 8 exit: display off, starfield freed, planes restored",own RE (plan 11),disasm
+00D168,screen_09_player_stats,"Player stats ('ACES PLAYER STATS'): called as a subroutine from screen 8 on A, so $FFB05E stays 8. A switches team, Start returns",own RE (plan 01),harness tour (out/explore/tour_b.py); disasm
+00D334,player_stats_swap,Screen 9: show the buffer just drawn (window 0 / 28 rows),own RE (plan 11),disasm; BlastEm
+00D366,player_stats_header,"Screen 9: team name, PLAYER STATS, page and column headers",own RE (plan 11),disasm
+00D446,player_stats_rows,"Screen 9: a page's players (number, name, stats from team +$3A2)",own RE (plan 11),disasm; BlastEm
+00D55C,player_stats_boxes,"Screen 9: two text boxes (plane A, window)",own RE (plan 11),disasm
+00D736,player_stats_setup,Screen 9 set-up (window over the whole screen),own RE (plan 11),disasm
+00D7FE,player_stats_cleanup,Screen 9 exit,own RE (plan 11),disasm
+00D840,player_stats_arrows,Screen 9: arrow pieces,own RE (plan 11),disasm
+00D868,screen_18_fight,Fight mini-game,own RE (plan 01),harness; punch counters
+00D984,fight_state_dispatch,Screen 18: screen state handler by -6 (table $D996),own RE (plan 11),disasm; GPGX
+00D9B8,fight_walk_in,"Screen 18 state 0: fighters walk in to x 100 / 220, bell",own RE (plan 11),disasm; GPGX
+00D9F0,fight_fighting,"Screen 18 state 1: both fighters, KO / pause / time checks",own RE (plan 11),disasm; GPGX
+00DABE,fight_result_panel,Screen 18 state 2: panel opening; KO sound,own RE (plan 11),disasm; GPGX
+00DB0A,fight_result,"Screen 18 state 3: result text 90 ticks, crowd fading",own RE (plan 11),disasm; GPGX
+00DB4A,fight_penalties,"Screen 18 states 4/5: with penalties on, calls for both fighters ($A4AA: winner -7, loser 1)",own RE (plan 11),disasm; GPGX
+00DBA4,fight_pausing,Screen 18 state 6: pause panel opening,own RE (plan 11),disasm; GPGX
+00DBB8,fight_paused,Screen 18 state 7: PAUSE; Start on a human fighter's pad resumes,own RE (plan 11),disasm; GPGX
+00DBD8,fight_start_pressed,Screen 18: Start newly pressed on a human fighter's pad,own RE (plan 11),disasm; GPGX
+00DC08,fight_clock_draw,"Screen 18: fight time left in seconds (17, 14)",own RE (plan 11),disasm
+00DC38,fighter_init,"Screen 18: a team's fighter (first slot 0-4 with +$74 bit 4, else rng) and his rating, damage, speed",own RE (plan 11),disasm; GPGX
+00DD7E,fighter_step,"Screen 18: a fighter's pad (or the AI), state handler, movement, motion",own RE (plan 11),disasm; GPGX
+00DD9A,fighter_motion,Screen 18: motion step + animations,own RE (plan 11),disasm
+00DDC6,fighter_draw,Screen 18: fighter and second animation sprites,own RE (plan 11),disasm
+00DE24,fighter_set_state,"Screen 18: fighter state, its animation at the rated speed, stamp",own RE (plan 11),disasm; GPGX
+00DECC,fighter_stand,"Fighter state 0: B/C punch, A block",own RE (plan 11),disasm; GPGX
+00DEFC,fighter_punch,Fighter state 4: the hit frame lands / is blocked within 90 px; A cancels into a block,own RE (plan 11),disasm; GPGX
+00DF5E,fight_land_punch,"Screen 18: a landed punch (sound, x4 roll, damage, stun, KO)",own RE (plan 11),disasm; GPGX
+00DFC4,fight_blocked,Screen 18: a blocked punch (1/16 damage),own RE (plan 11),disasm; GPGX
+00DFE0,fighter_block,Fighter state 8: until A released or 30 ticks,own RE (plan 11),disasm; GPGX
+00E002,fighter_hit,Fighter state $C: hit animation,own RE (plan 11),disasm
+00E01A,fighter_knocked_down,Fighter state $10: drifts away and falls,own RE (plan 11),disasm; GPGX
+00E082,fighter_down,Fighter state $14: 120 ticks -> out,own RE (plan 11),disasm; GPGX
+00E09E,fighter_out,Fighter state $18: knocked out,own RE (plan 11),disasm
+00E0A0,fighter_move,"Screen 18: walk (held Left/Right), limits 60..260 and 74 px apart, stun knock-back",own RE (plan 11),disasm; GPGX
+00E15C,fight_ai,Screen 18 CPU fighter: rng_next per pass; punch chance by rating; never blocks,own RE (plan 11),disasm; GPGX
+00E256,fight_names_bars,Screen 18: names (row 2) and health bars (row 4),own RE (plan 11),disasm
+00E31C,fight_result_text,Screen 18: DRAW! / name WINS! / KNOCKOUT!,own RE (plan 11),disasm
+00E3A8,fight_card,"Screen 18 after the fight: the card (punches, a joke row), up to 480 ticks",own RE (plan 11),disasm; GPGX
+00E4A2,fight_card_background,Screen 18: the card's window map,own RE (plan 11),disasm
+00E612,screen_17_scoreboard_message,"Stoppage scoreboard with a message: penalty (phase 2), after a fight (18), forfeit (phase 13; then 15/16), new referee after 'Waste the Ref'. Menu A 8 / B 10 / C 7 / Start 5",own RE (plan 01),harness tour
+00E8EA,msg_scoreboard_menu_show,"Screen 17: menu shown, panel opening, music $1B",own RE (plan 11),disasm
+00E994,msg_scoreboard_skip_pad,"Screen 17: the pad whose Start skips (a human team whose opponent's box has a stop-play call), else P1",own RE (plan 11),disasm; BlastEm
+00E9D0,s17_next_called,"screen 17: the next called player on the ice (team A's slots 0-5, then team B's)",own RE (plan 10),visit-check (soak recordings)
+00EA20,msg_state_panel_open,"Screen 17 state 1: wait for the panel, referee anim $213FC",own RE (plan 11),disasm; BlastEm
+00EA4C,msg_state_info,"Screen 17 state 2: number, name, minutes, penalty name; 180 ticks; the walk starts",own RE (plan 11),disasm; BlastEm
+00EAA6,msg_state_to_box,"Screen 17 state 3: panel closes; $A2A4 puts him in the box; portrait, fight winner's quote (cat 11)",own RE (plan 11),disasm; BlastEm
+00EB6A,msg_state_walk,Screen 17 state 4: walk at $C0/$40; near y 0 the referee's anim and expression,own RE (plan 11),disasm; BlastEm
+00EBBA,msg_state_walk_box,Screen 17 state 5: walk at $E0/$20 until x >= 189,own RE (plan 11),disasm; BlastEm
+00EBE0,msg_state_talk,Screen 17 state 6: expression over -> talking again,own RE (plan 11),disasm
+00EBF8,msg_state_walk_end,"Screen 17 state 7: at the box his entry shown (+6 bit 7), frame and portrait off",own RE (plan 11),disasm; BlastEm
+00EC76,msg_state_referee,"Screen 17 state 8: new referee / forfeit: referee's face, quote cat 13, 180-tick lockout",own RE (plan 11),disasm; BlastEm
+00ECCE,msg_state_wait,Screen 17 state 9: nothing (waits for Start),own RE (plan 11),disasm
+00ECD0,msg_walk_step,"Screen 17: a walking player's step (velocity_polar, motion + anim, side-view draw)",own RE (plan 11),disasm; BlastEm
+00EDD8,box_display_draw,"Penalty boxes' occupants (entries with +6 bit 7) animated at x 189 in side view (screens 17, 19)",own RE (plan 11),disasm; BlastEm
+00EE50,message_panel_init,"Panel object: dir 0, remainder 0, size 6",own RE (plan 11),disasm
+00EE68,message_panel_step,"Panel grows / shrinks one cell per 2 ticks (6..26), redrawn at its size (tiles $1D31C)",own RE (plan 11),disasm; BlastEm
+00EF5E,referee_place,"the referee object at (d0, d1), +$24 = d2 (hits left), +$25 = d3 (attr), his animation `$213DC` from its start",own RE (plan 10),visit-check (soak recordings)
+00EF84,referee_update,the referee: playing -> motion step (`$141AE`); else (on the ice) his animation again,own RE (plan 10),visit-check (soak recordings)
+00EFB4,referee_draw,"the referee drawn through `$5AC2` with the camera, attr +$25",own RE (plan 10),visit-check (soak recordings)
+00EFC8,referee_hit,"a hit on the referee (not while his animation plays): one hit less; the last knocks him down (sounds $2A, 9, animation `$3F2FC`), the others hurt (sound $20, attr +8 when d0 = 0, animation `$F040`[rng_range(1, 3)])",own RE (plan 10),visit-check (soak recordings)
+00F050,zamboni_debris_init,"Screen 14: 4 debris from rng_next (x, y, kind $1D3E4)",own RE (plan 11),disasm; BlastEm
+00F0CC,zamboni_debris_draw,Screen 14: debris with x < 320 drawn,own RE (plan 11),disasm
+00F11A,zamboni_draw,"Screen 14: Zamboni anim (x += 7/0/0/19 per frame), rider at hotspot 0",own RE (plan 11),disasm; BlastEm
+00F1A0,zamboni_whip_draw,"Screen 14: queued whip cracks played one after another, drawn at hotspot 1",own RE (plan 11),disasm; BlastEm
+00F224,zamboni_whip,Screen 14 D-pad: whip crack queued ($FFC4F4),own RE (plan 11),disasm; BlastEm
+00F24E,zamboni_pickup,Screen 14: the rider grabs the next debris within 64 px,own RE (plan 11),disasm; BlastEm
+00F2B4,zamboni_setup,"Screen 14 set-up: Glynda at x -92 heading to 480, anims, debris",own RE (plan 11),disasm; BlastEm
+00F33A,zamboni_pass,"Screen 14 per pass: turn at the ends, pick-up, Zamboni, whip, debris",own RE (plan 11),disasm; BlastEm
+00F37A,clock_text_mss,m:ss text (minutes space-padded),own RE (plan 11),disasm
+00F3CC,draw_text_sprites,Draws zero-terminated string A0 as sprites with font A5 (A1 camera),own RE (plan 03),disasm; harness assets trace
+00F420,quote_pick,"Quote D0 of category D1, team group D2 ($1D404): fallback $50D2D, one string or a random one (category 9: by a counter); codes @ [ { } expanded into $FFC4FE",own RE (plan 06),disasm
+00F4EE,match_cpu_line_changes,"the CPU coach's line changes, slots 0-5: a player in the penalty box stays; one with health $400000 or more (half) stays 3 times in 4 (`rng`); the others (empty slots too) go off (`$D2C`) and the...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00F59E,match_cpu_special_play,the CPU coach may arm a special play (team +$4A5; it keeps its value otherwise),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00F6A8,player_substitute,"the best available roster player for p's position takes the slot (`$F72C`; `$7F8` creates him), keeping human control and the Player Blast weapon",own RE (plan 08),sim-check (55 000 recorded passes)
+00F72C,player_best_substitute,"(roster slot, record) of the best substitute for position pos (record 0: none)",own RE (plan 08),sim-check (55 000 recorded passes)
+00F7C8,player_forfeits,"fewer than 2 skaters, or no goalie (unless a Demon Net guards the top end for a team attacking down - `$7A6`)",own RE (plan 08),sim-check (55 000 recorded passes)
+00F7F0,rink_load,"Rink entry: sprite cache flush, planes $1E9F0 (plane B = map $24D08), S/H on, window filled $8000, tiles $24CFC and $1BFC2",own RE (plan 07),disasm
+00F884,screen_04_rink_period_start,"Rink entry at period/game start (coach speech, faceoff); sets game phase 9, falls into the shared gameplay loop",own RE (plan 01),harness; disasm
+00F8A4,screen_05_rink_resume,Rink entry resuming play (phase 1); shared gameplay loop at $F962,own RE (plan 01),harness; disasm
+00F8F0,screen_06_rink_continue,Rink entry with phase 0: play continues where it stopped (used when the pause menu's instant replay returns),own RE (plan 01),"harness tour (pause, A, Start -> 6)"
+00F962,rink_pass,"Top of the rink loop: tick wait, then the pass (docs/re/rink.md, Loop)",own RE (plan 07),disasm; BlastEm rink recordings
+00F9C8,rink_after_segment,"after the segment of a pass of e ticks, up to the puck rules: the faceoff portrait's animation (`$AFAC`), rink objects against the rink (`$7868`), the camera (`$F9DA` target, `$56EA`), the rest of...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00F9DA,rink_camera_target,Camera target choice (inline in the loop): held in phases 9/1; fight: first fighting team-A skater; Waste the Goalie: the other goalie; phase 12: the referee; else the puck or its carrier,own RE (plan 07),disasm; BlastEm recordings
+00FAA0,rink_draws,"the draw pass (MwRinkDraw; the phase handler's overlays phase_overlays (overlay, with camera), sprites phase_sprites (MwRinkPhases.sprite_ops) and pieces phase_adds, the phase the puck rules saw...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FB2E,phase_game_over_exit,"game over: screen 15, or 16 after a playoff game",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FB38,rink_exit,"Common exit of the rink loop: clears team flags, fades out, returns the next screen ID in D0; in the attract demo returns 1 (main menu)",own RE (plan 01),disasm
+00FBE4,rink_attract_end,Rink exit: in attract mode restores the setup and returns to the main menu (1),own RE (plan 05),disasm; GPGX watch
+00FBFA,screen_07_instant_replay,"Instant replay (pause A or scoreboard C). Returns 6 when entered from the rink (D7 <= 6), otherwise the previous screen",own RE (plan 01),harness tour; disasm $FC4E
+00FC58,rink_phase_step,Attract demo: any input on any of the 4 pads leaves via rink_exit. Otherwise calls the game_phase handler from table $FC84 (phases 0-14),own RE (plan 01),disasm
+00FCC0,phase_phase_play,"the pause menu, then (not left) the replay recording on, the phase stamp, and at 0:00 the period's end (sound $1D, phase 5)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FD38,phase_phase_faceoff,the faceoff sequence; when the puck has landed the replay ring is emptied (`$9CE8`) and play begins,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FD4E,phase_phase_penalty,"`$A66A` sets it, plan 10): at 0:00 the period's end at once; else the call (`$A6C2`: the whistle, ""PENALTY"" for 240 ticks); then the replay off and the penalized human teams' coaches (`$10732`,...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FDA8,phase_penalty_next,"team B's coach after team A's, then 17",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FDD2,phase_phase_goal,"the goal sequence; then the replay off, in overtime the game's end (sudden death), else the scoring coach's speech (a human team's, not in the attract demo) and the goal scoreboard (12)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FE1C,phase_goal_exit,"after a goal into a Demon Net (the top net, puck y < 0) the team attacking down gets the stadium's net back and a goalie (`$7D2`, `$F6A8`); the goal scoreboard",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FE66,phase_phase_fight,"""FIGHT!"", the clock stopped; 180 ticks after the last open-play pass the fight screen (18)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FE8C,phase_phase_period_end,180 ticks after the last open-play pass the period's end (`$FEBA`); sub 1: the game-over panel,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FEBA,phase_period_decision,"periods 1-2 end into the next (screen 14); from period 3 a tie goes on too (overtime), a winner ends the game (_game_end)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FEC6,phase_game_end,"the game's end, unless tied (another period): the winner (`$C640`), a playoff game's result (`$12854`), everyone lets go of the puck and loses human control (`$FFA8`), the clock widget erased;...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FF2A,phase_winner_panel,"the panel with both scores (no titles) for 180 ticks; then the game-over speech (team A's coach, `$1054C`), the period change for both teams (`$3960`), phase 10",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FF84,phase_next_period,"the period change for both teams (`$3960`), the next period (`$2524`), the period scoreboard (14)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FFD6,phase_phase_stoppage,the stoppage (`$CA12`); then the faceoff (5),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+00FFEA,phase_phase_start,"the period start: the panel (faceoff states 0-1); then the replay off and the coach speech(es) (team A's, team B's if it has a pad; none in the attract demo or from the second overtime on); then...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+01008E,phase_phase_game_over,"the game-over speech(es) - team B's coach too when it has a pad - then game over (`$FB2E`: 15, 16 in the playoffs)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0100BE,phase_phase_waste_goalie,"the team with +5 bit 1 hunts the other's goalie; the clock keeps running): at 0:00 the sound $1D once; the goalie gone or dead, or 480 ticks over (he dies: state $12), the sound 9; then play on...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+010182,phase_phase_waste_ref,"the clock stopped; the referee on the ice every pass (`$EF5E` at (165, 0), attr $A0, his animation from the start each pass, `$EF84` his motion); 180 ticks, then the referee screen (19)",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0101CE,phase_phase_forfeit,"""FORFEIT!"", the clock stopped; 300 ticks, then 17",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+01020E,phase_phase_banner,"the FACE OFF banner (the puck went out of play): rows 0-13 cleared and the clock stopped once, ""FACE OFF"" (`$6251D` at (9, 4)) until more than 180 ticks passed, then the faceoff the simulation...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0102A6,phase_speech,"a speech pass: crowd noise off, the portrait talks (`$B572`), while talking a coach whose quote value is 2-3 pulls a face 3 times in 64 (rng_next < $C00, every pass); an expression over, back to...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+01045C,first_fighter,"First team-A skater (slots 0-4) with +$74 bit 4, else the goalie slot",own RE (plan 07),disasm
+010474,phase_setup_period_start,"a period start's speech by team's coach: period 1 (category 0, 1 in the playoffs) by the skulls (team record +$B) compared, periods 2-3 (2) by the score, overtime (3) situation 0",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+01054C,phase_setup_game_over,"a game-over speech by team's coach: a regular game (category 4) by the score (tie 3, the other team scoreless 0, lost by 3+ 1, by 1-2 2, won by 3+ 4, by 1-2 5); the playoffs (5) by the result...",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+010610,phase_setup_goal,the goal's speech (category 7) by the scoring team's coach if it has a pad,own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+010732,phase_setup_penalty,a penalty's speech (category 6) by team's coach if it has a pad and a player of it is in the box (+$74 bit 1),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0107D0,team_bodies_off,"a corpse (state $12) is a death (`$C1A`); a player under the ice (state $13) is marked (team +$336, +$49E) and taken off (`$C1E`)",own RE (plan 08),sim-check (55 000 recorded passes)
+010836,special_plays_setup,"Screen 10 set-up: backdrop by pad mode, palette, side view on, music, pages",own RE (plan 11),disasm; BlastEm
+010902,special_plays_exit,"Screen 10 exit: side view off, display off, pictures freed",own RE (plan 11),disasm
+010968,special_plays_sound,"Screen 10: a sound effect ($25, $30, $2E)",own RE (plan 11),disasm
+010982,special_plays_upload,"Screen 10: sprite upload, DMA wait, list reset (pass end)",own RE (plan 11),disasm
+010996,sp_centre_string,Screen 10: a string centred in a field of blanks,own RE (plan 11),disasm
+010B36,sp_draw_list,"Screen 10: the page's 8 items, the cursor's dark",own RE (plan 11),disasm
+010B92,sp_comment,Screen 10 substitution list: the comment on the highlighted player,own RE (plan 11),disasm; BlastEm
+010C54,sp_coach_portrait,Screen 10: the coach portrait (record +$C) talking,own RE (plan 11),disasm
+010D74,sp_draw_subst,Screen 10: substitution list page,own RE (plan 11),disasm
+010E30,sp_draw_plays,"Screen 10: special plays page (nasty, plays, phony, buttons)",own RE (plan 11),disasm; BlastEm
+010F8A,sp_draw_positions,"Screen 10: positions page (on ice, penalties)",own RE (plan 11),disasm; BlastEm
+011158,sp_best_other,Screen 10: the best player of another skater position (or the Demon Net) for the list,own RE (plan 11),disasm; BlastEm
+01121E,player_position_rating,how well record r plays position pos (a byte sum of weighted ratings; `$11044`-`$1113A`),own RE (plan 08),sim-check (55 000 recorded passes)
+011242,sp_make_change,Screen 10: the substitution (player_create; the Demon Net in / out),own RE (plan 11),disasm; BlastEm
+0112BA,sp_cursor,Screen 10: cursor to the next / previous non-empty item,own RE (plan 11),disasm; BlastEm
+011316,sp_player_figure,Screen 10: the highlighted player's figure / number / box overlay,own RE (plan 11),disasm
+01145A,sp_idle_init,"Screen 10 page without a pad: team A's players stopped, variant 4",own RE (plan 11),disasm; BlastEm
+0114CC,player_taunt_roll,"rng_next & $7F < 5: a random taunt anim (goalie 8/9), else stand stopped; variant 4 (scoreboards, special plays' idle page)",own RE (plan 11),disasm; BlastEm
+011520,sp_idle_pass,"Screen 10 page without a pad: team A's players taunt ($114CC, rng)",own RE (plan 11),disasm; BlastEm
+01161E,sp_subst_init,"Screen 10: substitution list set-up (status, the slot's player, candidates)",own RE (plan 11),disasm; BlastEm
+01174A,sp_subst_pass,"Screen 10: substitution list per pass (A/B/C change, Start back)",own RE (plan 11),disasm; BlastEm
+0117B4,sp_plays_init,Screen 10: special plays page set-up (play names from team +$333),own RE (plan 11),disasm; BlastEm
+01180C,sp_plays_pass,Screen 10: A nasty / B special / C phony -> team +$4A5; Start nothing,own RE (plan 11),disasm; BlastEm
+011896,sp_positions_init,Screen 10: positions page set-up (Reserves),own RE (plan 11),disasm; BlastEm
+0118CA,sp_positions_pass,"Screen 10: positions per pass (A/B/C list or plays, Start done)",own RE (plan 11),disasm; BlastEm
+011914,sp_done_init,Screen 10: page done (+$60 = 1),own RE (plan 11),disasm; BlastEm
+01192C,sp_done_pass,Screen 10: done page; any button but Start reopens it,own RE (plan 11),disasm; BlastEm
+011966,special_plays_pages,Screen 10: page objects A $FFC64C / B $FFC6DC set up by pad mode,own RE (plan 11),disasm; BlastEm
+011A18,screen_10_special_plays,"Special plays picker: Nasty Play (A) / team plays (B) / Phony Play (C). Reached from a scoreboard (B) or the pause menu (B, timeout); Start -> 5 / back",own RE (plan 01),harness tour
+011AE4,screen_11_playoffs,"Playoffs: bracket, Monster Cup, password entry/display",own RE (plan 01),harness; string xrefs
+011CA8,playoffs_bracket_line,Playoffs: line 2 fades to $399B0 over 32,own RE (plan 06),disasm
+011CBA,playoffs_load,"Playoffs: moving starfield, planes $1F118 (window 40x28 at $F000), picture $36CA4, screen palette, colour 0 black",own RE (plan 06),disasm; screenshots
+011D44,playoffs_free,"Playoffs: display off, starfield and picture freed",own RE (plan 06),disasm
+011D8E,playoffs_init,"Playoff run A5 ($FFBD6A) at main menu Start: cleared; play modes 1-2: new run (round 3, places A*10+B, best of 3 for mode 2, new seed)",own RE (plan 06),disasm; playoff-vectors
+011E0C,playoffs_draw_bracket,"Playoffs: the bracket of view D0 - headers, logo, both columns of boxes ($1F1A0 lists) and fillers",own RE (plan 06),disasm; screenshots
+011EF2,playoffs_headers,"Playoffs: the two conference headers (12x9), the player's conference on the left",own RE (plan 06),disasm; screenshots
+011F2C,playoffs_cup_map,"Playoffs: the Monster Cup picture (map $36E50, 16x21 at (12, 7))",own RE (plan 06),disasm; screenshots
+011F40,playoffs_logo,"Playoffs: logo (16x7 at (12, 2)), PLAYOFFS, PRESS START",own RE (plan 06),disasm; screenshots
+011F98,playoffs_new_seed,"Playoffs: seed = main stream & $FFF (non-zero) into +$C, then playoffs_reseed",own RE (plan 06),disasm; playoff-vectors
+011FA6,playoffs_reseed,"Playoffs: the run's stream (+0) = seed D0, advanced $45 times",own RE (plan 06),disasm; playoff-vectors
+011FC0,playoffs_bracket_teams,"Playoffs: $FFC770 = A's conference (A, B, six drawn), $FFC78E = the other conference's eight, drawn with rng_range on the run's stream",own RE (plan 06),disasm; playoff-vectors
+01204A,playoffs_bracket_results,Playoffs: the seven winners of each side after its teams; A's side plays only mask $3A (A advances; B when +$11),own RE (plan 06),disasm; playoff-vectors
+0120A2,playoffs_match,"Playoffs: D0 = 0 when team D0 beats team D1, else 2 - odds 8(skulls + 1) each (team record +$B)",own RE (plan 06),disasm; playoff-vectors
+0120E0,playoffs_draw_names,"Playoffs: the names of view D0's rows ($1F170), centred in 10 cells at columns 1 / 29",own RE (plan 06),disasm; screenshots
+012170,playoffs_password_screen,"Playoffs: password entry (or the new password when +$14 bit 1); returns -$E(a6): 1 taken, -1 cancelled",own RE (plan 06),disasm; playoff-vectors
+0122D6,password_draw,"Password screen: header, bat pictures, bars, typed symbols and the 28-symbol grid as sprites (cursor D0 on line 2), hints",own RE (plan 06),disasm; screenshots
+012454,password_keys,"Password screen: pad 1 (else pad 2) - A add, B remove, C cancel, D-pad move, Start try",own RE (plan 06),disasm
+012580,password_make,"Playoffs: dead masks from the team objects, the 62 bits (check when the opponent's dead are random), 13 symbols into $FFC7B8",own RE (plan 06),disasm; playoff-vectors
+01266C,password_take,Playoffs: decodes $FFC7B8 into the run (fields written even when refused); valid: teams from the pair,own RE (plan 06),disasm; playoff-vectors
+012776,password_check,"Check value: run's stream seeded with (D0 & $FFF) ^ D1, 39 steps, & $3FFFF",own RE (plan 06),disasm; playoff-vectors
+0127A0,div64,"64-bit D0:D1 / D2 -> quotient D0:D1, remainder D3 (bit by bit)",own RE (plan 06),disasm
+0127E0,mul64,64-bit D0:D1 * D2 (shift and add),own RE (plan 06),disasm
+012804,password_symbols,"D0:D1 as D3 base-D2 symbols of A1 into A0, least significant first",own RE (plan 06),disasm; playoff-vectors
+012820,password_number,"A0's D3 symbols (alphabet A1, base D2) back to D0:D1; unknown symbol = $FFFF",own RE (plan 06),disasm; playoff-vectors
+012854,playoffs_game_over,"After a playoff game (A1 team A, A0 team B): series and round rules; returns 0 next game, 1 champion, 2 won 2-0, 3 lost a game, 4 eliminated",own RE (plan 06),disasm
+01291A,playoffs_champion,"Playoffs: the champion's screen - cup, trophy animation $22BC6, THE <team> WIN THE MONSTER CUP; B/C starfield; Start",own RE (plan 06),disasm; screenshots
+012A4E,playoffs_dead_players,"Dead players for team A5 at a playoff game's start: +4 / +8, or random for team B when +$14 bit 4 (main stream)",own RE (plan 06),disasm
+012B3E,starfield_draw,Draws the 32x32 starfield picture $4546C four times on plane B (64x32 plane: tiled) and starts the scroll VBlank task ($134E2),own RE (plan 05),disasm
+012BC4,starfield_free,Stops the starfield VBlank task and frees the picture,own RE (plan 05),disasm
+012BE0,menu_backdrop_load,"Main menu backdrop: window map, starfield_draw, screen_palette",own RE (plan 05),disasm
+012D18,menu_rows_redraw,Main menu: redraws the text of rows 2-9 (every pass),own RE (plan 06),disasm
+012D1E,menu_row_draw,"Main menu: draws row D0 - label and value items, fill word or $60DD when selected ($FFC7C6), font $447F4 or $1F958 (selected), centred, attr $E0",own RE (plan 06),disasm; screenshots
+012D4E,menu_item_draw,"Main menu: one item of a row record (string list + value * stride at x, y, width, centred)",own RE (plan 06),disasm
+012DD8,menu_panel_name,"Main menu: a player's name in a team row, split at the first space when wider than 10 cells, each line centred",own RE (plan 06),disasm
+012F04,menu_stadium_changed,"Main menu row handler, stadium: chosen by the player ($FFC7F6 = 1) unless in the playoffs (team A's)",own RE (plan 06),disasm; menu-cases
+012F34,menu_team_a_changed,"Main menu row handler, team A: playoff rules (conference teams, team B in A's conference), stadium follows team A, panel restarted",own RE (plan 06),disasm; menu-cases
+013004,menu_team_b_changed,"Main menu row handler, team B: in the playoffs the next team of A's conference ($1F522/$1F550, +23 backwards)",own RE (plan 06),disasm; menu-cases
+0130C2,menu_play_mode_changed,"Main menu row handler, play mode: playoff modes restrict the teams and tie the stadium to team A",own RE (plan 06),disasm; menu-cases
+01315A,menu_team_panel,"Main menu: one team panel per pass - logo phase, then a star's portrait or a skater's four steps, five players in turn (records $1F2A2 / $1F2EA)",own RE (plan 06),disasm; screenshots
+01343E,menu_pads_changed,"Main menu row handler, pads: modes 3-4 only with the EA 4-Way Play adapter",own RE (plan 06),disasm
+013480,starfield_scroll_start,"Starfield: position 0, velocity one of 8 directions picked by the second RNG stream ($FFCA18): table $1346C/$13470, 100/256 px per tick (72 on diagonals)",own RE (plan 05),disasm
+0134A4,starfield_redirect,Starfield: another direction from the aux stream (position fractions cleared),own RE (plan 06),disasm
+0134D0,starfield_hold,Starfield: velocity 0,own RE (plan 06),disasm
+0134E2,starfield_scroll_vblank,"VBlank task: motion_step 1 tick, plane B hscroll = x >> 8 (VRAM $D802), vscroll = y >> 8 (VSRAM 2)",own RE (plan 05),disasm
+013572,menu_torch_flicker,"Main menu: one time in four (aux stream) line 3 becomes menu_line($135E6[current * 4 + rng(0, 2)])",own RE (plan 06),disasm
+0135F2,menu_highlight,"Main menu: highlight of the selected row (team rows a $60DD fill, pads a 7x1 frame, others 34x1), filled when $FFC3B4",own RE (plan 06),disasm; screenshots
+01366A,menu_unhighlight,Main menu: removes the highlight (team rows: $2019 fill),own RE (plan 06),disasm
+0136DE,screen_01_main_menu,"Main menu / game setup (rows: teams, pads, play mode, period length, stadium, penalties, reserves, death index; values $FFB0DE-$FFB0E7); idle -> attract demo. Without the 4-Way Play adapter the pad row skips modes 3/4 ($1343E)",own RE (plan 01),harness screenshots; menu byte test
+013A72,screen_19_ref_wasted,'Waste the Ref' cutscene on the scoreboard backdrop: reached when phase 12 (the special play) ends after 180 ticks; hands over to 17 (the new referee's message),own RE (plan 01),harness tour (out/explore/tour_c.py)
+013CAC,music_fade_out,Fades the music out over D0 ticks (0: 1),own RE (plan 06),disasm
+013CEE,sound_play,Starts sound or voice D0; returns a handle in D0,own RE (plan 06),disasm
+013D9C,sound_busy,Non-zero while the sound with handle D0 plays,own RE (plan 06),disasm
+013DC2,sound_stop,Stops the sound with handle D0,own RE (plan 06),disasm
+013E52,crowd_level,Crowd noise sound $50 at level d0 (started if needed),own RE (plan 11),disasm; BlastEm
+013EFC,crowd_off,"Crowd noise stopped ($CA3A = -1, $CA46 = 0)",own RE (plan 11),disasm; BlastEm
+014014,detect_four_way_play,"Boot-time probe for the EA 4-Way Play adapter (port 2 select, port 1 read); sets $FFCA62",own RE (plan 01),disasm
+01407E,read_joypads,"Reads both pads ($A10003/5) into $FFCA5A.. (per player: held byte, newly-pressed byte; bits S A C B R L D U). If $FFCA62 != 0 reads 4 pads via the EA 4-Way Play adapter",own RE (plan 01),disasm; tracer: Start -> $FFCA5A = $8080 then $8000
+01416A,vdp_init_reg_shadow,"Fills the VDP register shadow table at $FFCA64 with $8000,$8100,...,$9700",own RE (plan 01),disasm
+014182,vdp_set_reg,D0.w = $8rvv: stores value in the shadow table and writes VDP_CTRL,own RE (plan 01),disasm
+01419E,vdp_set_regs,Writes the VDP register words at (A0)+ until $FFFF,own RE (plan 01),disasm
+0141A8,vdp_set_regs_inline,Like vdp_set_regs but the word list follows the JSR inline; returns past the $FFFF terminator,own RE (plan 01),disasm
+0141AE,player_motion_anim,motion step (player parameters) and animation,own RE (plan 08),sim-check (55 000 recorded passes)
+0141C8,draw_actor,Object A5: motion position -> projection A0 -> camera A1 -> its animation object (+$18) drawn ($14444),own RE (plan 07),disasm; BlastEm rink recordings
+014248,polar_vector,the vector of length at byte angle a,own RE (plan 08),sim-check (55 000 recorded passes)
+01425E,distance,"(2 * max + min - min / 8) / 2 of |D0|, |D1|",own RE (plan 07),disasm; BlastEm recordings (camera)
+01427C,distance_angle,"D1 = distance, D0 = angle of (D0, D1)",own RE (plan 07),disasm
+014290,angle,"Angle 0-255 of (D0, D1): ratio search through $1F6AA (a tree walk), folded into the octant",own RE (plan 07),disasm; BlastEm recordings (camera)
+01436C,puck_mean_angle,the mean of two byte angles (the short way round),own RE (plan 08),sim-check (55 000 recorded passes)
+014388,anim_set,"Object A5 starts animation A0 (+0 anim, +4 speed, +6 flags, +8 position, +7 variant)",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+0143CA,anim_advance,"Advances object A5 animation by D0 elapsed ticks (8.8 position, loop / ping-pong / stop modes); frame index to +$A",own RE (plan 03),disasm
+014444,draw_anim_object,"Draws animation object A5 at D0/D1 (screen pixels; camera A1 subtracted, +$80), depth D2, attr XOR D3",own RE (plan 05),disasm
+014472,anim_hotspot,Hotspot D0 of animation object A5's current frame (variant flips applied),own RE (plan 07),disasm
+01449C,map_copy,"Copies a rectangle of name-table words: A0 source, D0 row bytes, D1 VRAM, D2 dest stride, D3 source stride, D4 rows (DMA per row)",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+014544,ring_take_long,Replay ring: a long from the read offset,own RE (plan 11),disasm
+014548,ring_take_word,Replay ring: a word from the read offset (nothing when used = 0),own RE (plan 11),disasm
+014712,to_sprite_coords,D0/D1 minus camera A5 (+4/+6) plus $80,own RE (plan 05),disasm
+014806,dma_queue_vram,"Queues a DMA to VRAM: A0 source, D0 bytes, D1 VRAM address; drained in VBlank",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+0148A8,dma_queue_wait,Waits until the DMA queue is empty ($FFD898),own RE (plan 03),disasm
+0148B0,vram_write_now,Writes D0 bytes from A0 to VRAM D1 through the data port at once (no DMA),own RE (plan 03),disasm
+014946,fade_colour_start,"One colour's fade towards D0 over D1 ticks: step = $10000 / D1 with the remainder as the start, so it ends after exactly D1 ticks (D1 < 2: 1 tick)",own RE (plan 05),disasm
+014960,fade_line_out,Fades line D2 to black over D1 ticks,own RE (plan 05),disasm
+01498C,fade_in_start,"Start fading towards the palette at A0 (D1 = colours?, D2 = ?); stepped from VBlank",own RE (plan 01),disasm; fades are 28 ticks
+0149B4,fade_colour_to,Fades CRAM colour D2 to D0 over D1 ticks,own RE (plan 05),disasm
+0149CC,fade_out_start,Start fading to black; stepped from VBlank,own RE (plan 01),disasm
+0149F6,fade_vblank,"VBlank: steps every fading colour (16-bit progress, per-component interpolation) and marks CRAM dirty",own RE (plan 05),disasm
+014ABE,fade_busy,Non-zero while a fade is running (callers busy-wait on it),own RE (plan 01),disasm
+014BA0,font_glyph,A0 = glyph piece for character D0 in font A5 (0 when missing),own RE (plan 03),disasm
+014BCE,glyph_width,Width in cells of character D0 in font A5 (space: +2),own RE (plan 05),disasm
+014BE6,phase_glyph_width,a printable character's width in font's cells (0 if the font has no glyph for it),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+014C14,text_width,Width in cells of the 0-terminated string A0 in font A5,own RE (plan 05),disasm
+014C26,draw_glyph,Draws character D0 of font A5 into a plane at D1/D2: caches its tiles ($150C6) and writes the cells ($14656),own RE (plan 03),disasm
+014CAE,draw_text,"Draws zero-terminated string A0 with font A5 into a plane (cells), D1/D2 position, D3 attributes",own RE (plan 03),disasm; harness assets trace
+014CEE,phase_plane_b,"shown at (x, y) (the map is as wide as the plane: the cells stay), the scroll buffers",own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+014E0C,plane_draw_map,Draws a rectangle of map A1 (width at -4(A1)) into the wrapping plane A5; the rink streams rows through it,own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+0150C6,sprite_cache_now,"Sprite tile cache (D0 tile word = ROM address / 32, D1 count) writing tiles at once ($148B0)",own RE (plan 03),disasm
+0150CE,sprite_cache,"Sprite tile cache: VRAM slot for D0 tile word (ROM address / 32), D1 tiles; uploads through the DMA queue when not cached",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+01522C,rink_oscillator,o's value at the live tick (`divu` overflow kept as the 68000 leaves it: the dividend unchanged),own RE (plan 09),sim-check --think / pass-check / visit-check (recordings)
+0152EE,motion_axis,One axis of a motion object: position (24.8) += velocity * D0 (+ acceleration); with friction D2 the exact decay,own RE (plan 05),disasm
+015368,motion_step,"Advances motion object A5 (x, y, z) by D0 ticks with parameters A0 (8 ticks at a time)",own RE (plan 05),disasm
+015402,motion_init,"Motion object A5 position = D0, D1, D2 (pixels), velocity 0",own RE (plan 05),disasm
+015428,motion_position,"Motion object A5 position in pixels -> D0, D1, D2",own RE (plan 05),disasm
+01544A,velocity_polar,"(speed, angle) of o's velocity",own RE (plan 08),sim-check (55 000 recorded passes)
+01545A,dist_angle_to_point,"(distance, angle) from o's position (px) to (x, y)",own RE (plan 08),sim-check (55 000 recorded passes)
+015470,collide_momentum,"momentum exchange between a and b (masses ma, mb; restitution word rest): the relative velocity's normal component (doubled, scaled by 1/2 + rest/65536) split by the masses",own RE (plan 08),sim-check (55 000 recorded passes)
+015554,motion_params,Motion parameters A5 (friction tables from D0-D3),own RE (plan 05),disasm
+0155A2,outcode,"Bits: 2 D0 < 0, 3 D0 >= D2, 0 D1 < 0, 1 D1 >= D3",own RE (plan 07),disasm
+0155D0,clamp_point,"D0 to 0..D2, D1 to 0..D3 (max is reached with >=)",own RE (plan 07),disasm
+0155EE,rng_seed,"D0!=0: state=D0. D0=0: state = VDP status<<16 | HV counter, then 32 x rng_next",own RE (plan 01),disasm
+01560A,rng_advance,Calls rng_next D0 times,own RE (plan 01),disasm
+015616,rng_next,state = step(state) for the 32-bit state at (A5); returns it in D0. See docs/re/rng.md,own RE (plan 01),bit-exact vs 14057 traced calls
+015628,rng_range,"D0=lo, D1=hi -> ((step & $FFFF) * (hi-lo+1)) >> 16 + lo",own RE (plan 01),bit-exact vs 438 traced calls
+01563E,anim_frame_address,"Animation A5, variant D4, frame D5 -> frame address A5, variant flips XORed into D3 bits 3-4",own RE (plan 07),disasm
+015666,draw_anim_frame,$1563E then draw_frame,own RE (plan 07),disasm
+01568E,sprite_list_reset,"Empties the sprite list (count 1, head entry 0)",own RE (plan 07),disasm
+0156C6,add_sprite_piece,"Adds piece A5 (x, y, size, attr, tile word) to the sprite list at D0/D1 (flips D3 mirror the position), depth-sorted by D2",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+0157B0,sprite_list_upload,"Queues the sprite list ($FFE164, count $FFE524) to the VDP sprite table (the label used to sit at $157C8, its rts)",own RE (plan 07),disasm; plan 07
+015800,text_box_init,"Text box A5: plane A0, font A1, x, y, w, h D0-D3, line spacing D4; cursor home",own RE (plan 06),disasm
+01580A,text_box_home,Text box A5: cursor to the top left,own RE (plan 06),disasm
+015860,text_box_write,"Text box A5: string A0 with attr D3 - word wrap, space = font +2, $0A new line, stops below the box",own RE (plan 06),disasm; screenshots
+015926,text_box_fill,Text box A5: fills its rectangle with word D0,own RE (plan 06),disasm
+01593E,picture_load,"Loads the tiles of picture A5 (tiles.l, VRAM base.w, count.w) by DMA and reserves the slots",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+015962,picture_free,Frees the VRAM of picture A5,own RE (plan 05),disasm
+015B4C,z80_upload_data,Copies D0 bytes from A1 into Z80 RAM after the driver; resets 68k-side channel structs at $FFE78E,own RE (plan 01),disasm
+0168BE,z80_load_driver,Resets the Z80 and copies the sound driver blob ($15C90: length word + code) to Z80 RAM; clears $FFE6B0,own RE (plan 01),disasm; harness z80 RAM
+016922,sound_init,"z80_load_driver, $18706, then $15C14",own RE (plan 01),disasm

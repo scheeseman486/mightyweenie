@@ -1,0 +1,2 @@
+address,name,rule,comment
+0141A8,vdp_set_regs_inline,words_until_ffff,"Pops its return address and treats the words after the JSR as VDP register writes until $FFFF, then jumps past them"

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# The rink pass between segments (MwRinkUpdate, the puck rules and phase
+# handler MwRinkPhases) and the rink entries (MwRinkPhases.enter) against
+# the simulation recordings (needs `tools/bin/py -m mw_harness sim-record`
+# first), nothing masked. One Godot process per recording (they are large).
+#   tools/bin/pass-check [NAME ...] [--show N] [--from I] [--count N] [--only TEXT]
+#   tools/bin/pass-check NAME --detail PASS     # one pair in detail
+#   tools/bin/pass-check [NAME ...] --fixture   # compare/fixtures/rink_gaps.json
+#   tools/bin/pass-check [NAME ...] --phase-fixture   # compare/fixtures/rink_phases.json
+#   tools/bin/visit-check: whole visits (--visit)
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+names=(); opts=()
+while (( $# )); do
+  case "$1" in
+    --only|--show|--from|--count|--detail) opts+=("$1" "$2"); shift 2 ;;
+    --*) opts+=("$1"); shift ;;
+    *) names+=("$1"); shift ;;
+  esac
+done
+# the fixtures: one process over the names given (none: the default sets)
+for o in "${opts[@]}"; do
+  if [[ "$o" == --fixture || "$o" == --phase-fixture ]]; then
+    exec "$here/godot-headless" -s res://test/sim/pass_check.gd -- "${names[@]}" "${opts[@]}"
+  fi
+done
+if (( ${#names[@]} == 0 )); then
+  source "$here/_recordings.sh"
+  names=("${MW_REC_V2[@]}" "${MW_REC_V3[@]}" "${MW_REC_SOAK[@]}")
+fi
+status=0
+for n in "${names[@]}"; do
+  "$here/godot-headless" -s res://test/sim/pass_check.gd -- "$n" "${opts[@]}" 2>&1 \
+    | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)' || true
+  (( ${PIPESTATUS[0]} == 0 )) || status=1
+done
+exit $status

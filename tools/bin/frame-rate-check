@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Plan 14 desktop check (needs a display): the frame rate changes nothing in
+# the game. Runs side by side at several frame rate caps (one window each)
+# and compares what they did; prints each run's frame rate and the result.
+#   tools/bin/frame-rate-check demo [RECORDING=demo_s3] [CAP ...]
+#     a recorded demo played through the proof scene in 3D, first pass to
+#     last: the tick each pass comes up at must be the same in every run.
+#   tools/bin/frame-rate-check game [TICKS=18000] [CAP ...]
+#     the game from boot, played by a fixed input pattern (co-op match, both
+#     pads skating, passing, shooting, checking; START through the screens
+#     between plays): every pass's record (screen, pass, tick, random
+#     streams, a hash of the simulation state) must be the same in every run.
+# Caps: display (vsync), uncapped, 30, 60, jitter (uncapped with random
+# 0-50 ms stalls). Records: out/plan3d/frame_rate/<mode>_<cap>.jsonl.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+mw_require "$MW_TOOLS/godot/godot" godot
+mode="${1:-demo}"; shift || true
+case "$mode" in
+  demo) what="${1:-demo_s3}"; runner=res://test/rink3d/demo_rate_run.gd ;;
+  game) what="${1:-18000}"; runner=res://test/rink3d/frame_rate_run.gd ;;
+  *) echo "frame-rate-check: demo or game" >&2; exit 2 ;;
+esac
+shift || true
+caps=("$@"); [[ ${#caps[@]} -gt 0 ]] || caps=(display uncapped 30 60 jitter)
+out="$MW_ROOT/out/plan3d/frame_rate"
+mkdir -p "$out"
+pids=()
+for c in "${caps[@]}"; do
+  rm -f "$out/${mode}_$c.jsonl"
+  "$MW_TOOLS/godot/godot" --path "$MW_ROOT/game" --resolution 640x448 \
+    -s "$runner" -- "$out/${mode}_$c.jsonl" "$c" "$what" > "$out/${mode}_$c.log" 2>&1 &
+  pids+=($!)
+done
+for p in "${pids[@]}"; do wait "$p"; done
+python3 - "$out" "$mode" "${caps[@]}" <<'PY'
+import json, sys
+out, mode, caps = sys.argv[1], sys.argv[2], sys.argv[3:]
+runs = {}
+for c in caps:
+    lines = [json.loads(l) for l in open(f"{out}/{mode}_{c}.jsonl") if l.strip()]
+    end = lines[-1] if lines and lines[-1].get("event") == "end" else None
+    runs[c] = ([l for l in lines if "event" not in l], end)
+ref_cap = caps[0]
+ref = runs[ref_cap][0]
+ok = True
+for c in caps:
+    passes, end = runs[c]
+    if end is None:
+        print(f"{c:9s} did not finish"); ok = False; continue
+    extra = ""
+    if mode == "game":
+        rink = sum(1 for p in passes if "state" in p)
+        extra = f" ({rink} in the rink), screens {sorted({p['screen'] for p in passes})}"
+    print(f"{c:9s} {end['ticks']} ticks in {end['seconds']:.0f} s, {end['frames']} frames = {end['fps']:.0f} fps "
+          f"(longest frame {end['longest_frame_ms']} ms); {len(passes)} passes{extra}")
+    n = min(len(passes), len(ref))
+    diff = next((i for i in range(n) if passes[i] != ref[i]), None)
+    if diff is None and len(passes) != len(ref):
+        diff = n
+    if diff is not None:
+        ok = False
+        print(f"  differs from {ref_cap} at pass line {diff}: {passes[diff] if diff < len(passes) else None} vs {ref[diff] if diff < len(ref) else None}")
+print("same passes at every frame rate" if ok else "DIFFERENT")
+sys.exit(0 if ok else 1)
+PY

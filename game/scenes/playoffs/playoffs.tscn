@@ -1,0 +1,50 @@
+[gd_scene format=3 uid="uid://dwbss8asnuk34"]
+
+[ext_resource type="Script" path="res://scenes/playoffs/playoffs.gd" id="1_po"]
+[ext_resource type="Script" path="res://src/rom/rom_backdrop.gd" id="2_bd"]
+[ext_resource type="Script" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="4_pl"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rom/rom_starfield.gd" id="6_sf"]
+[ext_resource type="Script" path="res://src/rom/rom_pieces.gd" id="7_pc"]
+[ext_resource type="Script" path="res://src/rom/rom_sprite.gd" id="8_spr"]
+
+[sub_resource type="Resource" id="pal_po"]
+script = ExtResource("3_pal")
+screen = 11
+steps = PackedStringArray("screen_palette", "black 0", "rom 399b0 2")
+
+[sub_resource type="Resource" id="tiles_po"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_036ca4")
+fonts = PackedStringArray("font_022ee0", "font_0447f4", "font_01f958")
+
+[node name="Playoffs" type="Node2D"]
+script = ExtResource("1_po")
+screen_id = 11
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+script = ExtResource("2_bd")
+palette = SubResource("pal_po")
+
+[node name="Starfield" type="Node2D" parent="."]
+script = ExtResource("6_sf")
+palette = SubResource("pal_po")
+
+[node name="Window" type="TileMapLayer" parent="."]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_po")
+palette = SubResource("pal_po")
+
+[node name="Cup" type="AnimatedSprite2D" parent="."]
+visible = false
+script = ExtResource("8_spr")
+palette = SubResource("pal_po")
+tick_driven = true
+
+[node name="ChampionText" type="Sprite2D" parent="."]
+script = ExtResource("7_pc")
+palette = SubResource("pal_po")

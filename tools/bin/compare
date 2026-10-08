@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Compare our build with the original for one input script (docs/compare.md):
+# record the original (cached), run our side, diff. Exit code 0 = no difference.
+#   tools/bin/compare compare/scripts/coop_start.mwi [--probes time,input] [--from-screen 1]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+script="$(realpath "$1")"; shift
+probes="time,input"; from=1
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --probes) probes="$2"; shift 2 ;;
+    --from-screen) from="$2"; shift 2 ;;
+    *) echo "compare: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+name="$(basename "$script" .mwi)"
+out="$MW_ROOT/out/compare"
+mkdir -p "$out"
+cd "$MW_ROOT/harness"
+"$MW_TOOLS/bin/py" -m mw_harness record "$script" -o "$out/$name.original.jsonl" >/dev/null || exit 2
+"$MW_TOOLS/bin/compare-godot" "$script" --replay "$out/$name.original.jsonl" -o "$out/$name.godot.jsonl" --from-screen "$from" >/dev/null || exit 2
+exec "$MW_TOOLS/bin/py" -m mw_harness diff "$out/$name.original.jsonl" "$out/$name.godot.jsonl" --probes "$probes"

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Rebuild the 3D rink's Blender source and glTF from the ROM (plan 14):
+# Blender in the background on an empty file runs tools/blender/rink_build.py
+# then tools/blender/rink_export.py -> assets/blender/rink.blend and
+# game/assets/rink3d/rink.glb. Preview textures (out/plan3d/preview, made by
+# tools/blender/rink_previews.py) are referenced if present, never packed.
+#   tools/bin/rink3d-blender [--rom PATH]
+# BLENDER overrides the Blender command (default: blender, else the Flatpak).
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+if [[ -n "${BLENDER:-}" ]]; then
+  read -r -a blender <<< "$BLENDER"
+elif command -v blender >/dev/null; then
+  blender=(blender)
+elif command -v flatpak >/dev/null && flatpak info org.blender.Blender >/dev/null 2>&1; then
+  blender=(flatpak run org.blender.Blender)
+else
+  echo "no Blender found (set BLENDER)" >&2; exit 1
+fi
+exec "${blender[@]}" --background --factory-startup \
+  --python-expr "import bpy; bpy.ops.wm.read_homefile(use_empty=True)" \
+  --python "$MW_ROOT/tools/blender/rink_build.py" \
+  --python "$MW_ROOT/tools/blender/rink_export.py" \
+  -- --rom "$MW_ROOT/game/rom/mlh.gen" --previews "$MW_ROOT/out/plan3d/preview" "$@"

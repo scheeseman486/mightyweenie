@@ -1,0 +1,163 @@
+[gd_scene format=3 uid="uid://bfhgymj3h0fee"]
+
+[ext_resource type="Script" path="res://scenes/title/title.gd" id="1_title"]
+[ext_resource type="Script" path="res://src/rom/rom_backdrop.gd" id="2_bd"]
+[ext_resource type="Script" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_map_layer.gd" id="4_tml"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rom/rom_sprite.gd" id="6_spr"]
+[ext_resource type="Script" path="res://src/rom/rom_starfield.gd" id="7_sf"]
+
+[sub_resource type="Resource" id="pal_logo"]
+script = ExtResource("3_pal")
+steps = PackedStringArray("rom 3BF7A 2")
+
+[sub_resource type="Resource" id="pal_title"]
+script = ExtResource("3_pal")
+steps = PackedStringArray("rom 36C64 0", "rom 36C84 1")
+
+[sub_resource type="Resource" id="pal_credits"]
+script = ExtResource("3_pal")
+steps = PackedStringArray("screen_palette", "rom 1BD6A 0", "word EF2 9", "word F04 10", "rom 1BB22 1")
+
+[sub_resource type="Resource" id="tiles_logo"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_039b9e")
+
+[sub_resource type="Resource" id="tiles_title"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_030148")
+
+[node name="TitleScreen" type="Node2D"]
+script = ExtResource("1_title")
+screen_id = 0
+fades_in_itself = true
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+script = ExtResource("2_bd")
+palette = SubResource("pal_title")
+
+[node name="Logo" type="TileMapLayer" parent="."]
+visible = false
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_logo")
+palette = SubResource("pal_logo")
+map = "picture_039b9e"
+at = Vector2i(0, 8)
+
+[node name="Title" type="Node2D" parent="."]
+
+[node name="Sparkles" type="Node2D" parent="Title"]
+
+[node name="Sparkle0" type="AnimatedSprite2D" parent="Title/Sparkles"]
+visible = false
+position = Vector2(0, 0)
+script = ExtResource("6_spr")
+anim = "anim_04b748"
+palette = SubResource("pal_title")
+attr_xor = 32
+tick_driven = true
+
+[node name="Sparkle1" type="AnimatedSprite2D" parent="Title/Sparkles"]
+visible = false
+position = Vector2(0, 0)
+script = ExtResource("6_spr")
+anim = "anim_04b748"
+palette = SubResource("pal_title")
+attr_xor = 32
+tick_driven = true
+
+[node name="Sparkle2" type="AnimatedSprite2D" parent="Title/Sparkles"]
+visible = false
+position = Vector2(0, 0)
+script = ExtResource("6_spr")
+anim = "anim_04b748"
+palette = SubResource("pal_title")
+attr_xor = 32
+tick_driven = true
+
+[node name="Top" type="TileMapLayer" parent="Title"]
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_title")
+palette = SubResource("pal_title")
+map = "picture_030148"
+region = Rect2i(0, 0, 40, 11)
+
+[node name="Bottom" type="TileMapLayer" parent="Title"]
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_title")
+palette = SubResource("pal_title")
+map = "picture_030148"
+region = Rect2i(0, 11, 40, 10)
+at = Vector2i(0, 18)
+
+[node name="Band0" type="TileMapLayer" parent="Title"]
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_title")
+palette = SubResource("pal_title")
+map = "picture_030148"
+region = Rect2i(0, 21, 40, 7)
+at = Vector2i(0, 11)
+
+[node name="Band1" type="TileMapLayer" parent="Title"]
+visible = false
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_title")
+palette = SubResource("pal_title")
+map = "picture_030148"
+region = Rect2i(0, 28, 40, 7)
+at = Vector2i(0, 11)
+
+[node name="Band2" type="TileMapLayer" parent="Title"]
+visible = false
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_title")
+palette = SubResource("pal_title")
+map = "picture_030148"
+region = Rect2i(0, 35, 40, 7)
+at = Vector2i(0, 11)
+
+[node name="Band3" type="TileMapLayer" parent="Title"]
+visible = false
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_title")
+palette = SubResource("pal_title")
+map = "picture_030148"
+region = Rect2i(0, 42, 40, 7)
+at = Vector2i(0, 11)
+
+[node name="EyeLeft" type="AnimatedSprite2D" parent="Title"]
+position = Vector2(137, 108)
+script = ExtResource("6_spr")
+anim = "anim_04b70e"
+palette = SubResource("pal_title")
+attr_xor = 128
+tick_driven = true
+
+[node name="EyeRight" type="AnimatedSprite2D" parent="Title"]
+position = Vector2(182, 108)
+script = ExtResource("6_spr")
+anim = "anim_04b70e"
+palette = SubResource("pal_title")
+attr_xor = 128
+tick_driven = true
+
+[node name="Drip" type="AnimatedSprite2D" parent="Title"]
+position = Vector2(160, 160)
+script = ExtResource("6_spr")
+anim = "anim_04b694"
+palette = SubResource("pal_title")
+attr_xor = 160
+tick_driven = true
+
+[node name="Credits" type="Node2D" parent="."]
+visible = false
+
+[node name="Starfield" type="Node2D" parent="Credits"]
+script = ExtResource("7_sf")
+palette = SubResource("pal_credits")
+
+[node name="Page" type="Node2D" parent="Credits"]

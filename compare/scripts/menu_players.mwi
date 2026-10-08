@@ -1,0 +1,13 @@
+# Main menu: P2 edits team B in pad mode 0; P1 takes the menu back; in pad
+# mode 2 P2 drives the rows with P1 and P3 edits team B.
+@screen 1 +60 P2 RIGHT
+@screen 1 +90 P2 RIGHT
+@screen 1 +120 P2 START         # P2's Start does nothing
+@screen 1 +150 P1 DOWN
+@screen 1 +180 P1 RIGHT         # pads: mode 1
+@screen 1 +210 P1 RIGHT         # mode 2: P1 + P2
+@screen 1 +240 P2 DOWN          # P2 now moves the rows
+@screen 1 +270 P3 LEFT          # P3 edits team B
+@screen 1 +300 P1 UP
+@screen 1 +330 P1 LEFT
+@screen 1 +400 END

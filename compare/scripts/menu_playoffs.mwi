@@ -1,0 +1,23 @@
+# Main menu: playoff modes keep both teams in one conference and the stadium
+# on team A's; back to a regular game.
+@screen 1 +60 P1 DOWN
+@screen 1 +90 P1 DOWN           # play mode
+@screen 1 +120 P1 RIGHT         # playoffs
+@screen 1 +150 P1 UP
+@screen 1 +180 P1 UP            # team A
+@screen 1 +210 P1 LEFT
+@screen 1 +240 P1 LEFT
+@screen 1 +270 P1 LEFT
+@screen 1 +300 P1 UP            # team B
+@screen 1 +330 P1 RIGHT
+@screen 1 +360 P1 RIGHT
+@screen 1 +390 P1 LEFT
+@screen 1 +420 P1 DOWN
+@screen 1 +450 P1 DOWN          # play mode
+@screen 1 +480 P1 RIGHT         # playoffs 2 of 3
+@screen 1 +510 P1 RIGHT         # continue playoffs
+@screen 1 +540 P1 RIGHT         # team description
+@screen 1 +570 P1 RIGHT         # regular
+@screen 1 +600 P1 DOWN
+@screen 1 +630 P1 DOWN          # stadium (follows team A again)
+@screen 1 +700 END

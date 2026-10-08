@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Launch THIS project's Godot editor (desktop / GUI).
+#
+# Isolation from other Godot editors on the machine:
+#  * tools/godot runs in self-contained mode (._sc_), so editor settings,
+#    caches and export templates live in tools/godot/editor_data and never
+#    touch ~/.config/godot used by other editors.
+#  * LSP/DAP get private ports so they don't fight the first editor's defaults.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+mw_require "$MW_TOOLS/godot/godot" godot
+exec "$MW_TOOLS/godot/godot" --editor --path "$MW_ROOT/game" \
+  --lsp-port "$MW_LSP_PORT" --dap-port "$MW_DAP_PORT" "$@"

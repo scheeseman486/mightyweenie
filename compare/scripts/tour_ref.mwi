@@ -1,0 +1,8 @@
+# Default game; the tracer forces the "Waste the Ref" phase (12) once play has
+# resumed, so the cutscene (19) and the new referee's message (17) load.
+@screen 1 +200 P1 START
+#poke @screen 5 +200 FFC60C.w=0
+#poke @screen 5 +200 FFC60A.w=12
+@screen 17 +300 P1 START
+@screen 17 +400 P1 START
+@screen 5 #2 +300 END

@@ -1,0 +1,10 @@
+{
+  "name": "setup",
+  "description": "The game setup bytes $FFB0DE-$FFB0E7 (docs/re/screens.md, Main menu) and the main menu's stadium mode $FFC7F6.",
+  "fields": [
+    {"name": "setup_a", "original": "[0xffb0de].l", "godot": "setup_a", "compare": "exact"},
+    {"name": "setup_b", "original": "[0xffb0e2].l", "godot": "setup_b", "compare": "exact"},
+    {"name": "setup_c", "original": "[0xffb0e6].w", "godot": "setup_c", "compare": "exact"},
+    {"name": "stadium_mode", "original": "[0xffc7f6].b", "godot": "stadium_mode", "compare": "exact", "screens": [1]}
+  ]
+}

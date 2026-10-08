@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Visual check of the screens between plays (plan 11; docs/compare.md, Screen visual check):
+# for each recorded visit (tools/bin/py -m mw_harness.visual_rec SCENARIO -> out/visual/rec/),
+# our scene replays it (game/test/screens/visual_check.gd, rendered under Xvfb with the GL
+# compatibility renderer) and its frames are compared with the original's at Genesis colour
+# levels (mw_harness.visual_cmp).
+#   tools/bin/visual-check SCENARIO[/VISIT] ... [--worst N]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+cd "$MW_ROOT" || exit 1
+V=out/visual
+worst=3
+args=()
+while (( $# )); do
+  case $1 in
+    --worst) worst=$2; shift 2 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+bin="$MW_CACHE/godot-headless-$GODOT_VERSION/godot"
+[[ -x $bin ]] || "$(dirname "${BASH_SOURCE[0]}")/godot-headless" --version >/dev/null
+status=0
+for a in "${args[@]}"; do
+  if [[ -f $V/rec/$a/meta.json ]]; then visits=("$a"); else
+    mapfile -t visits < <(python3 -c "import json,sys; [print('$a/'+v.split('/',1)[1]) for v in json.load(open('$V/rec/$a/index.json'))]"); fi
+  for v in "${visits[@]}"; do
+    mkdir -p "$V/ours/$v"
+    xvfb-run -a -s "-screen 0 1280x1024x24" "$bin" --path game \
+        --rendering-driver opengl3 --rendering-method gl_compatibility --audio-driver Dummy \
+        -s res://test/screens/visual_check.gd -- "$V/rec/$v" "$V/ours/$v" 2>&1 \
+      | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)\|^OpenGL API\|^$\|V-Sync\|set_use_vsync' \
+      || true
+    "$(dirname "${BASH_SOURCE[0]}")/py" -m mw_harness.visual_cmp "$V/rec/$v" "$V/ours/$v" --worst "$worst" || status=1
+  done
+done
+exit $status

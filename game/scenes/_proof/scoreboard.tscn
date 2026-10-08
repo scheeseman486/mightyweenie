@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://bqhg7f0ov7gut"]
+
+[ext_resource type="Script" uid="uid://byvu8s1e345co" path="res://src/rom/rom_backdrop.gd" id="1_23br1"]
+[ext_resource type="Script" uid="uid://ciqvum4xeqxg7" path="res://src/rom/rom_palette.gd" id="2_i1jod"]
+[ext_resource type="Script" uid="uid://wpncclp0d58j" path="res://src/rom/rom_tile_map_layer.gd" id="3_qbqfu"]
+[ext_resource type="Script" uid="uid://dnn3ge8lqsdfn" path="res://src/rom/rom_tile_set.gd" id="4_ib0mr"]
+[ext_resource type="Script" uid="uid://c84wpgxwletvs" path="res://src/rom/rom_sprite.gd" id="5_fqrhi"]
+
+[sub_resource type="Resource" id="Resource_3vusb"]
+script = ExtResource("2_i1jod")
+screen = 14
+team_a = 22
+stadium = 22
+steps = PackedStringArray("screen_palette")
+
+[sub_resource type="Resource" id="Resource_mr7ys"]
+script = ExtResource("4_ib0mr")
+banks = PackedStringArray("picture_03f460", "picture_04a066")
+
+[sub_resource type="Resource" id="Resource_v7glr"]
+script = ExtResource("4_ib0mr")
+banks = PackedStringArray("picture_03f460", "picture_04a066")
+
+[node name="ScoreboardProof" type="Node2D" unique_id=1231568049]
+
+[node name="Backdrop" type="ColorRect" parent="." unique_id=2024099446]
+offset_right = 320.0
+offset_bottom = 224.0
+script = ExtResource("1_23br1")
+palette = SubResource("Resource_3vusb")
+
+[node name="Scoreboard" type="TileMapLayer" parent="." unique_id=1830154436]
+script = ExtResource("3_qbqfu")
+tiles = SubResource("Resource_mr7ys")
+palette = SubResource("Resource_3vusb")
+map = "picture_03f460"
+region = Rect2i(0, 0, 40, 17)
+at = Vector2i(0, 1)
+
+[node name="MenuPanel" type="TileMapLayer" parent="." unique_id=759916855]
+script = ExtResource("3_qbqfu")
+tiles = SubResource("Resource_v7glr")
+palette = SubResource("Resource_3vusb")
+map = "picture_04a066"
+at = Vector2i(0, 18)
+
+[node name="Anim04CD74" type="AnimatedSprite2D" parent="." unique_id=1110151691]
+position = Vector2(160, 150)
+script = ExtResource("5_fqrhi")
+anim = "anim_04cd74"
+frame_addresses = PackedInt32Array()
+palette = SubResource("Resource_3vusb")

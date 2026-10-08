@@ -1,0 +1,10 @@
+{
+  "name": "team_description",
+  "description": "The team description's scroll and selection (docs/re/menus.md, Team description): vscroll $FFB0A0, side $FFC322, roster cursor $FFC324 and line $FFC326.",
+  "fields": [
+    {"name": "vscroll", "original": "[0xffb0a0].w", "godot": "vscroll", "compare": "exact", "screens": [2]},
+    {"name": "side", "original": "[0xffc322].w", "godot": "side", "compare": "exact", "screens": [2]},
+    {"name": "cursor", "original": "[0xffc324].w", "godot": "cursor", "compare": "exact", "screens": [2]},
+    {"name": "line", "original": "[0xffc326].w", "godot": "line", "compare": "exact", "screens": [2]}
+  ]
+}

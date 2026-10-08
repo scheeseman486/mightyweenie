@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Ghidra GUI with the pinned JDK. Open re/ghidra/project/MLH.gpr.
+# NOTE: a Ghidra project has a single writer. Close it here before running
+# headless scripts against it (tools/bin/ghidra-headless), and vice versa.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+mw_require "$MW_TOOLS/ghidra/ghidraRun" ghidra; mw_require "$MW_TOOLS/jdk/bin/java" jdk
+export JAVA_HOME="$MW_TOOLS/jdk" PATH="$MW_TOOLS/jdk/bin:$PATH"
+exec "$MW_TOOLS/ghidra/ghidraRun" "$@"

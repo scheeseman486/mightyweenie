@@ -1,0 +1,197 @@
+address,size,name,comment,source,verified
+FFB000,2,credits_skip,Credits: non-zero once A/B/C/Start was newly pressed on any pad (credits_poll_skip),own RE (plan 05),disasm
+FFB002,12,title_anim_logo,"Title animation object ($4B694): +0 anim, +4 speed, +6 flags, +7 variant, +8 position 8.8, +A frame",own RE (plan 05),disasm
+FFB00E,24,title_anim_eyes,Two title animation objects ($4B70E),own RE (plan 05),disasm
+FFB026,36,title_sparkles,Three sparkle animation objects ($4B748),own RE (plan 05),disasm
+FFB04A,12,title_sparkle_positions,"x, y words of the 3 sparkles",own RE (plan 05),disasm
+FFB056,8,button_hold_timers,"Per pad (2 bytes): watched button bit, ticks left before a hold becomes a hold action",own RE (plan 01),disasm $1A1A
+FFB05E,2,screen_id,"Current screen ID (word), written by run_screens before calling the handler; 0 title, 1 main menu, 3 matchup intro, 4 game...",RetroAchievements (as ra_screen_id); own RE (plan 01),disasm $209A; harness
+FFB060,6,clock_text,"Clock widget text buffer ($27D8, $2748)",own RE (plan 07),disasm
+FFB066,17,game_clock,"Game clock timer: +4 seconds left (word), +$10 period (byte), +$11 flags",own RE (plan 07),disasm; GPGX pixel check
+FFB06A,2,game_clock_seconds,Game clock: seconds left in the period (timer object $FFB066 +4); also GameHacking.org AR code,RetroAchievements + https://gamehacking.org/game/15528,pass-check (plan 09)
+FFB076,1,period,Current period (1-3; >3 = overtime),own RE (plan 01),harness tour; disasm $FDF6
+FFB077,1,game_flags_b077,"RetroAchievements calls this the period, but the code uses it as flags (bit 2 set by the pause menu, bit 1 tested on resume). The period is $FFB076",RetroAchievements (as ra_period); own RE (plan 01),"disasm $4970, $FCFC"
+FFB078,6,powerplay_clock,Power-play timer: +4 seconds,own RE (plan 07),disasm
+FFB07C,2,power_play_seconds,the power-play clock's seconds (powerplay_clock +4; `$2824` from `$A888`),own RE (plan 10),visit-check (soak recordings)
+FFB082,10,saved_setup,Game setup saved during the attract demo,own RE (plan 05),disasm; GPGX watch
+FFB08E,8,pause_menu,"pause menu: team .w, attr .w, pad x 2 .w, timeout offered .w ($48FC)",own RE (plan 09),pass-check / visit-check (recordings)
+FFB092,2,pause_pad,Offset (pad index * 2) of the player who paused,own RE (plan 01),disasm $492A
+FFB094,2,timeout_offered,Non-zero while the pause overlay offers B - TIMEOUT,own RE (plan 01),disasm $49EA; harness
+FFB096,4,rng_state,Main RNG stream state,own RE (plan 01),bit-exact model
+FFB09A,24,plane_a_object,"Plane A object: +0 VRAM, +4 hscroll, +6 vscroll ($FFB0A0), +8 width, +$A height (cells)",own RE (plan 06),disasm
+FFB0B2,24,plane_b,"Plane B object: +0 VRAM, +2 index, +4/+6 camera shown (x, y after shake and clamp), +8/+$A size, +$C map, +$10 loaded rows, +$14 draw routine",own RE (plan 07),disasm; BlastEm rink recordings
+FFB0D8,2,starfield_hscroll,Starfield plane B horizontal scroll (pixels),own RE (plan 05),disasm
+FFB0DC,2,starfield_vscroll,Starfield plane B vertical scroll (pixels),own RE (plan 05),disasm
+FFB0DE,1,setup_team_a,"Main menu: team A (left, P1 side). RetroAchievements labels it the P2 side; playoffs set it to 0 and P1 played the Hearts",RetroAchievements (as ra_setup_team_p2); own RE (plan 01),harness menu byte test
+FFB0DF,1,setup_team_b,Main menu: team B (right side),RetroAchievements (as ra_setup_team_p1); own RE (plan 01),harness menu byte test
+FFB0E0,1,pad_mode,"Controllers: 0 PAD 1 vs SEGA, 1 PAD 1 vs PAD 2, 2 PAD 1-2 vs SEGA, 3 PAD 1-2 vs PAD 3, 4 PAD 1-2 vs PAD 3-4 (3/4 need the EA 4-Way Play), 5 no humans (demo). Pads per team from $1BFFE",RetroAchievements (as ra_setup_game_mode); own RE (plan 01),harness menu byte test; disasm $3702
+FFB0E1,1,play_mode,"0 regular game, 1 playoffs, 2 playoffs 2 of 3, 3 continue playoffs, 4 team description",RetroAchievements (as ra_setup_versus); own RE (plan 01),harness menu byte test; disasm $FB2E
+FFB0E2,1,period_length_row,"the main menu's period length row (0 3:00, 1 5:00, 2 8:00; penalty seconds `$A482`)",own RE (plan 10),visit-check (soak recordings)
+FFB0E3,1,setup_period_minutes,Period length in minutes (3/5/8),own RE (plan 01),harness menu byte test
+FFB0E4,1,setup_stadium,Stadium (follows team A by default),RetroAchievements (as ra_setup_penalties); own RE (plan 01),harness menu byte test
+FFB0E5,1,setup_penalties,"0 off, 1 on",RetroAchievements (as ra_setup_stadium); own RE (plan 01),harness menu byte test
+FFB0E6,1,setup_reserves,"0 disabled, 1 enabled",RetroAchievements (as ra_setup_death_index); own RE (plan 01),harness menu byte test
+FFB0E7,1,setup_death_index,Death index option (0 = (1) Rough),RetroAchievements (as ra_setup_reserves); own RE (plan 01),harness menu byte test
+FFB0E8,0,rink_state,"Rink state: +0 stadium record ptr, +$18/+$3E nets, +$FC 4 in-ice hazard slots (10 bytes), +$124 8 object slots (42 bytes), +$274 object count, +$276 crowd",own RE (plan 01),disasm $5572; harness test_stadiums.py
+FFB0EC,2,camera_target,"Rink state +4: RAM address (low word) of the object the camera follows, 0 = hold",own RE (plan 07),disasm; BlastEm recordings
+FFB0EE,2,camera_speed,"Rink state +6: camera speed, 1/256 px per pass",own RE (plan 07),disasm; BlastEm recordings
+FFB0F0,8,camera_xy,"Rink state +8/+$C: camera x, y (24.8 map position of the screen's top-left)",own RE (plan 07),disasm; BlastEm recordings
+FFB0F8,2,camera_lead,"Rink state +$10: look-ahead y (0, +56, -56; kept when the puck is loose)",own RE (plan 07),disasm; BlastEm recordings
+FFB0FA,4,camera_shake,"Rink state +$12 shake ticks left, +$14 x amplitude (sign flips every pass)",own RE (plan 07),disasm; BlastEm recordings
+FFB100,38,net_top,"Rink state +$18: top net (motion, animation +$18, style +$24, +$25 bit 0 bottom)",own RE (plan 07),disasm; BlastEm rink recordings
+FFB126,38,net_bottom,Rink state +$3E: bottom net,own RE (plan 07),disasm
+FFB14C,40,player_motion_params,rink state +$64: the players' motion parameters,own RE (plan 08),sim-check (55 000 recorded passes)
+FFB174,40,puck_motion_params,rink state +$8C: the puck's motion parameters,own RE (plan 08),sim-check (55 000 recorded passes)
+FFB19C,36,lamp_bottom,"Rink state +$B4: bottom goal lamp (0, 386), anim $3EA6E, drawn 12 px up",own RE (plan 07),disasm; BlastEm rink recordings
+FFB1C0,36,lamp_top,"Rink state +$D8: top goal lamp (0, -373), drawn 45 px up",own RE (plan 07),disasm
+FFB1E4,40,ice_hazards,"Rink state +$FC: 4 slots x.w, y.w, +4 .l, +8 kind (1 thin ice, 2 pit, 3 hole, 4 mine), +9 flags",own RE (plan 07),disasm; BlastEm rink recordings
+FFB20C,336,rink_objects,"Rink state +$124: 8 slots of $2A: motion, animation +$18, +$24/+$26 timers, +$28 kind, +$29 flags (bit 3 mirror)",own RE (plan 07),disasm; BlastEm rink recordings
+FFB35E,2,crowd_level,Crowd excitement 50-1250: noise volume and chance of thrown items,own RE (plan 01),"disasm $B01E, $5B12"
+FFB360,1,crowd_byte,Copy of stadium +7 (0/1); no reader found,own RE (plan 01),harness test_stadiums.py
+FFB3C2,0,puck,"Puck object: motion (x +0, y +8, z +$10, 24.8; velocities +4/+$C/+$14), animation +$18 ($3C8D4, faceoff drop $23086), +$24 carrier, +$3D bit 0 carried, bit 1 by team B, bit 5 hidden",own RE (plan 01),disasm $F9F8; harness pokes
+FFB402,0,team_a,Team A struct (left/home in the stats screen); stats block at +$482 ($FFB884),own RE (plan 01),disasm $F998
+FFB46E,708,team_a_players,"Team A on-ice players: 6 x $76 (motion, anim +$18, record +$32, +$68 roster slot, +$69 position, +$6D weapon, +$70 state, +$73 angle, +$74 flags)",own RE (plan 07),disasm; BlastEm rink recordings
+FFB7D0,2,ra_score_p2_alt,Opponent score (see also FFBD4E),RetroAchievements,
+FFB884,2,ra_p1_shots,Team stats block (P1 side) starts here?,RetroAchievements,
+FFB886,2,ra_p1_2pt_goals,,RetroAchievements,
+FFB88A,2,ra_p1_powerplays,,RetroAchievements,
+FFB88C,2,ra_p1_penalties,,RetroAchievements,
+FFB88E,2,ra_p1_penalty_time,,RetroAchievements,
+FFB890,2,ra_p1_faceoffs_won,,RetroAchievements,
+FFB892,2,ra_p1_hard_checks,,RetroAchievements,
+FFB894,2,ra_p1_weenie_checks,,RetroAchievements,
+FFB898,2,ra_p1_passes_completed,,RetroAchievements,
+FFB89A,2,ra_p1_passes_attempted,,RetroAchievements,
+FFB89C,2,ra_p1_deaths,,RetroAchievements,
+FFB89E,2,ra_p1_fights_won,,RetroAchievements,
+FFB8A0,2,ra_p1_under_ice,,RetroAchievements,
+FFB8A4,2,ra_p1_goals,Goals/score?,RetroAchievements,
+FFB8A6,2,ra_p1_special_plays,,RetroAchievements,
+FFB8AC,0,team_b,Team B struct; stats block at +$482 ($FFBD2E),own RE (plan 01),disasm $F994
+FFB918,708,team_b_players,Team B on-ice players (as team A's),own RE (plan 07),disasm
+FFBC7A,2,ra_p1_goals_alt,Goals - player,RetroAchievements,
+FFBD2E,2,ra_p2_shots,Team stats block (P2 side); P1 block + $4AA,RetroAchievements,
+FFBD38,2,ra_p2_penalty_time,,RetroAchievements,
+FFBD3A,2,ra_p2_faceoffs_won,,RetroAchievements,
+FFBD3C,2,ra_p2_hard_checks,,RetroAchievements,
+FFBD3E,2,ra_p2_weenie_checks,,RetroAchievements,
+FFBD42,2,ra_p2_passes_completed,,RetroAchievements,
+FFBD44,2,ra_p2_passes_attempted,,RetroAchievements,
+FFBD46,2,ra_p2_deaths,,RetroAchievements,
+FFBD48,2,ra_p2_fights_won,,RetroAchievements,
+FFBD4A,2,ra_p2_under_ice,,RetroAchievements,
+FFBD4E,2,ra_p2_score,Opponent score - proper; also GameHacking.org AR 'team 2 score',RetroAchievements + GameHacking.org,
+FFBD56,20,faceoff_portrait,"Overlay: animation +0, x +$C, y +$E, depth +$10, attr +$12, flags +$13 (bit 7 shown, bit 0 small border); drawn with the camera in phase 1",own RE (plan 07),disasm; BlastEm rink recordings
+FFBD6A,21,playoffs,"Playoff run: +0 stream, +4/+8 dead masks or check, +$C seed, +$E places A*10+B, +$F conference, +$10 best of 3, +$11 flag, +$12 series, +$13 round, +$14 flags (docs/re/menus.md, Playoffs)",own RE (plan 06),disasm; playoff-vectors
+FFBD80,1,gameplay_pass_counter,+1 every gameplay loop pass (wraps),own RE (plan 01),disasm $F974; harness
+FFBD82,12,impale_anim,Animation object shared by impaled players ($3C042 / $3C058 by species),own RE (plan 07),disasm
+FFBD8E,2,bribed_ref_team,Team that played 'Bribe Referee' (cleared by 'Waste the Ref'),own RE (plan 01),"disasm $1F42, $1E94"
+FFBD90,2,special_play_actor,Skater that triggered the current special play sequence (phases 11/12),own RE (plan 01),"disasm $1E72, $1E90"
+FFBD92,36,referee_object,"Referee on the ice (Waste the Ref, phase 12; the camera follows it)",own RE (plan 07),disasm
+FFBDB8,2,coop_toggle,"co-op pick-ups alternate the pads (`$53F0`: mask $100 team B, $001 team A)",own RE (plan 08),sim-check (55 000 recorded passes)
+FFBDBA,2,projection_mode,Non-zero: the scoreboards' side view in $5AC2 (never in the rink),own RE (plan 07),disasm
+FFBE3C,40,drop_params,the faceoff drop's motion parameters (from $1C58C),own RE (plan 08),sim-check (55 000 recorded passes)
+FFBE64,4,drop_long,cleared by the faceoff drop set-up ($5E14),own RE (plan 08),sim-check (55 000 recorded passes)
+FFBE80,1024,info_plates,Info plate tiles: 4 x 8 tiles (VRAM tile $5F4 + 8 * slot via the sprite cache); RetroAchievements reads the first byte as a demo flag,own RE (plan 07),disasm; BlastEm rink recordings
+FFC280,24,shark_oscillators,"two oscillators the sharks chase (12 bytes each; `$1522C`, live tick)",own RE (plan 09),pass-check / visit-check (recordings)
+FFC2B0,4,goal_tick,goal sequence stamp,own RE (plan 09),pass-check / visit-check (recordings)
+FFC2B4,2,goal_points,"the last goal's points (1, 2) for the goal message ($9280)",own RE (plan 08),sim-check (55 000 recorded passes)
+FFC2B6,2,goal_step,"goal sequence step 0-5, -1 done",own RE (plan 09),pass-check / visit-check (recordings)
+FFC2BA,4,goal_net,"Demon Net animation during a goal: net .w, last frame .w",own RE (plan 09),pass-check / visit-check (recordings)
+FFC2BE,24,replay_ring,"the instant replay ring object (32 KB at $FF0000): frames .w +$10, start +$12, open +$14, playback +$15, pan +$16",own RE (plan 09),pass-check / visit-check (recordings)
+FFC2D8,4,penalty_icon_tick,"penalty icon stamp ($A5EC, every phase-0 pass)",own RE (plan 09),pass-check / visit-check (recordings)
+FFC2DC,20,ref_icon_penalty,"Overlay: ref icon (screen 240,16) shown 240 ticks after a whistle",own RE (plan 07),disasm
+FFC2F0,2,penalty_step,penalty sequence step ($A6C2),own RE (plan 09),pass-check / visit-check (recordings)
+FFC2F2,2,box_clock,the clock value $A5EC saw last (once per clock second),own RE (plan 09),pass-check / visit-check (recordings)
+FFC2F4,6,jail_break_banner,"Jail Break banner: stamp .l, active .w",own RE (plan 09),pass-check / visit-check (recordings)
+FFC2FA,4,faceoff_tick,faceoff sequence stamp,own RE (plan 09),pass-check / visit-check (recordings)
+FFC2FE,2,faceoff_text,faceoff panel text / FACE OFF! settle counter,own RE (plan 09),pass-check / visit-check (recordings)
+FFC300,4,drop_plane,"plane B x, y saved when the FACE OFF! drop begins",own RE (plan 09),pass-check / visit-check (recordings)
+FFC304,24,faceoff_drop_object,the FACE OFF! drop's motion object,own RE (plan 09),pass-check / visit-check (recordings)
+FFC31C,1,faceoff_step,"faceoff state machine step 0-8, $FF done ($AC1C)",own RE (plan 09),pass-check / visit-check (recordings)
+FFC31D,1,faceoff_spot,"the next faceoff's spot ($1CA9A: 0 centre, 1-8 the circles)",own RE (plan 08),sim-check (55 000 recorded passes)
+FFC31E,2,ai_off,AI and fights off when non-zero (never set in the recordings),own RE (plan 08),sim-check (55 000 recorded passes)
+FFC320,2,td_bar_moved,Team description: the roster bar waits to be drawn at the cursor,own RE (plan 06),disasm
+FFC322,2,td_side,"Team description: 0 team A (home), 1 team B (visiting)",own RE (plan 06),disasm; td-cases
+FFC324,2,td_cursor,"Team description: roster position 0-5 (C, LW, RW, LD, RD, G)",own RE (plan 06),disasm; td-cases
+FFC326,2,td_line,Team description: roster line 0-3,own RE (plan 06),disasm; td-cases
+FFC328,4,two_digits_buffer,Two digits and a 0 ($B7E8 / $B812),own RE (plan 06),disasm
+FFC32C,2,td_team,Team description: the shown team,own RE (plan 06),disasm
+FFC32E,8,speech_box,"the coach speech box (x, y, w, h words)",own RE (plan 09),pass-check / visit-check (recordings)
+FFC336,22,td_text_box,Team description: text box object ($15800),own RE (plan 06),disasm
+FFC350,30,td_portrait,Team description: portrait object (coach or player),own RE (plan 06),disasm
+FFC36E,4,td_mark,Team description: tick of the last move step / portrait advance (shared),own RE (plan 06),disasm
+FFC372,24,td_motion,Team description: motion object of the plane (z = vscroll),own RE (plan 06),disasm; td-cases
+FFC38A,40,td_motion_params,"Team description: motion parameters ($1CE26: gravity -32, restitution $60)",own RE (plan 06),disasm
+FFC3B2,2,td_target,Team description: vscroll the plane moves to (0 or $A0),own RE (plan 06),disasm; td-cases
+FFC3B4,2,frame_fill,Menu frames: fill the inside with $E0DD,own RE (plan 06),disasm
+FFC3B6,2,td_text_attr,"Team description: attr of the text line ($40 team A, $20 team B)",own RE (plan 06),disasm
+FFC3B8,4,td_hook,"Team description: the last page's portrait drawing, called while the next page rises",own RE (plan 06),disasm; screenshots
+FFC3BC,2,frame_erase,Menu frames: glyphs replaced by the light font's '=',own RE (plan 06),disasm
+FFC3BE,2,td_landing_sound,Team description: the landing sound ($15) is due,own RE (plan 06),disasm
+FFC3C0,4,td_crowd_handle,Team description: crowd sound handle,own RE (plan 06),disasm
+FFC3C4,4,td_effect_handle,Team description: last effect's handle,own RE (plan 06),disasm
+FFC3C8,20,ref_icon_stoppage,Overlay: ref icon while a puck rule is pending; drawn only while $FFC3E2 != 0,own RE (plan 07),disasm; BlastEm rink recordings
+FFC3DC,4,stoppage_tick,phase 8 stamp,own RE (plan 09),pass-check / visit-check (recordings)
+FFC3E0,2,crease_y,puck y at the last crease / net / goalie touch,own RE (plan 08),sim-check (55 000 recorded passes)
+FFC3E2,2,puck_rule_state,Puck-rule machine state ($C84A); also phase 8's state counter,own RE (plan 07),disasm; BlastEm rink recordings
+FFC3E4,2,rule_team,puck rules: the team the rule watches,own RE (plan 09),pass-check / visit-check (recordings)
+FFC3E6,2,rule_clock,puck rules: clock seconds at the goalie's pick-up,own RE (plan 09),pass-check / visit-check (recordings)
+FFC3E8,2,rule_hold,puck rules: goalie hold state,own RE (plan 09),pass-check / visit-check (recordings)
+FFC3EA,2,rule_spot,puck rules: saved puck position / faceoff spot,own RE (plan 09),pass-check / visit-check (recordings)
+FFC4F4,2,crude_candy_whip_count,"Screen 14: active whip animations of Crude Candy, Glynda the Zamboni's rider (D-pad presses; names from the manual)",own RE (plan 01),harness tour_d
+FFC4FE,256,quote_buffer,Expanded quote ($F420),own RE (plan 06),disasm
+FFC5FE,4,pass_tick_snapshot,Rink loop: tick counter when the pass started,own RE (plan 07),disasm
+FFC602,4,phase_tick,"phase stamp: every open-play pass, speech set-ups, game over",own RE (plan 09),pass-check / visit-check (recordings)
+FFC606,2,first_pass,fade-in pending on the visit's first pass,own RE (plan 09),pass-check / visit-check (recordings)
+FFC608,2,replay_on,record the replay this pass (set every open-play pass),own RE (plan 09),pass-check / visit-check (recordings)
+FFC60A,2,game_phase,"Rink loop phase (handlers at $FC84): 0 open play (pause menu), 1 resume after faceoff, 2 penalty -> 17, 3 goal -> 12, 4 fight called -> 18, 5 period end -> 14 / game end (phase 10), 8 -> 5, 9 period start, 10 game over -> 15/16, 11 'waste the goalie', 12 'waste the ref' -> 19, 13 forfeit -> 17, 14 faceoff after a special play -> 5",own RE (plan 01),disasm $FC84 table; harness tours
+FFC60C,2,game_subphase,Step within the current game_phase handler,own RE (plan 01),disasm
+FFC60E,4,quote_ptr,the quote's text pointer,own RE (plan 09),pass-check / visit-check (recordings)
+FFC612,4,coach_name,the coach name string pointer (team record +$C),own RE (plan 09),pass-check / visit-check (recordings)
+FFC616,2,quote_value,the quote record's value word (mood: 2-3 enable the expression roll),own RE (plan 09),pass-check / visit-check (recordings)
+FFC618,32,coach_portrait,"the coach portrait object: animation, data, mode, talk timer, size, voice handle, voices left",own RE (plan 09),pass-check / visit-check (recordings)
+FFC636,2,speaker,"the speaking side: 0 team A's coach, 1 team B's",own RE (plan 09),pass-check / visit-check (recordings)
+FFC638,2,playoff_result,"the playoff result code ($12854), -1 regular game",own RE (plan 09),pass-check / visit-check (recordings)
+FFC63A,2,goal_situation,goal situation 0-6 for the speech,own RE (plan 09),pass-check / visit-check (recordings)
+FFC63C,4,scorer,"the scorer's player address, 0 for an own goal",own RE (plan 09),pass-check / visit-check (recordings)
+FFC640,4,event_team,"Team pointer for the current event (game winner, forfeiting team), sign-extended long ($FFFFB402 / $FFFFB8AC); the scoring team at a goal",own RE (plan 01),"disasm $FEE6, $C60; sim-check (plan 08)"
+FFC642,1,ra_forfeit,Forfeit = $AC,RetroAchievements,
+FFC643,1,ra_forfeit_backup,Forfeit backup = $B8,RetroAchievements,
+FFC644,2,coach_speaking,1 while a coach speaks (crowd volume update skipped),own RE (plan 09),pass-check / visit-check (recordings)
+FFC65E,1,ra_special_play,Special play = $2C,RetroAchievements,
+FFC770,30,playoffs_bracket_a,Playoffs: A's side - 8 teams then 7 winners (words),own RE (plan 06),disasm; playoff-vectors
+FFC78E,30,playoffs_bracket_b,Playoffs: the other side - 8 teams then 7 winners,own RE (plan 06),disasm; playoff-vectors
+FFC7B8,14,password_buffer,The password typed / shown (13 symbols and 0),own RE (plan 06),disasm; playoff-vectors
+FFC7C6,2,menu_row_shown,Main menu: the row drawn highlighted (-1 none),own RE (plan 06),disasm
+FFC7CA,2,menu_saved_row,Main menu: P1's row while another pad edits team B (-1 none),own RE (plan 06),disasm; menu-cases
+FFC7D0,36,menu_stadium_row,Main menu: RAM copy of the stadium row record ($1F46A),own RE (plan 06),disasm
+FFC7F6,1,menu_stadium_mode,"Main menu: 0 the stadium follows team A, 1 chosen, -1 playoffs",own RE (plan 06),disasm; menu-cases
+FFC7F7,1,menu_flicker,"Main menu: line 3's palette (menu_line index), torchlight",own RE (plan 06),disasm
+FFC7F8,24,starfield_motion,"Starfield motion object: +0 x (24.8), +4 x velocity (1/256 px per tick), +8 y, +C y velocity, +10 z",own RE (plan 05),disasm
+FFC810,40,starfield_motion_params,Starfield motion parameters (no friction),own RE (plan 05),disasm
+FFC842,72,menu_panel_a,Main menu: team A's panel (copy of $1F2A2),own RE (plan 06),disasm
+FFC882,1,ra_team_skulls,Team skulls,RetroAchievements,
+FFC8B0,72,menu_panel_b,Main menu: team B's panel (copy of $1F2EA),own RE (plan 06),disasm
+FFCA18,4,rng_state_2,"Second RNG stream (same algorithm, rarely used)",own RE (plan 01),tracer
+FFCA1C,2,attract_mode,"Non-zero while the attract demo runs (set by the main menu's idle timeout, cleared on main menu entry); also blocks fights ($6F3A); every rink exit becomes screen 1",own RE (plan 05),disasm; GPGX watch
+FFCA1E,4,menu_idle_since,Tick of the main menu's last new press (idle timeout 1800 ticks),own RE (plan 05),disasm; GPGX watch
+FFCA2E,1,ra_playoffs_state,$FF in game; 01 fixtures/trophy; 02 main menu,RetroAchievements,
+FFCA33,1,ra_trophy_state,00 in game; $DC trophy,RetroAchievements,
+FFCA4E,2,vblank_callback_head,"Head of the VBlank callback list (node: +0 next, +6 routine); walked first thing in IRQ6_VBlank",own RE (plan 01),disasm $13F96
+FFCA54,2,pal_tick_divider,"PAL only: counts 5 vblanks down, then adds an extra tick so ticks stay 60/s",own RE (plan 01),disasm $13F96
+FFCA56,4,tick_counter,Game time in 60 Hz ticks: +1 per vblank (+1 extra every 5 on PAL),own RE (plan 01),disasm $13F96; harness: +1/frame on NTSC
+FFCA5A,2,pad1_state,"P1: high byte held, low byte newly pressed (S A C B R L D U)",own RE (plan 01),disasm $1407E; tracer
+FFCA5C,2,pad2_state,"P2: high byte held, low byte newly pressed",own RE (plan 01),disasm $1407E
+FFCA5E,2,pad3_state,P3 (EA 4-Way Play only),own RE (plan 01),disasm $1407E
+FFCA60,2,pad4_state,P4 (EA 4-Way Play only),own RE (plan 01),disasm $1407E
+FFCA62,1,four_way_play_enabled,Non-zero: read_joypads uses the EA 4-Way Play protocol,own RE (plan 01),disasm $1407E
+FFCA64,2,vdp_reg_shadow,24 words: last value written to each VDP register ($8rvv); $FFCA66 = reg 1,own RE (plan 01),disasm $1416A
+FFE164,640,sprite_list,"Sprite list in SAT format (80 x 8 bytes, entry 0 the head; link = depth order)",own RE (plan 07),disasm; BlastEm rink recordings
+FFE3E4,320,sprite_depths,"Per sprite list entry: depth.w, back link.w",own RE (plan 07),disasm
+FFE524,2,sprite_count,Sprite list entries + 1 (stops at $50: 79 pieces),own RE (plan 07),disasm
+FFE6AE,2,z80_driver_length,Length of the uploaded Z80 driver (data uploads go after it),own RE (plan 01),disasm $168F0
+FFEC24,1,ra_playoffs_flag,$80 in game; 00 after game,RetroAchievements,
+FFFEE0,1,ra_fight_time,Fight time?,RetroAchievements,
+FFFFCC,2,ra_p1_punches_thrown,,RetroAchievements,
+FFFFCE,2,ra_p1_punches_landed,,RetroAchievements,

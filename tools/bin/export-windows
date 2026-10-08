@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Windows x86_64 build of a commit (default: main), with the "Windows Desktop"
+# preset (game/export_presets.cfg): one .exe with the game packed in, no ROM.
+#   tools/bin/export-windows [REF] [--debug]
+# Exports a clean copy of the commit's game/ folder (git archive: nothing
+# local, no ROM) to out/builds/windows/ and zips it as
+# out/builds/mightyweenie-windows-<commit>.zip. The player puts their ROM next
+# to the .exe (MwRom.rom_candidates). Export templates: fetched on first use
+# (tools/setup/fetch_tools.sh templates, 1.3 GB download).
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+set -euo pipefail
+ref=main; mode=release
+for a in "$@"; do
+  case $a in
+    --debug) mode=debug ;;
+    *) ref=$a ;;
+  esac
+done
+commit=$(git -C "$MW_ROOT" rev-parse --short "$ref^{commit}")
+tpl="$MW_TOOLS/godot/editor_data/export_templates/$GODOT_VERSION.stable"
+[[ -f "$tpl/windows_${mode}_x86_64.exe" ]] || "$MW_TOOLS/setup/fetch_tools.sh" templates
+# The headless copy is self-contained (editor_data next to it): point its
+# templates at the ones fetched for tools/godot.
+"$(dirname "${BASH_SOURCE[0]}")/godot-headless" --version >/dev/null
+bin="$MW_CACHE/godot-headless-$GODOT_VERSION/godot"
+mkdir -p "$(dirname "$bin")/editor_data/export_templates"
+ln -sfn "$tpl" "$(dirname "$bin")/editor_data/export_templates/$GODOT_VERSION.stable"
+
+src="$MW_ROOT/out/builds/src"
+out="$MW_ROOT/out/builds/windows"
+rm -rf "$src" "$out"; mkdir -p "$src" "$out"
+git -C "$MW_ROOT" archive "$ref" game | tar -x -C "$src"
+# The audio extension's libraries are built, not committed: build the Windows
+# ones if missing (or older than the sources) and put them in the copy; the
+# export places the .dll next to the .exe.
+ext="$MW_ROOT/game/addons/mw_audio/bin"
+dll="$ext/libmw_audio.windows.template_${mode}.x86_64.dll"
+if [[ ! -f "$dll" ]] || [[ -n "$(find "$MW_ROOT/native/mw_audio/src" -newer "$dll" -print -quit)" ]]; then
+  "$(dirname "${BASH_SOURCE[0]}")/build-audio" --windows "--$mode"
+fi
+mkdir -p "$src/game/addons/mw_audio/bin"
+cp "$dll" "$src/game/addons/mw_audio/bin/"
+"$bin" --headless --path "$src/game" --import > "$MW_ROOT/out/builds/import.log" 2>&1 || true
+"$bin" --headless --path "$src/game" "--export-$mode" "Windows Desktop" "$out/mightyweenie.exe" \
+  > "$MW_ROOT/out/builds/export.log" 2>&1 || { tail -20 "$MW_ROOT/out/builds/export.log"; exit 1; }
+[[ -s "$out/mightyweenie.exe" ]] || { echo "export failed: out/builds/export.log"; exit 1; }
+sed "s/@COMMIT@/$commit ($mode)/" "$MW_TOOLS/build/windows-readme.txt" > "$out/README.txt"
+cp "$src/game/addons/mw_audio/THIRD_PARTY_NOTICES.txt" "$out/"
+# The project's licence (BSD-3-Clause: binaries carry the notice).
+if [[ -f "$MW_ROOT/LICENSE" ]]; then cp "$MW_ROOT/LICENSE" "$out/LICENSE.txt"; fi
+[[ -f "$out/$(basename "$dll")" ]] || echo "warning: the audio extension is not next to the .exe (no sound)"
+# Nothing of this machine's paths in what ships (a library built with absolute
+# paths carries its source paths, the user's home folder included).
+if leaks=$(grep -a -l -F -e "$MW_ROOT" -e "$HOME/" "$out"/*); then
+  echo "error: paths of this machine in the package: $leaks" >&2; exit 1
+fi
+rm -f "$MW_ROOT/out/builds/mightyweenie-windows-$commit.zip"
+(cd "$out" && zip -qr "$MW_ROOT/out/builds/mightyweenie-windows-$commit.zip" .)
+ls -l "$out" "$MW_ROOT/out/builds/mightyweenie-windows-$commit.zip"

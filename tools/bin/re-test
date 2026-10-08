@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Run the reverse-engineering tests (Ghidra round-trip etc.; slow).
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+cd "$MW_ROOT/re" && exec "$MW_TOOLS/bin/py" -m pytest -q tests "$@"

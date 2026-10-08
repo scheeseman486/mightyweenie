@@ -1,0 +1,13 @@
+# Default game; the pause menu's instant replay (7) and back to play (6); then
+# the tracer jumps to the last second of period 3 with team A one goal up:
+# period end, the final scoreboard (15) and back to the main menu.
+@screen 1 +200 P1 START
+@screen 4 +1500 P1 START        # pause in open play
+@screen 4 +1560 P1 A            # A: instant replay
+@screen 7 +300 P1 START         # back to the rink (6)
+#poke @screen 6 +600 FFB076.b=3
+#poke @screen 6 +600 FFB8A4.w=1
+#poke @screen 6 +600 FFB06A.w=2
+@screen 15 +300 P1 START
+@screen 15 +400 P1 START
+@screen 1 #2 +200 END

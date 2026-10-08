@@ -1,0 +1,76 @@
+[gd_scene format=3 uid="uid://dhsve4wpvlerm"]
+
+[ext_resource type="Script" uid="uid://byvu8s1e345co" path="res://src/rom/rom_backdrop.gd" id="1_qs7we"]
+[ext_resource type="Script" uid="uid://ciqvum4xeqxg7" path="res://src/rom/rom_palette.gd" id="2_pfjht"]
+[ext_resource type="Script" uid="uid://wpncclp0d58j" path="res://src/rom/rom_tile_map_layer.gd" id="3_7crtm"]
+[ext_resource type="Script" uid="uid://dnn3ge8lqsdfn" path="res://src/rom/rom_tile_set.gd" id="4_o8ort"]
+[ext_resource type="Script" uid="uid://c84wpgxwletvs" path="res://src/rom/rom_sprite.gd" id="5_kx8fl"]
+
+[sub_resource type="Resource" id="Resource_ad25c"]
+script = ExtResource("2_pfjht")
+screen = 4
+team_a = 22
+stadium = 22
+steps = PackedStringArray("screen_palette", "rom 1BD8A 3")
+
+[sub_resource type="Resource" id="Resource_enbur"]
+script = ExtResource("4_o8ort")
+banks = PackedStringArray("picture_024cfc", "picture_01bfc2")
+
+[sub_resource type="Resource" id="Resource_ns473"]
+script = ExtResource("4_o8ort")
+banks = PackedStringArray("picture_024cfc", "picture_01bfc2")
+
+[node name="RinkProof" type="Node2D" unique_id=1459960995]
+
+[node name="Backdrop" type="ColorRect" parent="." unique_id=1172972864]
+offset_right = 512.0
+offset_bottom = 904.0
+script = ExtResource("1_qs7we")
+palette = SubResource("Resource_ad25c")
+
+[node name="Rink" type="TileMapLayer" parent="." unique_id=485174506]
+script = ExtResource("3_7crtm")
+tiles = SubResource("Resource_enbur")
+palette = SubResource("Resource_ad25c")
+map = "picture_024cfc"
+
+[node name="ClockWidget" type="TileMapLayer" parent="." unique_id=226971164]
+script = ExtResource("3_7crtm")
+tiles = SubResource("Resource_ns473")
+palette = SubResource("Resource_ad25c")
+map = "map_049136"
+at = Vector2i(2, 2)
+
+[node name="Anim04CBF6" type="AnimatedSprite2D" parent="." unique_id=2110059384]
+position = Vector2(256, 300)
+script = ExtResource("5_kx8fl")
+anim = "anim_04cbf6"
+frame_addresses = PackedInt32Array()
+palette = SubResource("Resource_ad25c")
+
+[node name="Anim03C8D4" type="AnimatedSprite2D" parent="." unique_id=1109678721]
+position = Vector2(200, 452)
+script = ExtResource("5_kx8fl")
+anim = "anim_03c8d4"
+frame_addresses = PackedInt32Array()
+palette = SubResource("Resource_ad25c")
+
+[node name="Anim03EC62" type="AnimatedSprite2D" parent="." unique_id=428008426]
+position = Vector2(300, 452)
+script = ExtResource("5_kx8fl")
+anim = "anim_03ec62"
+frame_addresses = PackedInt32Array()
+variant = 2
+palette = SubResource("Resource_ad25c")
+
+[node name="Anim023086" type="AnimatedSprite2D" parent="." unique_id=859910221]
+position = Vector2(256, 600)
+script = ExtResource("5_kx8fl")
+anim = "anim_023086"
+frame_addresses = PackedInt32Array()
+variant = 1
+palette = SubResource("Resource_ad25c")
+
+[node name="Camera" type="Camera2D" parent="." unique_id=949075603]
+position = Vector2(256, 112)

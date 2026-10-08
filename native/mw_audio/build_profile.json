@@ -1,0 +1,8 @@
+{
+	"_comment": "godot-cpp build profile (tools/bin/build-audio): only these engine classes (plus their parents and what godot-cpp itself always adds) get bindings, which keeps the build small. Add a class here when the extension starts using it. OS: godot-cpp 10.0.0's print_string.cpp needs it but its profile code does not add it.",
+	"enabled_classes": [
+		"Object",
+		"RefCounted",
+		"OS"
+	]
+}

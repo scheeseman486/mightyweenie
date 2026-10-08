@@ -1,0 +1,13 @@
+# Plan 02 end-to-end script: set up a co-op game (P1+P2 vs CPU) and play a bit.
+# Main menu: the pad row is the 2nd row; two RIGHTs: PAD 1 / SEGA -> PAD 1 / PAD 2 -> PAD 1-2 / SEGA.
+@screen 1 +200           P1 DOWN
+@screen 1 +240           P1 RIGHT
+@screen 1 +280           P1 RIGHT     # menus ignore taps that come too fast
+@screen 1 +320           P1 START
+# Screen 4 is the rink at period start: coach speech (~1400 ticks), the opening
+# faceoff, then open play continues in screen 4 until the first stoppage.
+@screen 4 +1600..+1840   P2 C hold
+@screen 4 +1630          P1 A
+@screen 4 @pass 360..380 P1 UP+LEFT
+@screen 4 @pass 400      P2 B
+@screen 4 +2200          END

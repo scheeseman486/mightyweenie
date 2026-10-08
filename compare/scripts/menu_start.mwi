@@ -1,0 +1,9 @@
+# Main menu -> team description (Start) -> back to the menu: rows remembered.
+@screen 1 +60 P1 DOWN
+@screen 1 +90 P1 DOWN
+@screen 1 +120 P1 LEFT          # team description
+@screen 1 +150 P1 START
+@screen 2 +200 P1 START
+@screen 2 +260 P1 START
+@screen 1 #2 +200 P1 DOWN
+@screen 1 #2 +300 END

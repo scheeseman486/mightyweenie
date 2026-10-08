@@ -1,0 +1,16 @@
+# Team description: switching teams, other pads, a star's page, wrapping cursor.
+@screen 1 +60 P1 DOWN
+@screen 1 +90 P1 DOWN
+@screen 1 +120 P1 LEFT          # play mode: team description
+@screen 1 +150 P1 START
+@screen 2 +100 P1 RIGHT         # team B
+@screen 2 +200 P1 A             # team B's coach
+@screen 2 +400 P1 LEFT          # team A, still on the coach's page
+@screen 2 +600 P1 START         # bio: rises
+@screen 2 +800 P2 B             # player 2 opens the coach's page
+@screen 2 +1000 P2 C            # roster
+@screen 2 +1100 P1 A            # first player (a star): own quote
+@screen 2 +1300 P1 UP           # wraps to the last line's goalie
+@screen 2 +1500 P1 START        # bio: rises from the player's page
+@screen 2 +1700 P1 START        # back to the main menu
+@screen 1 #2 +100 END

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# The simulation segment against every pass of the simulation recordings
+# (needs `tools/bin/py -m mw_harness sim-record` first). One Godot process
+# per recording (they are large).
+#   tools/bin/sim-check [NAME ...] [--only TEXT] [--show N] [--from I] [--count N] [--roundtrip]
+#   tools/bin/sim-check [NAME ...] --think   # also our AI against every recorded think
+#   tools/bin/sim-check [NAME ...] --ai      # our AI as the CPU control (no recorded thinks)
+#   tools/bin/sim-check NAME --detail PASS [--ai]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+names=(); opts=()
+while (( $# )); do
+  case "$1" in
+    --only|--show|--from|--count|--detail) opts+=("$1" "$2"); shift 2 ;;
+    --*) opts+=("$1"); shift ;;
+    *) names+=("$1"); shift ;;
+  esac
+done
+if (( ${#names[@]} == 0 )); then
+  names=(cpu_s0 p1_s9 p1p2_s4 cpu_s10 p1_s8 p1p2_s17 coop_s14 p1_s2 cpu_s16 p1_s5 p4_s22)
+fi
+status=0
+for n in "${names[@]}"; do
+  "$here/godot-headless" -s res://test/sim/sim_check.gd -- "$n" "${opts[@]}" 2>&1 \
+    | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)' || true
+  (( ${PIPESTATUS[0]} == 0 )) || status=1
+done
+exit $status

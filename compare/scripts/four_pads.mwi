@@ -1,0 +1,6 @@
+# Plan 02 test script: all four pads reach the original (EA 4-Way Play).
+@screen 1 +200 P1 UP
+@screen 1 +220 P2 DOWN
+@screen 1 +240 P3 A
+@screen 1 +260 P4 B
+@screen 1 +300 END

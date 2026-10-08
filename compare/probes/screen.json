@@ -1,0 +1,7 @@
+{
+  "name": "screen",
+  "description": "Rink phase ($FFC60A) on the rink screens. Always recorded there.",
+  "fields": [
+    {"name": "phase", "original": "builtin", "godot": "builtin", "compare": "exact", "screens": [4, 5, 6]}
+  ]
+}

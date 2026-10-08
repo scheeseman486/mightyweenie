@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cf0ck7aka33t"]
+
+[ext_resource type="Script" uid="uid://d1i0g04no8e2a" path="res://src/flow/placeholder_screen.gd" id="1_lhnci"]
+
+[node name="Boot" type="Node2D" unique_id=789726185]
+script = ExtResource("1_lhnci")
+auto_exit_ticks = 1
+auto_exit = 0

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Rebuild compare/fixtures/sim_passes.json from the simulation recordings
+# (out/sim/, local; `tools/bin/py -m mw_harness sim-record`): the features
+# of every pass (one Godot process per recording), then the chosen passes.
+#   tools/bin/sim-fixture [MAX]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+filter() { grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)' || true; }
+for n in cpu_s0 p1_s9 p1p2_s4 cpu_s10 p1_s8 p1p2_s17 coop_s14 p1_s2 cpu_s16 p1_s5 p4_s22; do
+  if [[ ! -f "$MW_ROOT/out/plan08/fixture/$n.json" || "${MW_FEATURES:-0}" == 1 ]]; then
+    "$here/godot-headless" -s res://test/sim/sim_fixture.gd -- --features "$n" 2>&1 | filter
+  fi
+done
+"$here/godot-headless" -s res://test/sim/sim_fixture.gd -- --build "$@" 2>&1 | filter

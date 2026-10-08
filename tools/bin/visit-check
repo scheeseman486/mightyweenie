@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Whole rink visits of the simulation recordings (MwRinkAI, MwRinkSim,
+# MwRinkUpdate, MwRinkPhases throughout) from each visit's first segment
+# start with only the recorded pads and elapsed ticks (and the recorded
+# tick reads, voice answers and pause answers): every pass's segment end
+# and next segment start against the original's. One Godot process per
+# recording.
+#   tools/bin/visit-check [NAME ...] [--show N] [--from PASS] [--count N]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+names=(); opts=()
+while (( $# )); do
+  case "$1" in
+    --show|--from|--count) opts+=("$1" "$2"); shift 2 ;;
+    --*) opts+=("$1"); shift ;;
+    *) names+=("$1"); shift ;;
+  esac
+done
+if (( ${#names[@]} == 0 )); then
+  source "$here/_recordings.sh"
+  names=("${MW_REC_V2[@]}" "${MW_REC_V3[@]}" "${MW_REC_SOAK[@]}")
+fi
+status=0
+for n in "${names[@]}"; do
+  "$here/godot-headless" -s res://test/sim/pass_check.gd -- "$n" --visit "${opts[@]}" 2>&1 \
+    | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)' || true
+  (( ${PIPESTATUS[0]} == 0 )) || status=1
+done
+exit $status

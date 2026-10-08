@@ -1,0 +1,8 @@
+{
+  "name": "rng",
+  "description": "Both RNG streams (docs/re/rng.md).",
+  "fields": [
+    {"name": "rng", "original": "[0xffb096].l", "godot": "rng.state", "compare": "exact"},
+    {"name": "rng2", "original": "[0xffca18].l", "godot": "rng2.state", "compare": "exact"}
+  ]
+}

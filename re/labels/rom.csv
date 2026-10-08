@@ -1,0 +1,33 @@
+address,size,name,comment,source,verified
+000690,6,forum_checksum_call,JSR $1FFD60 - ROM checksum check (verified bytes 4EB9 001F FD60); Game Genie master code patches this,https://forum.nhl94.com/index.php?/topic/20454-mutant-league-hockey-rom-hack-project/,
+0036A2,2,gg_final_scores_option,'Final scores' option,decoded Game Genie,
+004A38,2,gg_timeouts,Timeouts logic,decoded Game Genie,
+007EAA,2,gg_goal_value_1pt,Immediate used for 1-point goals,decoded Game Genie,
+007ED0,2,gg_two_point_distance,2-point goal distance threshold,decoded Game Genie,
+007ED4,2,gg_two_point_add,2-point goal add instruction,decoded Game Genie,
+00B132,4,player_state_celebrate_steps,"Player state $10's step table (word offsets from $B132): step 0 $B136, step 1 $B150 (was labelled as a function)",own RE (plan 11),disasm
+0139A8,10,menu_row_up,"Main menu: the row above, by row (bytes; team A <-> team B, the stadium row below period length) - a table, was labelled as a function",own RE (plan 06),disasm; menu-cases
+0139B2,10,menu_row_down,"Main menu: the row below, by row (bytes) - a table, was labelled as a function",own RE (plan 06),disasm; menu-cases
+015C90,0,z80_driver_blob,Length word ($0C2C) followed by the Z80 sound driver,own RE (plan 01),disasm $168E4
+018D8A,3634,team_table,"23 team records x $9E: +0 ptr first name word, +4 ptr second word, +$C ptr coach entry, +$10 ptr stadium record, +$14 3 special plays, +$80 colours",forum (as forum_team_table); own RE (plan 01),disasm $368A; harness
+01B668,0,forum_coach_ptrs,Coach pointer table (referenced from team records),forum,
+01B6B8,576,stadium_records,Variable-length stadium records in team order (layout in docs/re/rinks.md),forum (as forum_stadium_records); own RE (plan 01),harness test_stadiums.py (records chain exactly)
+01B8F8,12,net_style_table,Goal-net animation pointers by net style (stadium +5),own RE (plan 01),disasm $6D0
+01BCBA,0,screen_table,"20 longword pointers to screen handlers, indexed by screen ID",own RE (plan 01),disasm $209E
+01BD0A,128,default_palette,Default 4-line palette that screen_palette starts from,own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+01BD2A,32,team_line_base,Line team_line starts from for style 1 (= default palette line 1),own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+01BD4A,32,team_line_plain,Line team_line uses for style 2 (= default palette line 2),own RE (plan 03),disasm
+01BE0A,12,menu_line_table,3 pointers to main-menu line 3 palettes (cycled),own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+01BE36,24,ice_palette_table,6 pointers to 16-colour rink palettes (stadium +4); 0/1 and 3/5 point to the same data,own RE (plan 01),disasm $218C
+01BE4E,12,colour_pairs,"Colour pairs for colours 1/10 of lines 1-2: default, NTSC, PAL (regional on flagged screens)",own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+01BE5A,20,colour_pair_flags,Per screen ID: 1 = use the regional colour pair,own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+01BE6E,18,panel_colours,Fixed colours of a panel line (2 + 7 around the 7 team colours),own RE (plan 03),disasm; harness assets trace + test_gfx_original.py
+01C1D2,3,gg_period_length_table,Period lengths in minutes? bytes 03 05 08,decoded Game Genie,
+01C574,24,crowd_throw_weights,12 weights for the kind of item the crowd throws,own RE (plan 01),disasm $5B38
+01CB20,32,hazard_name_ptrs,"8 pointers to the hazard names, in hazard-mask bit order",own RE (plan 01),disasm $B43C
+01F70E,16,sprite_size_tiles,Tiles per sprite size code,own RE (plan 03),disasm $156A4
+01F71E,32,sprite_size_width,Width in pixels per sprite size code (hflip mirroring),own RE (plan 03),disasm $156E0
+01F73E,32,sprite_size_height,Height in pixels per sprite size code (vflip mirroring),own RE (plan 03),disasm $1570C
+024886,0,forum_logo_descriptors,Team logo descriptors (6x4 tiles),forum,
+0C9540,0,forum_logo_tiles,Uncompressed 4bpp logo tiles (approx. start),forum,
+1FFD60,0,forum_checksum_routine,Target of the checksum JSR,forum + verified,

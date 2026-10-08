@@ -1,0 +1,17 @@
+# 3:00 periods; at the first intermission visit stats, player stats, special
+# plays and the instant replay from the scoreboard.
+@screen 1 +200 P1 DOWN
+@screen 1 +240 P1 DOWN
+@screen 1 +280 P1 DOWN
+@screen 1 +320 P1 LEFT          # period length 3:00
+@screen 1 +400 P1 START
+@screen 14 +100 P1 A            # first button shows the menu
+@screen 14 +200 P1 A            # A: game stats
+@screen 8 +200 P1 A             # player stats (9, drawn inside 8)
+@screen 8 +500 P1 START         # back to game stats
+@screen 8 +800 P1 START         # back to the scoreboard
+@screen 14 #2 +100 P1 B         # B: special plays (menu already up on return)
+@screen 10 +300 P1 START
+@screen 14 #3 +100 P1 C         # C: instant replay
+@screen 7 +400 P1 START
+@screen 14 #4 +200 END

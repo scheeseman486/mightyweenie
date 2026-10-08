@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Run Godot headless against game/ (tests, imports, scripted tools).
+#
+# Uses a private copy of the pinned binary in ~/.cache/mightyweenie with its own
+# ._sc_ marker, so headless runs never write the desktop editor's settings
+# (tools/godot/editor_data) or the machine-wide ~/.config/godot.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+mw_require "$MW_TOOLS/godot/godot" godot
+bin_dir="$MW_CACHE/godot-headless-$GODOT_VERSION"
+if [[ ! -x "$bin_dir/godot" ]]; then
+  mkdir -p "$bin_dir"
+  cp "$MW_TOOLS/godot/godot" "$bin_dir/godot.tmp" && mv "$bin_dir/godot.tmp" "$bin_dir/godot"
+  touch "$bin_dir/._sc_"
+fi
+exec "$bin_dir/godot" --headless --path "$MW_ROOT/game" "$@"

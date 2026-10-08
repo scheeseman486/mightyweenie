@@ -1,0 +1,9 @@
+# Default game; once play has resumed after the first stoppage, the tracer
+# forces the goal phase (3) so the goal sequence and the goal scoreboard (12,
+# coach comment) load. Then Start back to the faceoff.
+@screen 1 +200 P1 START
+#poke @screen 5 +200 FFC60C.w=0
+#poke @screen 5 +200 FFC60A.w=3
+@screen 12 +300 P1 START
+@screen 12 +400 P1 START
+@screen 5 #2 +300 END

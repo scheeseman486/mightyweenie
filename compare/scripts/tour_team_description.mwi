@@ -1,0 +1,9 @@
+# Main menu -> Play Mode = Team Description -> browse two teams -> back.
+@screen 1 +200 P1 DOWN
+@screen 1 +240 P1 DOWN
+@screen 1 +280 P1 LEFT
+@screen 1 +360 P1 START
+@screen 2 +300 P1 RIGHT
+@screen 2 +500 P1 RIGHT
+@screen 2 +700 P1 START
+@screen 1 #2 +200 END

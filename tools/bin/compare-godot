@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Our side of a comparison (docs/compare.md): play an input script headless and
+# write a pass record.
+#   tools/bin/compare-godot SCRIPT.mwi --replay ORIGINAL.jsonl -o OUT.jsonl [--from-screen N]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+script="$1"; shift
+args=(--script "$(realpath "$script")")
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --replay) args+=(--replay "$(realpath "$2")"); shift 2 ;;
+    -o|--out) mkdir -p "$(dirname "$2")"; args+=(--out "$(realpath -m "$2")"); shift 2 ;;
+    --from-screen) args+=(--from-screen "$2"); shift 2 ;;
+    *) echo "compare-godot: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+if [[ ! -f "$MW_ROOT/game/.godot/global_script_class_cache.cfg" || "${MW_REIMPORT:-0}" == 1 ]]; then
+  "$here/godot-headless" --import >/dev/null 2>&1 || true
+fi
+exec "$here/godot-headless" -s res://src/compare/replay_runner.gd -- "${args[@]}"

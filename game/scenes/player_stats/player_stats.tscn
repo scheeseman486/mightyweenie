@@ -1,0 +1,42 @@
+[gd_scene format=3 uid="uid://c2bribpiqylvg"]
+
+[ext_resource type="Script" uid="uid://d1i0g04no8e2a" path="res://src/flow/placeholder_screen.gd" id="1_g4h33"]
+[ext_resource type="Script" uid="uid://byvu8s1e345co" path="res://src/rom/rom_backdrop.gd" id="2_c8623"]
+[ext_resource type="Script" uid="uid://ciqvum4xeqxg7" path="res://src/rom/rom_palette.gd" id="3_8lptu"]
+[ext_resource type="Script" uid="uid://wpncclp0d58j" path="res://src/rom/rom_tile_map_layer.gd" id="4_t0e1g"]
+[ext_resource type="Script" uid="uid://dnn3ge8lqsdfn" path="res://src/rom/rom_tile_set.gd" id="5_vp3of"]
+
+[sub_resource type="Resource" id="Resource_fth44"]
+script = ExtResource("3_8lptu")
+screen = 9
+steps = PackedStringArray("screen_palette", "black 0", "panel_line a 1", "panel_line b 2")
+
+[sub_resource type="Resource" id="Resource_x2qs7"]
+script = ExtResource("5_vp3of")
+banks = PackedStringArray("picture_04546c")
+
+[node name="PlayerStats" type="Node2D" unique_id=763679414]
+script = ExtResource("1_g4h33")
+exits = {
+"ui_accept": "pop"
+}
+screen_id = 9
+
+[node name="Backdrop" type="ColorRect" parent="." unique_id=359387726]
+offset_right = 320.0
+offset_bottom = 224.0
+script = ExtResource("2_c8623")
+palette = SubResource("Resource_fth44")
+
+[node name="Picture04546c0" type="TileMapLayer" parent="." unique_id=186447231]
+script = ExtResource("4_t0e1g")
+tiles = SubResource("Resource_x2qs7")
+palette = SubResource("Resource_fth44")
+map = "picture_04546c"
+
+[node name="Picture04546c1" type="TileMapLayer" parent="." unique_id=1873984768]
+script = ExtResource("4_t0e1g")
+tiles = SubResource("Resource_x2qs7")
+palette = SubResource("Resource_fth44")
+map = "picture_04546c"
+at = Vector2i(32, 0)

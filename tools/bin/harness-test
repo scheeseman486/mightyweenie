@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Run the Python reference-harness tests (pytest). Extra args go to pytest.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+cd "$MW_ROOT/harness" && exec "$MW_TOOLS/bin/py" -m pytest "$@"

@@ -1,0 +1,25 @@
+{
+  "format": "mw-parse-fixture/1",
+  "comment": "Script lines and how both parsers must read them (canonical text round trip). Errors give the 1-based line.",
+  "valid": [
+    {"text": "@screen 1 +40 P1 DOWN", "canonical": "@screen 1 +40 P1 DOWN", "event": {"anchor": "screen", "screen": 1, "visit": 1, "unit": "tick", "start": 40, "end": null, "player": 1, "buttons": 2, "mode": "tap", "repeat": 1}},
+    {"text": "@screen 1 +60   P1 RIGHT x2   # two taps", "canonical": "@screen 1 +60 P1 RIGHT x2", "event": {"anchor": "screen", "screen": 1, "visit": 1, "unit": "tick", "start": 60, "end": null, "player": 1, "buttons": 8, "mode": "tap", "repeat": 2}},
+    {"text": "@screen 5 +0..+600 P2 C hold", "canonical": "@screen 5 +0..+600 P2 C hold", "event": {"anchor": "screen", "screen": 5, "visit": 1, "unit": "tick", "start": 0, "end": 600, "player": 2, "buttons": 32, "mode": "hold", "repeat": 1}},
+    {"text": "@screen 5 @pass 40..60 P1 UP+LEFT", "canonical": "@screen 5 @pass 40..60 P1 UP+LEFT hold", "event": {"anchor": "screen", "screen": 5, "visit": 1, "unit": "pass", "start": 40, "end": 60, "player": 1, "buttons": 5, "mode": "hold", "repeat": 1}},
+    {"text": "@screen 12 #2 +100 P4 A+B+C+START", "canonical": "@screen 12 #2 +100 P4 B+C+A+START", "event": {"anchor": "screen", "screen": 12, "visit": 2, "unit": "tick", "start": 100, "end": null, "player": 4, "buttons": 240, "mode": "tap", "repeat": 1}},
+    {"text": "@screen 5 @pass 30 P3 A tap", "canonical": "@screen 5 @pass 30 P3 A", "event": {"anchor": "screen", "screen": 5, "visit": 1, "unit": "pass", "start": 30, "end": null, "player": 3, "buttons": 64, "mode": "tap", "repeat": 1}},
+    {"text": "@tick 7000..7010 P1 START", "canonical": "@tick 7000..7010 P1 START hold", "event": {"anchor": "tick", "screen": -1, "visit": 1, "unit": "tick", "start": 7000, "end": 7010, "player": 1, "buttons": 128, "mode": "hold", "repeat": 1}},
+    {"text": "@screen 5 +1200 END", "canonical": "@screen 5 +1200 END", "event": {"anchor": "screen", "screen": 5, "visit": 1, "unit": "tick", "start": 1200, "end": null, "player": 0, "buttons": 0, "mode": "end", "repeat": 1}}
+  ],
+  "invalid": [
+    "@screen 1 P1 A",
+    "@screen 1 +10 P5 A",
+    "@screen 1 +10 P1 X",
+    "@screen 1 +10 P1 A hold",
+    "@screen 1 +10..+20 P1 A tap",
+    "@screen 1 +10..+20 P1 A x2",
+    "@screen 1 +20..+10 P1 A",
+    "screen 1 +10 P1 A",
+    "@screen 1 +10 END P1"
+  ]
+}

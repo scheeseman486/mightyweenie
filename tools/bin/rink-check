@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Our rink draw pass and camera against every pass of the rink recordings
+# (needs `tools/bin/py -m mw_harness rink-record` and `rink-dump` first).
+#   tools/bin/rink-check [NAME ...]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+exec "$here/godot-headless" -s res://test/rink/check_recordings.gd -- "$@"

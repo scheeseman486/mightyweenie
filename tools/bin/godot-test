@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Run the GUT test suite headless. Exit code 0 = all passed.
+#   tools/bin/godot-test                 # everything under res://test
+#   tools/bin/godot-test -gdir=res://test/env -gselect=test_environment
+# JUnit XML lands in game/reports/gut_junit.xml.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+# First run (or after adding class_name scripts): build .godot/ caches.
+if [[ ! -f "$MW_ROOT/game/.godot/global_script_class_cache.cfg" || "${MW_REIMPORT:-0}" == 1 ]]; then
+  "$here/godot-headless" --import >/dev/null 2>&1 || true
+fi
+mkdir -p "$MW_ROOT/game/reports"
+# No -d: with the local debugger enabled a script error drops into Godot's
+# interactive debug> prompt and hangs an unattended run. GUT reports errors.
+exec "$here/godot-headless" -s res://addons/gut/gut_cmdln.gd -gconfig=res://.gutconfig.json "$@"

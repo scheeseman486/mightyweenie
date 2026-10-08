@@ -1,0 +1,7 @@
+# Reference-emulator harness + RE scripting. Installed into .venv-<hostname>
+# by tools/setup/setup_python.sh. pyghidra comes from the pinned Ghidra bundle.
+stable-retro==1.0.1   # Genesis Plus GX via libretro; headless frame stepping
+numpy>=1.26
+pillow>=10
+pytest>=8
+capstone==5.0.9     # re/lindis.py: linear 68000 disassembly without Ghidra

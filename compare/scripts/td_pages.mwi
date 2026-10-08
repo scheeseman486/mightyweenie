@@ -1,0 +1,16 @@
+# Team description: every page of team A and back (docs/re/menus.md, Team description).
+@screen 1 +60 P1 DOWN
+@screen 1 +90 P1 DOWN
+@screen 1 +120 P1 LEFT          # play mode: team description
+@screen 1 +150 P1 START
+@screen 2 +100 P1 A             # coach: drops in
+@screen 2 +300 P1 A             # roster: rises
+@screen 2 +400 P1 RIGHT         # 2nd line
+@screen 2 +450 P1 DOWN          # its second player
+@screen 2 +500 P1 A             # the player's page: drops in
+@screen 2 +700 P1 RIGHT         # the same position on the 3rd line
+@screen 2 +900 P1 A             # roster: rises
+@screen 2 +1000 P1 UP           # previous player
+@screen 2 +1100 P1 START        # bio (already up: no move)
+@screen 2 +1200 P1 START        # back to the main menu
+@screen 1 #2 +100 END

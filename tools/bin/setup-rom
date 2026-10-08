@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Put the user's ROM into the Godot project as res://rom/mlh.gen (gitignored,
+# never exported), where the editor imports it as a RomArchive and the game
+# reads it. Copies rom/Mutant League Hockey (USA, Europe).md unless a path
+# is given. The harness keeps using rom/ (docs/re/graphics.md).
+#   tools/bin/setup-rom [path/to/rom]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+src="${1:-$MW_ROOT/rom/Mutant League Hockey (USA, Europe).md}"
+[[ -f "$src" ]] || { echo "no ROM at $src (see rom/README.md)" >&2; exit 1; }
+sum="$(sha1sum "$src" | cut -d' ' -f1)"
+[[ "$sum" == 84e203c5226bc1913a485804e59c6418e939bd3d ]] || echo "warning: SHA-1 $sum is not the known dump" >&2
+mkdir -p "$MW_ROOT/game/rom"
+cp -f "$src" "$MW_ROOT/game/rom/mlh.gen"
+echo "game/rom/mlh.gen ($sum)"

@@ -1,0 +1,95 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/_proof/rink3d_proof.gd" id="1_proof"]
+[ext_resource type="Script" path="res://src/rom/rom_backdrop.gd" id="2_bd"]
+[ext_resource type="Script" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_map_layer.gd" id="4_tml"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rink/sprite_layer.gd" id="6_sl"]
+[ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="7_pl"]
+[ext_resource type="PackedScene" path="res://src/rink3d/rink_view_3d.tscn" id="8_view"]
+
+[sub_resource type="Resource" id="pal_rink"]
+script = ExtResource("3_pal")
+screen = 4
+steps = PackedStringArray("screen_palette", "rom 1BD8A 3")
+
+[sub_resource type="Resource" id="tiles_rink"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_024cfc")
+
+[sub_resource type="Resource" id="tiles_window"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_01bfc2")
+fonts = PackedStringArray("font_0447f4")
+
+[node name="Rink3DProof" type="Node2D"]
+script = ExtResource("1_proof")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+script = ExtResource("2_bd")
+palette = SubResource("pal_rink")
+
+[node name="PlaneLow" type="TileMapLayer" parent="."]
+position = Vector2(-96, -293)
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_rink")
+palette = SubResource("pal_rink")
+map = "picture_024cfc"
+priority = 1
+
+[node name="SpritesLow" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+
+[node name="PlaneHigh" type="TileMapLayer" parent="."]
+position = Vector2(-96, -293)
+script = ExtResource("4_tml")
+tiles = SubResource("tiles_rink")
+palette = SubResource("pal_rink")
+map = "picture_024cfc"
+priority = 2
+
+[node name="View3D" type="SubViewportContainer" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+stretch = true
+
+[node name="Viewport" type="SubViewport" parent="View3D"]
+own_world_3d = true
+handle_input_locally = false
+size = Vector2i(320, 224)
+render_target_update_mode = 4
+
+[node name="RinkView3D" parent="View3D/Viewport" instance=ExtResource("8_view")]
+
+[node name="ScreenLow" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+
+[node name="Window" type="TileMapLayer" parent="."]
+script = ExtResource("7_pl")
+tiles = SubResource("tiles_window")
+palette = SubResource("pal_rink")
+
+[node name="SpritesHigh" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+high = true
+
+[node name="ScreenHigh" type="Node2D" parent="."]
+script = ExtResource("6_sl")
+palette = SubResource("pal_rink")
+high = true
+
+[node name="Info" type="Label" parent="."]
+offset_left = 2.0
+offset_top = 1.0
+offset_right = 318.0
+offset_bottom = 12.0
+theme_override_font_sizes/font_size = 8
+text = "rink 3D proof"

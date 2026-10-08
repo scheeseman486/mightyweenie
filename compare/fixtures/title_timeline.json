@@ -1,0 +1,6 @@
+{
+ "format": "mw-title-timeline/1",
+ "comment": "Ticks after entering screen 0 in the original (BlastEm, stock NTSC), from mw_harness title-timeline; docs/re/title.md. No ROM content.",
+ "no_input": {"pages": [[2382, 2384, 2534], [2564, 2567, 2717], [2747, 2748, 2898], [2928, 2929, 3079], [3109, 3110, 3260], [3290, 3291, 3441], [3471, 3472, 3622], [3652, 3653, 3803], [3833, 3834, 3984], [4014, 4015, 4165], [4195, 4196, 4346], [4376, 4376, 4526], [4556, 4557, 4707], [4737, 4738, 4888], [4918, 4919, 5069], [5099, 5100, 5250], [5280, 5281, 5431], [5461, 5462, 5612], [5642, 5644, 5794]], "entry": 0, "logo_start": 4, "logo_end": 184, "title_start": 217, "title_fade_in": 219, "title_fade_out": 2317, "credits": 2350, "credits_end": 5824, "credits_done": 5854, "menu": 5854},
+ "skips": {"presses": [{"tick": 100, "button": "START"}, {"tick": 1000, "button": "A"}, {"tick": 3000, "button": "C"}], "events": {"pages": [[1066, 1068, 1218], [1248, 1251, 1401], [1431, 1432, 1582], [1612, 1613, 1763], [1793, 1794, 1944], [1974, 1975, 2125], [2155, 2156, 2306], [2336, 2337, 2487], [2517, 2518, 2668], [2698, 2698, 2849], [2879, 2880]], "entry": 0, "logo_start": 4, "logo_end": 101, "title_start": 134, "title_fade_in": 136, "title_fade_out": 1001, "credits": 1034, "credits_end": 3001, "credits_done": 3002, "menu": 3002}}
+}

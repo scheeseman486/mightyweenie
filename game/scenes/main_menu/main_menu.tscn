@@ -1,0 +1,86 @@
+[gd_scene format=3 uid="uid://cm0tkxjpiem17"]
+
+[ext_resource type="Script" path="res://scenes/main_menu/main_menu.gd" id="1_mm"]
+[ext_resource type="Script" path="res://src/rom/rom_backdrop.gd" id="2_bd"]
+[ext_resource type="Script" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="4_pl"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rom/rom_sprite.gd" id="6_spr"]
+[ext_resource type="Script" path="res://src/rom/rom_starfield.gd" id="7_sf"]
+[ext_resource type="Script" path="res://scenes/main_menu/team_panel.gd" id="8_tp"]
+
+[sub_resource type="Resource" id="pal_menu"]
+script = ExtResource("3_pal")
+screen = 1
+steps = PackedStringArray("screen_palette", "black 0", "ice_line")
+
+[sub_resource type="Resource" id="tiles_menu"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_041bf2")
+fonts = PackedStringArray("font_01f958", "font_0447f4")
+
+[node name="MainMenu" type="Node2D"]
+script = ExtResource("1_mm")
+screen_id = 1
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+script = ExtResource("2_bd")
+palette = SubResource("pal_menu")
+
+[node name="Starfield" type="Node2D" parent="."]
+script = ExtResource("7_sf")
+palette = SubResource("pal_menu")
+
+[node name="PlaneA" type="TileMapLayer" parent="."]
+position = Vector2(0, 1)
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_menu")
+palette = SubResource("pal_menu")
+
+[node name="Plane" type="TileMapLayer" parent="." node_paths=PackedStringArray("lower")]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_menu")
+palette = SubResource("pal_menu")
+split_row = 16
+lower = NodePath("../PlaneA")
+
+[node name="PanelA" type="Node2D" parent="."]
+script = ExtResource("8_tp")
+
+[node name="Ring" type="AnimatedSprite2D" parent="PanelA"]
+script = ExtResource("6_spr")
+palette = SubResource("pal_menu")
+tick_driven = true
+
+[node name="Logo" type="AnimatedSprite2D" parent="PanelA"]
+script = ExtResource("6_spr")
+palette = SubResource("pal_menu")
+tick_driven = true
+
+[node name="PanelB" type="Node2D" parent="."]
+script = ExtResource("8_tp")
+
+[node name="Ring" type="AnimatedSprite2D" parent="PanelB"]
+script = ExtResource("6_spr")
+palette = SubResource("pal_menu")
+tick_driven = true
+
+[node name="Logo" type="AnimatedSprite2D" parent="PanelB"]
+script = ExtResource("6_spr")
+palette = SubResource("pal_menu")
+tick_driven = true
+
+[node name="TorchLeft" type="AnimatedSprite2D" parent="."]
+script = ExtResource("6_spr")
+anim = "anim_041bca"
+palette = SubResource("pal_menu")
+tick_driven = true
+
+[node name="TorchRight" type="AnimatedSprite2D" parent="."]
+script = ExtResource("6_spr")
+anim = "anim_041bca"
+palette = SubResource("pal_menu")
+tick_driven = true

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Plan 14 desktop check (needs a display; not for the headless sandbox):
+# recorded passes of the original (out/rink/dec, mw_harness rink-dump) drawn
+# by the 2D rink and by the 3D rink through the calibration camera, which is
+# the original's projection. Prints, per pass, the pixels that differ and how
+# many fall outside the deviations plan 14 lists (expected: a few at most);
+# images and summary.json go to out/plan3d/godot/. Opens a window briefly.
+#   tools/bin/rink3d-calibration [recording:pass,pass ...]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+mw_require "$MW_TOOLS/godot/godot" godot
+specs=("$@")
+[[ ${#specs[@]} -gt 0 ]] || specs=(demo_s3:400,1500,2600 human_s9:800,2000 demo_s22:600,1800 human_s14:1000)
+exec "$MW_TOOLS/godot/godot" --path "$MW_ROOT/game" --resolution 1280x896 \
+  -s res://test/rink3d/calibration_render.gd -- "$MW_ROOT/out/plan3d/godot" "${specs[@]}"

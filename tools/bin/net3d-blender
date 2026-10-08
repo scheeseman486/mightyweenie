@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Rebuild the 3D nets' Blender sources and glTFs (plan 17): for each style
+# (standard, battle) Blender in the background on an empty file runs
+# tools/blender/net_build.py then tools/blender/net_export.py ->
+# assets/blender/net_<style>.blend and game/assets/rink3d/net_<style>.glb.
+# No ROM needed (hand-made numbers).
+#   tools/bin/net3d-blender
+# BLENDER overrides the Blender command (default: blender, else the Flatpak).
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+if [[ -n "${BLENDER:-}" ]]; then
+  read -r -a blender <<< "$BLENDER"
+elif command -v blender >/dev/null; then
+  blender=(blender)
+elif command -v flatpak >/dev/null && flatpak info org.blender.Blender >/dev/null 2>&1; then
+  blender=(flatpak run org.blender.Blender)
+else
+  echo "no Blender found (set BLENDER)" >&2; exit 1
+fi
+for style in standard battle; do
+  "${blender[@]}" --background --factory-startup --python-exit-code 1 \
+    --python-expr "import bpy; bpy.ops.wm.read_homefile(use_empty=True)" \
+    --python "$MW_ROOT/tools/blender/net_build.py" \
+    --python "$MW_ROOT/tools/blender/net_export.py" -- --style "$style" || exit 1
+done

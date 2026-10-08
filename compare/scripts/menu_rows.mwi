@@ -1,0 +1,35 @@
+# Main menu: every row, both directions, wrapping (no Start).
+@screen 1 +60 P1 RIGHT          # team A: next in the menu's order
+@screen 1 +90 P1 RIGHT
+@screen 1 +120 P1 LEFT
+@screen 1 +150 P1 UP            # up from team A: team B
+@screen 1 +180 P1 LEFT
+@screen 1 +210 P1 LEFT
+@screen 1 +240 P1 DOWN          # pads
+@screen 1 +270 P1 LEFT          # wraps to 4 (4-Way Play attached)
+@screen 1 +300 P1 LEFT
+@screen 1 +330 P1 DOWN          # play mode
+@screen 1 +360 P1 RIGHT
+@screen 1 +390 P1 RIGHT
+@screen 1 +420 P1 LEFT
+@screen 1 +450 P1 LEFT
+@screen 1 +480 P1 DOWN          # period length
+@screen 1 +510 P1 LEFT
+@screen 1 +540 P1 DOWN          # stadium (chosen: stops following team A)
+@screen 1 +570 P1 RIGHT
+@screen 1 +600 P1 RIGHT
+@screen 1 +630 P1 DOWN          # penalties
+@screen 1 +660 P1 RIGHT
+@screen 1 +690 P1 DOWN          # reserves
+@screen 1 +720 P1 RIGHT
+@screen 1 +750 P1 DOWN          # death index
+@screen 1 +780 P1 LEFT
+@screen 1 +810 P1 DOWN          # stays on the last row
+@screen 1 +840 P1 UP
+@screen 1 +870 P1 UP
+@screen 1 +900 P1 UP            # back to period length (skips the minutes byte)
+@screen 1 +930 P1 UP
+@screen 1 +960 P1 UP
+@screen 1 +990 P1 UP            # team A
+@screen 1 +1020 P1 RIGHT        # stadium stays chosen
+@screen 1 +1100 END

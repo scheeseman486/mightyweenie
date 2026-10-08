@@ -1,0 +1,2 @@
+# Title, legal and credit pages (no input), then the main menu idles a while.
+@screen 1 +900 END

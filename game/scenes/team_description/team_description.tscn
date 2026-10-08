@@ -1,0 +1,80 @@
+[gd_scene format=3 uid="uid://biwu1jnafe6oj"]
+
+[ext_resource type="Script" path="res://scenes/team_description/team_description.gd" id="1_td"]
+[ext_resource type="Script" path="res://src/rom/rom_backdrop.gd" id="2_bd"]
+[ext_resource type="Script" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="4_pl"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rom/rom_sprite.gd" id="6_spr"]
+[ext_resource type="Script" path="res://src/rom/rom_starfield.gd" id="7_sf"]
+[ext_resource type="Script" path="res://src/rom/rom_pieces.gd" id="8_pc"]
+[ext_resource type="Script" path="res://src/ui/portrait.gd" id="9_pt"]
+
+[sub_resource type="Resource" id="pal_td"]
+script = ExtResource("3_pal")
+screen = 2
+steps = PackedStringArray("screen_palette", "black 0", "panel_line a 0", "rom 1bd6a 2", "word c20c 41")
+
+[sub_resource type="Resource" id="tiles_td"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_041bf2", "picture_048738")
+fonts = PackedStringArray("font_01f958", "font_0447f4", "font_022bec")
+
+[node name="TeamDescription" type="Node2D"]
+script = ExtResource("1_td")
+screen_id = 2
+
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 224.0
+mouse_filter = 2
+script = ExtResource("2_bd")
+palette = SubResource("pal_td")
+
+[node name="Starfield" type="Node2D" parent="."]
+script = ExtResource("7_sf")
+palette = SubResource("pal_td")
+
+[node name="Plane" type="TileMapLayer" parent="."]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_td")
+palette = SubResource("pal_td")
+
+[node name="Sprites" type="Node2D" parent="."]
+
+[node name="Logo" type="AnimatedSprite2D" parent="Sprites"]
+script = ExtResource("6_spr")
+palette = SubResource("pal_td")
+tick_driven = true
+
+[node name="City" type="Sprite2D" parent="Sprites"]
+script = ExtResource("8_pc")
+palette = SubResource("pal_td")
+
+[node name="Name" type="Sprite2D" parent="Sprites"]
+script = ExtResource("8_pc")
+palette = SubResource("pal_td")
+
+[node name="Number" type="Sprite2D" parent="Sprites"]
+script = ExtResource("8_pc")
+palette = SubResource("pal_td")
+
+[node name="PlayerName1" type="Sprite2D" parent="Sprites"]
+script = ExtResource("8_pc")
+palette = SubResource("pal_td")
+
+[node name="PlayerName2" type="Sprite2D" parent="Sprites"]
+script = ExtResource("8_pc")
+palette = SubResource("pal_td")
+
+[node name="Portrait" type="Node2D" parent="Sprites"]
+script = ExtResource("9_pt")
+
+[node name="Badge" type="AnimatedSprite2D" parent="Sprites"]
+script = ExtResource("6_spr")
+palette = SubResource("pal_td")
+tick_driven = true
+
+[node name="Tail" type="Sprite2D" parent="Sprites"]
+script = ExtResource("8_pc")
+palette = SubResource("pal_td")

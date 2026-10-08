@@ -1,0 +1,21 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/rink3d/rink_view_3d.gd" id="1_view"]
+[ext_resource type="Script" path="res://src/rink3d/rink_model.gd" id="2_model"]
+[ext_resource type="Script" path="res://src/rink3d/sprites_3d.gd" id="3_sprites"]
+[ext_resource type="Script" path="res://src/rink3d/rink_camera_3d.gd" id="4_camera"]
+
+[node name="RinkView3D" type="Node3D"]
+script = ExtResource("1_view")
+
+[node name="World" type="Node3D" parent="."]
+
+[node name="Model" type="Node3D" parent="World"]
+script = ExtResource("2_model")
+
+[node name="Sprites" type="Node3D" parent="World"]
+script = ExtResource("3_sprites")
+
+[node name="Camera" type="Camera3D" parent="."]
+current = true
+script = ExtResource("4_camera")

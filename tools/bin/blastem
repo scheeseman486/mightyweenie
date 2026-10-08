@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# BlastEm with the project ROM by default.
+#   tools/bin/blastem            # play
+#   tools/bin/blastem -d         # start in the 68k debugger (run from a terminal)
+#   tools/bin/blastem -D         # wait for a GDB remote connection
+# BlastEm is GPL-3 and is used as a reference tool only; nothing links to it.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+mw_require "$MW_TOOLS/blastem/blastem" blastem
+rom="$MW_ROOT/rom/Mutant League Hockey (USA, Europe).md"
+# Append the project ROM unless a ROM file was passed explicitly.
+args=("$@"); has_rom=0
+for a in "$@"; do [[ -f "$a" ]] && has_rom=1; done
+(( has_rom )) || args+=("$rom")
+exec "$MW_TOOLS/blastem/blastem" "${args[@]}"

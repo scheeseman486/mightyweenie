@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Plan 11: the screens between plays of recorder v5's recordings against our
+# ports, pass for pass (game/test/sim/screen_check.gd). Default: MW_REC_SCREENS.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_recordings.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+names=(); opts=()
+while (( $# )); do
+  case "$1" in
+    --only|--show|--detail) opts+=("$1" "$2"); shift 2 ;;
+    --*) opts+=("$1"); shift ;;
+    *) names+=("$1"); shift ;;
+  esac
+done
+(( ${#names[@]} )) || names=("${MW_REC_SCREENS[@]}")
+status=0
+for n in "${names[@]}"; do
+  "$here/godot-headless" -s res://test/sim/screen_check.gd -- "$n" "${opts[@]}" 2>&1 \
+    | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)' || true
+  (( ${PIPESTATUS[0]} == 0 )) || status=1
+done
+exit $status

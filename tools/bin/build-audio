@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Build the audio GDExtension (MwChips: ymfm YM2612 + our SN76489) from
+# native/mw_audio into game/addons/mw_audio/bin/ (built, never committed).
+#   tools/bin/build-audio                 # Linux x86_64, debug + release
+#   tools/bin/build-audio --windows       # Windows x86_64 (cross-compiled with zig)
+#   tools/bin/build-audio --debug|--release [-j N]
+# First use fetches the pinned sources (tools/setup/fetch_tools.sh audio
+# [zig]). Incremental (make): re-running after an interruption continues
+# where it stopped. Intermediate files: native/mw_audio/build/ (ignored).
+# Libraries are installed by rename, so a running editor that has the old
+# one mapped is not disturbed (it loads the new one on its next start).
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+set -euo pipefail
+platform=linux
+targets=(template_debug template_release)
+jobs=$(nproc 2>/dev/null || echo 2)
+while (( $# )); do
+  case $1 in
+    --windows) platform=windows ;;
+    --linux) platform=linux ;;
+    --debug) targets=(template_debug) ;;
+    --release) targets=(template_release) ;;
+    -j) jobs=$2; shift ;;
+    -j*) jobs=${1#-j} ;;
+    *) echo "usage: build-audio [--windows] [--debug|--release] [-j N]" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+src="$MW_ROOT/native/mw_audio"
+build="$src/build"
+addon="$MW_ROOT/game/addons/mw_audio"
+gcpp="$MW_TOOLS/godot-cpp"
+ymfm="$MW_TOOLS/ymfm"
+
+# 1. Pinned sources (and the cross-compiler).
+if [[ "$(cat "$gcpp/.version" 2>/dev/null)" != "$GODOT_CPP_VERSION" ||
+      "$(cat "$ymfm/.version" 2>/dev/null)" != "$YMFM_VERSION" ]]; then
+  "$MW_TOOLS/setup/fetch_tools.sh" audio
+fi
+if [[ $platform == windows ]]; then
+  [[ "$(cat "$MW_TOOLS/zig/.version" 2>/dev/null)" == "$ZIG_VERSION" ]] || "$MW_TOOLS/setup/fetch_tools.sh" zig
+  zig="$MW_TOOLS/zig/zig"
+  cxx="$zig c++ -target x86_64-windows-gnu"
+  ar="$zig ar"
+  ext=dll
+else
+  cxx="${CXX:-g++}"
+  ar="${AR:-ar}"
+  ext=so
+fi
+
+# 2. godot-cpp bindings for API $GODOT_CPP_API, trimmed by build_profile.json
+#    (shared by all platforms and targets: 64-bit, single precision).
+#    One directory per input combination, so nothing is ever regenerated in place.
+key="$( (echo "$GODOT_CPP_VERSION $GODOT_CPP_API"; cat "$src/build_profile.json" "$src/gen_bindings.py") | sha256sum | cut -c1-12)"
+gen="$build/bindings-$key"
+if [[ ! -f "$gen/.done" ]]; then
+  echo "[build-audio] generating godot-cpp bindings (api $GODOT_CPP_API) -> ${gen#"$MW_ROOT"/}"
+  mkdir -p "$gen"
+  python3 -I "$src/gen_bindings.py" "$gcpp" "$GODOT_CPP_API" "$src/build_profile.json" "$gen" >/dev/null
+  touch "$gen/.done"
+fi
+
+# 3. Compile and link, then install by rename. Make runs in native/mw_audio
+#    and gets every path relative to it, so the compiler's dependency files
+#    (.d) name no machine's absolute paths: the desktop and a VM that mounts
+#    the folder elsewhere share one build directory.
+rel() { realpath -m --relative-to="$src" "$1"; }
+mkdir -p "$addon/bin"
+for target in "${targets[@]}"; do
+  name="libmw_audio.$platform.$target.x86_64.$ext"
+  echo "[build-audio] $name"
+  make -C "$src" --no-print-directory -j"$jobs" \
+    PLATFORM="$platform" TARGET="$target" CXX="$cxx" AR="$ar" \
+    GODOT_CPP="$(rel "$gcpp")" YMFM="$(rel "$ymfm")" GEN="$(rel "$gen")" OUT="$(rel "$build/out/$name")"
+  if ! cmp -s "$build/out/$name" "$addon/bin/$name"; then
+    cp "$build/out/$name" "$addon/bin/.$name.tmp"
+    mv -f "$addon/bin/.$name.tmp" "$addon/bin/$name"
+    echo "[build-audio] installed game/addons/mw_audio/bin/$name"
+  else
+    echo "[build-audio] game/addons/mw_audio/bin/$name is up to date"
+  fi
+done
+
+# 4. Godot loads the extensions listed in .godot/extension_list.cfg, which the
+#    editor's file scan (or godot --import) maintains; add ours if a project
+#    cache exists and lacks it, so headless runs see MwChips without a re-import.
+list="$MW_ROOT/game/.godot/extension_list.cfg"
+entry="res://addons/mw_audio/mw_audio.gdextension"
+if [[ $platform == linux && -d "$MW_ROOT/game/.godot" && -f "$addon/mw_audio.gdextension" ]] &&
+   ! grep -qxF "$entry" "$list" 2>/dev/null; then
+  echo "$entry" >> "$list"
+  echo "[build-audio] registered the extension in game/.godot/extension_list.cfg"
+fi

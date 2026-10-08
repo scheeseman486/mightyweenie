@@ -1,0 +1,12 @@
+# Default game; once play has resumed after the first stoppage, the tracer
+# forces the fight phase (4): FIGHT! banner, the fight (18) with a few
+# punches, the result message (17), back to the faceoff.
+@screen 1 +200 P1 START
+#poke @screen 5 +200 FFC60C.w=0
+#poke @screen 5 +200 FFC60A.w=4
+@screen 18 +120 P1 A
+@screen 18 +160 P1 A
+@screen 18 +200 P1 A
+@screen 17 +300 P1 START
+@screen 17 +400 P1 START
+@screen 5 #2 +300 END

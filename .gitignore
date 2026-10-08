@@ -1,0 +1,72 @@
+# --- No game data, ever --------------------------------------------------------
+# The game reads every asset from your own dump of the cartridge at runtime
+# (rom/README.md). Nothing copied or derived from it - ROM images, extracted
+# graphics, audio, text, the manual - belongs in this repository.
+rom/*
+!rom/README.md
+game/rom/*
+!game/rom/README.md
+*.gen
+*.bin
+*.smd
+*.32x
+*.sms
+*.state
+*.gpgx
+*.srm
+*.sav
+*.md.bak
+*.pdf
+
+# --- Development workflow material (kept out of the repository) --------------
+CLAUDE.md
+**/CLAUDE.md
+AGENTS.md
+.claude/
+.cursor/
+plans/
+docs/re/
+docs/research/
+Claude outputs/
+.worktrees/
+.public/
+
+# --- Godot MCP editor automation (separately licensed, development only) ------
+game/addons/godot_mcp/
+Godot MCP files/
+**/godot_mcp/server/
+
+# --- Downloaded toolchain (tools/setup/fetch_tools.sh) ---------------------------
+# No trailing slash, so a symlink to an existing install is ignored too.
+tools/godot
+tools/jdk
+tools/ghidra
+tools/blastem
+tools/godot-cpp
+tools/ymfm
+tools/zig
+
+# --- Build output ----------------------------------------------------------------
+native/*/build/
+game/addons/mw_audio/bin/
+# Blender files written by tools/bin/rink3d-blender and net3d-blender (the game
+# uses the .glb files they export into game/assets/rink3d/).
+assets/blender/
+
+# --- Python --------------------------------------------------------------------------
+.venv*/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# --- Ghidra database (binary, single writer; annotations live in re/labels/) ----
+re/ghidra/project/
+
+# --- Godot -----------------------------------------------------------------------
+game/.godot/
+game/reports/
+*.translation
+
+# --- Scratch output ----------------------------------------------------------------
+out/
+*.log

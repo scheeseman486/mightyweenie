@@ -1,0 +1,8 @@
+{
+  "name": "time",
+  "description": "Pass timing: tick relative to the visit's screen entry, and ticks per pass. Always recorded.",
+  "fields": [
+    {"name": "tick", "original": "builtin", "godot": "builtin", "compare": "relative"},
+    {"name": "elapsed", "original": "builtin", "godot": "builtin", "compare": "exact"}
+  ]
+}
