@@ -39,24 +39,24 @@ func after_each() -> void:
 func _audio(music: bool, effects: bool) -> MwAudio:
 	MwAudio.free_music_samples = music
 	MwAudio.free_effects = effects
-	var a := MwAudio.new()
-	a.setup(rom, false)
-	return a
+	var service := MwAudio.new()
+	service.setup(rom, false)
+	return service
 
 
 ## One tick with its audio rendered (the extra voices advance and end).
-static func _tick(a: MwAudio) -> void:
-	a.step_driver()
-	a.chips.call("render", a.frames_this_tick())
+static func _tick(service: MwAudio) -> void:
+	service.step_driver()
+	service.chips.call("render", service.frames_this_tick())
 
 
 ## The samples on the extra voices.
-static func _extra_samples(a: MwAudio) -> Array:
+static func _extra_samples(service: MwAudio) -> Array:
 	var out := []
 	for v in range(4, 16):
-		var s: int = a.chips.call("pcm_sample", v)
-		if s >= 0:
-			out.append(s)
+		var sample: int = service.chips.call("pcm_sample", v)
+		if sample >= 0:
+			out.append(sample)
 	return out
 
 
@@ -85,9 +85,9 @@ func test_menu_drums_play_through_the_cursor_sound() -> void:
 			assert_eq(seen, {}, "switch off: no extra voices")
 		else:
 			for s in seen:
-				var d := audio.z80.samples.desc(s)
-				drums[d.instrument] = true
-				assert_eq(d.priority, 0, "only the music's drums (priority 0)")
+				var desc := audio.z80.samples.desc(s)
+				drums[desc.instrument] = true
+				assert_eq(desc.priority, 0, "only the music's drums (priority 0)")
 			assert_gt(drums.size(), 0, "drums played on extra voices")
 			assert_true(audio.extras_peak <= 2, "a kick and a snare at most")
 		audio.free()
@@ -187,3 +187,42 @@ func test_driver_unchanged_by_the_switches() -> void:
 			fail_test("tick %d differs" % i)
 			break
 	assert_true(same, "identical driver state")
+
+
+## Owner, 2026-10-12: a star's voice on the game setup kept playing after
+## Menu Back - now it fades out quickly (MwPortrait.quiet): the driver
+## stops it at once (busy no more, its channel free), its sample moves off
+## the channel onto an extra voice and fades out there within the ticks
+## asked; the driver's own state as for a plain stop.
+func test_a_voice_fades_out_on_an_extra_voice() -> void:
+	if not need_rom():
+		return
+	var id := -1
+	for sp in range(1, 5):
+		var data := MwGfx.u32(rom, MwPortrait.BY_SPECIES + 6 * sp)
+		var v := MwGfx.u16(rom, data + 8)
+		if v >= 0x12:
+			id = v
+			break
+	assert_gt(id, 0, "a sampled portrait voice")
+	audio = _audio(false, false)
+	var plain := _audio(false, false)
+	var h := audio.play_sound(id)
+	var hp := plain.play_sound(id)
+	for i in 3:
+		_tick(audio)
+		_tick(plain)
+	var k := audio.s68k.voice_channel(h)
+	assert_gte(k, 0, "on a channel")
+	assert_true(audio.chips.call("pcm_active", k), "sounding")
+	var sample: int = audio.chips.call("pcm_sample", k)
+	audio.fade_out_sound(h, 12, id)
+	plain.s68k.sound_stop(hp)
+	assert_false(audio.s68k.sound_busy(h), "stopped in the driver at once")
+	assert_false(audio.chips.call("pcm_active", k), "its channel free")
+	assert_true(sample in _extra_samples(audio), "the sample on an extra voice, fading")
+	for i in 14:
+		_tick(audio)
+		_tick(plain)
+	assert_false(sample in _extra_samples(audio), "faded out within the ticks asked")
+	assert_eq(audio.s68k.ram_image(), plain.s68k.ram_image(), "the driver as after a plain stop")

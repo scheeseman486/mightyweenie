@@ -35,16 +35,17 @@ extends RefCounted
 ## `$80`; the DAC gets every value. The 16 deltas are part of the Z80 driver
 ## (Z80 `$0112`).
 
-const INSTRUMENT_TABLE := 0x1FF010    ## `$E6A6` (lea at `$13C44`)
+const INSTRUMENT_TABLE := MwSoundRom.INSTRUMENTS    ## `$E6A6` (lea at `$13C44`)
 const INSTRUMENT_COUNT := 256
-const SAMPLE_BASE := 0x1C0000         ## `$E6AA` (lea at `$13C58`)
-const SOUND_ID_TABLE := 0x1F5C6       ## sound_play `$13CEE`: id - `$12` -> instrument index (word, < 0 = none)
+const SAMPLE_BASE := MwSoundRom.SAMPLES         ## `$E6AA` (lea at `$13C58`)
+## sound_play `$13CEE`: id - `$12` -> instrument index (word, < 0 = none)
+const SOUND_ID_TABLE := MwSoundRom.VOICE_IDS
 const SOUND_ID_FIRST := 0x12
 const SOUND_ID_COUNT := 0x29          ## ids `$12-$3A` (`$13D2C` admits up to `$4C`: other data follows)
 const CODEC_RAW := 0
 const CODEC_TYPE1 := 1
 const CODEC_DPCM := 2
-const DRIVER_BLOB := 0x15C90          ## length word, then the code loaded at Z80 `$0000`
+const DRIVER_BLOB := MwSoundRom.Z80_DRIVER          ## length word, then the code loaded at Z80 `$0000`
 const DPCM_DELTA_TABLE := DRIVER_BLOB + 2 + 0x112   ## 16 signed bytes (Z80 `$0112`)
 
 ## NTSC Z80 clock: 53 693 175 Hz / 15 = 3 579 545 Hz.
@@ -113,6 +114,7 @@ var descs: Array[Desc] = []
 var _by_header := {}        # header ROM address (any copy) -> index into descs
 var _by_instrument := {}    # instrument index -> index into descs
 var _by_record := {}        # instrument record ROM address -> index into descs
+var _ids := {}              # sound id -> instrument index (sound_id_map: read once; read-only)
 var _decoded := {}          # index -> PackedByteArray
 var _streams := {}          # index -> AudioStreamWAV
 
@@ -139,6 +141,7 @@ func count() -> int:
 	return descs.size()
 
 
+## Sample [param index]'s description ([member descs]).
 func desc(index: int) -> Desc:
 	return descs[index]
 
@@ -182,12 +185,20 @@ func add_header(address: int) -> int:
 
 ## sound_play id -> instrument index (ids `$12-$3A` with an entry >= 0).
 func sound_id_map() -> Dictionary:
-	var out := {}
-	for i in SOUND_ID_COUNT:
-		var v := _u16(SOUND_ID_TABLE + 2 * i)
-		if v < 0x8000:
-			out[SOUND_ID_FIRST + i] = v
-	return out
+	if _ids.is_empty():
+		for i in SOUND_ID_COUNT:
+			var v := _u16(SOUND_ID_TABLE + 2 * i)
+			if v < 0x8000:
+				_ids[SOUND_ID_FIRST + i] = v
+	return _ids
+
+
+## Plan 40 (D8): sound [param id]'s sample (an index into [member descs];
+## -1: none - not a PCM voice, or no instrument) - the driver model's
+## "sounding?", the organ pool's floor hit and the chant's measure.
+func by_sound_id(id: int) -> int:
+	var ids := sound_id_map()
+	return by_instrument(int(ids[id])) if ids.has(id) else -1
 
 
 ## DPCM code -> signed delta, as the driver has it.
@@ -241,17 +252,17 @@ func stream(index: int) -> AudioStreamWAV:
 	pcm.resize(2 * values.size())
 	for i in values.size():
 		pcm[2 * i + 1] = values[i] ^ 0x80     # high byte of (s - $80) << 8; low byte 0
-	var s := AudioStreamWAV.new()
-	s.format = AudioStreamWAV.FORMAT_16_BITS
-	s.mix_rate = d.mix_rate()
-	s.stereo = false
-	s.data = pcm
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = d.mix_rate()
+	wav.stereo = false
+	wav.data = pcm
 	if d.loops():
-		s.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		s.loop_begin = d.loop_start
-		s.loop_end = d.length
-	_streams[index] = s
-	return s
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_begin = d.loop_start
+		wav.loop_end = d.length
+	_streams[index] = wav
+	return wav
 
 
 ## The driver's 256-byte volume table (`$0C07` -> Z80 `$1B00`) for a volume

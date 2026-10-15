@@ -11,7 +11,7 @@
 // pinned, along the glass) or, for the rows below the ice (stick blades,
 // skates, splashes), the ice towards the camera.
 
-const float BB_PX = 0.05;   // MwRink3D.METRES_PER_PX: one frame pixel in view units
+const float BB_PX = RINK_PX;   // one frame pixel in view units (rink3d_geom)
 
 uniform float folded_lift = 0.002;   // the rows lying on the ice: above the ground layers (m)
 // left, top, width, height: frame pixels from the frame's point (y down)
@@ -26,31 +26,12 @@ varying flat vec3 bb_toward;   // view space: the depth plane's normal, 1 m: lev
                                // the camera, or (pinned) the far glass's facing
 varying flat float bb_pinned;  // 1: pinned to the far glass (nothing lies on the ice)
 
-// Where the camera's ray through view position [param v] meets the plane
-// through [param q] with normal [param n] (view space; [param ortho]: parallel
-// rays along -z).
-vec3 bb_ray_plane(vec3 v, vec3 n, vec3 q, bool ortho) {
-	if (ortho) {
-		float nz = abs(n.z) < 1e-6 ? 1e-6 : n.z;
-		return v - vec3(0.0, 0.0, dot(n, v - q) / nz);
-	}
-	float nv = dot(n, v);
-	return v * (dot(n, q) / (abs(nv) < 1e-9 ? 1e-9 : nv));
-}
-
 // Plan 16, the 3D order: the boards (the physics boundary, a rounded
-// rectangle: half sizes 185 x 372 px, corners 74 far / 48 near) and their
-// height (the far glass's top). With boards_rule off (the calibration
-// camera: the original's 2D order) the depth is the plain card's.
+// rectangle: rink3d_geom's rink_sd) and their height (the far glass's top).
+// With boards_rule off (the calibration camera: the original's 2D order)
+// the depth is the plain card's.
 uniform bool boards_rule = true;
-const float BOARDS_TOP = 48.0;
-
-// Signed distance (rink px) from the boards' inside line: < 0 on the ice.
-float rink_sd(vec2 p) {
-	float r = p.y < 0.0 ? 74.0 : 48.0;
-	vec2 q = abs(p) - (vec2(185.0, 372.0) - r);
-	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
-}
+const float BOARDS_TOP = RINK_BOARDS_TOP;
 
 vec3 to_rink(vec3 v, mat4 inv_view) {
 	vec3 w = (inv_view * vec4(v, 1.0)).xyz;
@@ -59,6 +40,86 @@ vec3 to_rink(vec3 v, mat4 inv_view) {
 
 vec3 from_rink(vec3 r, mat4 view) {
 	return (view * vec4(vec3(r.x, r.z, r.y) * BB_PX, 1.0)).xyz;
+}
+
+// Plan 32 (owner: the benches' figures clipped at the barrier, but not where
+// they hang over it): the walls round the benches and the boxes, as
+// the rink model has them (rink px: x0, y0, x1, y1) and their tops (z, the
+// pens' tall glass included to its panes' top; the hallways' walls run on
+// under the stands - owner, 2026-10-11; MwBench3D.BARRIERS is the same list). A billboard
+// standing outside the boards (a reserve, a penalised player, a player at
+// the bench door) is a flat drawing wider than the body it shows: seen
+// front-on, its sides reach through a wall seen edge-on, which cannot hide
+// them. Its pixels that lie past a wall from his feet (on the upright plane
+// at them, facing the camera) and below its top are not drawn; above it
+// they hang over it and are, up to OVERHANG px past it (owner: the robots,
+// the widest, hung over too far). The boxes' spear fence is not one (owner:
+// cut at it, a figure showed gaps between its bars); the half-height
+// panels beyond it count to their pad (their glass is see-through too).
+const int BARRIERS = 16;
+const vec4 BARRIER[16] = {
+	vec4(-185.0, 160.0, -216.0, 160.0),   // west: the pens' end walls
+	vec4(-185.0, -160.0, -216.0, -160.0),
+	vec4(-216.0, 40.0, -216.0, 160.0),   // their back walls
+	vec4(-216.0, -40.0, -216.0, -160.0),
+	vec4(-216.0, 40.0, -344.0, 40.0),   // the hallway's walls
+	vec4(-216.0, -40.0, -344.0, -40.0),
+	vec4(-185.0, -160.0, -185.0, 160.0),   // the low boards in front of the benches
+	vec4(-185.0, 0.0, -344.0, 0.0),   // the bar between the benches
+	vec4(185.0, 160.0, 216.0, 160.0),   // east: the boxes' end walls
+	vec4(185.0, -160.0, 216.0, -160.0),
+	vec4(216.0, 40.0, 216.0, 160.0),   // their back walls
+	vec4(216.0, -40.0, 216.0, -160.0),
+	vec4(216.0, 40.0, 344.0, 40.0),   // the hallway's walls
+	vec4(216.0, -40.0, 344.0, -40.0),
+	vec4(185.0, 128.0, 185.0, 160.0),   // the boards beyond the fence (their pad)
+	vec4(185.0, -160.0, 185.0, -128.0)
+};
+const float BARRIER_TOP[16] = {
+	49.0, 49.0, 49.0, 49.0, 49.0, 49.0, 19.0, 16.0,
+	49.0, 49.0, 49.0, 49.0, 49.0, 49.0, 19.0, 19.0
+};
+const float OVERHANG = 4.0;
+uniform bool barriers = true;   // off: drawn whole (for comparisons)
+
+varying flat vec3 bb_scale;    // the world's scale (the ortho camera's: y, z by sqrt 2)
+varying flat vec2 bb_feet;     // rink px: the ice point under the frame's point
+
+// Whether the segments a-b and c-d cross (a-b's ends excluded).
+bool bb_crosses(vec2 a, vec2 b, vec2 c, vec2 d) {
+	vec2 r = b - a;
+	vec2 s = d - c;
+	float den = r.x * s.y - r.y * s.x;
+	if (abs(den) < 1e-6) {
+		return false;
+	}
+	vec2 q = c - a;
+	float t = (q.x * s.y - q.y * s.x) / den;
+	float u = (q.x * r.y - q.y * r.x) / den;
+	return t > 0.0 && t < 1.0 && u >= 0.0 && u <= 1.0;
+}
+
+// Whether the billboard pixel at view position [param v] is past a barrier
+// from the feet of a frame standing outside the boards, and below its top
+// or more than OVERHANG past it.
+bool past_barrier(vec3 v, bool ortho, mat4 inv_view) {
+	if (!barriers || bb_pinned > 0.5 || rink_sd(bb_feet) <= 0.0) {
+		return false;                 // on the ice: the boards' own rules
+	}
+	vec3 g = (inv_view * vec4(ray_plane(v, bb_toward, bb_anchor, ortho), 1.0)).xyz / bb_scale;
+	vec3 p = vec3(g.x, g.z, g.y) / BB_PX;
+	for (int k = 0; k < BARRIERS; k++) {
+		vec2 c = BARRIER[k].xy;
+		vec2 d = BARRIER[k].zw;
+		if (bb_crosses(bb_feet, p.xy, c, d)) {
+			vec2 along = normalize(d - c);
+			float past = abs(along.x * (p.y - c.y) - along.y * (p.x - c.x));
+			if (p.z < BARRIER_TOP[k] || past > OVERHANG) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 // A card pixel [param p] (view space) that reaches past the boards behind
@@ -117,12 +178,13 @@ vec3 boards_pull(vec3 p, bool ortho, mat4 inv_view, mat4 view) {
 // anchor (a plane through it facing the camera or, pinned, along the far
 // glass), or below the ice the ice (just above it). In the 3D order, parts
 // past the boards behind the player come forward (boards_pull); rows below
-// the ice that would lie past the boards stay at the player's feet.
+// the ice that would lie past the boards stay at the player's feet (and
+// for a figure outside them, rows that would lie inside).
 vec3 billboard_depth_point(vec3 v, bool ortho, mat4 inv_view, mat4 view) {
-	vec3 p = bb_ray_plane(v, bb_toward, bb_anchor, ortho);
+	vec3 p = ray_plane(v, bb_toward, bb_anchor, ortho);
 	bool folded = false;
 	if (bb_pinned < 0.5 && dot(p - bb_anchor, bb_up) < 0.0) {
-		p = bb_ray_plane(v, bb_up, bb_anchor + bb_up * folded_lift, ortho);
+		p = ray_plane(v, bb_up, bb_anchor + bb_up * folded_lift, ortho);
 		folded = true;
 	}
 	if (boards_rule && rink_sd(to_rink(bb_anchor, inv_view).xy) <= 0.0) {
@@ -133,6 +195,11 @@ vec3 billboard_depth_point(vec3 v, bool ortho, mat4 inv_view, mat4 view) {
 		} else {
 			p = boards_pull(p, ortho, inv_view, view);
 		}
+	} else if (boards_rule && folded && rink_sd(to_rink(p, inv_view).xy) <= 0.0) {
+		// standing outside the boards (the benches, plan 32): rows below the
+		// ice that would lie on the rink's side of them stay at his feet,
+		// behind the boards
+		p = bb_anchor + bb_up * folded_lift;
 	}
 	p.z += pin.y;
 	return p;

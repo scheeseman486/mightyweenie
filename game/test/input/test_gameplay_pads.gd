@@ -30,3 +30,47 @@ func test_a_verb_alone_is_a_direct_meaning() -> void:
 func test_pause_is_start() -> void:
 	var r := MwGameplayPads.read(_frame({"p3_pause": true}), 3)
 	assert_eq(r["new"], 0x80)
+
+
+## Plan 42 (speed): every pad read in one go (MwGameplayPads.read_all, the
+## frame's actions split by player once) is each pad read alone - random
+## frames of every player's gameplay verbs, menu verbs, local verbs,
+## RECLAIM, sticks and shot heights.
+func test_reading_every_pad_at_once_is_reading_each() -> void:
+	var verbs: Array = ["move_up", "move_down", "move_left", "move_right", "pause", MwVerbs.RECLAIM]
+	for b in MwVerbs.BUTTON_VERBS:
+		verbs.append_array(MwVerbs.BUTTON_VERBS[b])
+	var actions := []
+	for p in range(1, 13):
+		for v in verbs:
+			actions.append(MwVerbs.action(p, v))
+		actions.append(MwVerbs.menu_action(p, "ui_left"))
+	actions.append_array(["ui_accept", "ui_up"])
+	actions.append_array(MwVerbs.local_verbs())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 42
+	for i in 600:
+		# (half the frames with presses rare: most pads read the quick way, plan 42)
+		var press_rate := 0.5 if i % 2 == 0 else 0.03
+		var input := MwInputFrame.new()
+		for k in rng.randi_range(0, 40):
+			var a: String = actions[rng.randi() % actions.size()]
+			if rng.randf() < 0.6:
+				input.held[a] = true
+			if rng.randf() < press_rate:
+				input.pressed[a] = true
+		if rng.randf() < 0.3:
+			input.sticks = []
+			for p in 12:
+				input.sticks.append(Vector2i(rng.randi_range(-256, 256), rng.randi_range(-256, 256)))
+		if rng.randf() < 0.3:
+			input.heights = []
+			for p in 12:
+				input.heights.append(rng.randi_range(-1, 2))
+		var all := MwGameplayPads.read_all(input, 12)
+		for p in 12:
+			var one := MwGameplayPads.read(input, p + 1)
+			if str(all[p]) != str(one):
+				assert_eq(str(all[p]), str(one), "frame %d, pad %d" % [i, p + 1])
+				return
+	assert_eq(MwGameplayPads.read_all(null, 2), [MwGameplayPads.read(null, 1), MwGameplayPads.read(null, 2)])

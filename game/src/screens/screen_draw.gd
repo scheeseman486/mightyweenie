@@ -20,28 +20,28 @@ static var cut_rows := true
 ## The sprite list ([method MwRinkDraw.sprites]) of [param ops] for [param s].
 func list(s: MwRinkState, ops: Array) -> Array:
 	state = s
+	cap = MAX_COUNT_EXTENDED if s.extended else MAX_COUNT     # (plan 34: an extended set-up's replay)
 	calls = []
 	adds = []
-	_entries = [[0, 0, 0, 0, 0, 0]]
-	_links = PackedInt32Array([0])
+	start_list()
 	for op in ops:
 		var o: Array = op
-		var p: Vector3i
+		var point: Vector3i
 		match str(o[0]):
 			"anim":
 				# ["anim", record, variant, frame, x, y, depth, attr]
-				p = to_sprite(Vector3i(int(o[4]), int(o[5]), int(o[6])), false)
+				point = to_sprite(Vector3i(int(o[4]), int(o[5]), int(o[6])), false)
 				var first := _entries.size()
-				draw_anim_frame(int(o[1]), int(o[2]), int(o[3]), p.x, p.y, int(o[6]), int(o[7]))
+				draw_anim_frame(int(o[1]), int(o[2]), int(o[3]), point.x, point.y, int(o[6]), int(o[7]))
 				if o.size() > 8 and cut_rows:
 					var row := to_sprite(Vector3i(0, int(o[8]), 0), false).y
 					for i in range(first, _entries.size()):
 						(_entries[i] as Array).append(row)
 			"frame":
 				# ["frame", frame, x, y, depth, attr]
-				p = to_sprite(Vector3i(int(o[2]), int(o[3]), int(o[4])), false)
-				draw_frame(p.x, p.y, int(o[4]), int(o[5]), int(o[1]))
-			"piece", "portrait", "sprite_text":
+				point = to_sprite(Vector3i(int(o[2]), int(o[3]), int(o[4])), false)
+				draw_frame(point.x, point.y, int(o[4]), int(o[5]), int(o[1]))
+			"piece", "portrait", "sprite_text", "glyph":
 				phase_sprite(o)
 			_:
 				push_warning("MwScreenDraw: unknown sprite operation %s" % str(o[0]))

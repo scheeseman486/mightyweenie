@@ -22,6 +22,9 @@ const WRIST_SPREAD := 0x1C237
 const AIM_X := 0x1C1D6               ## by held d-pad: x offset at the net
 const AIM_LIFT := 0x1C1F6            ## by held d-pad: vz
 const PASS_AIM := 0x1C4E0            ## by held d-pad: angle (-1 none)
+## A goalie's stick with its own end's half taken away aims only with this
+## much (of 256) left across (the port's analogue control).
+const STICK_AIM_MIN := 0x40
 const LEAD_SHIFT := 0x1C500          ## receiver's puck distance -> lead ticks (2^k)
 const PASS_SPREAD := 0x4FB2          ## by (PASSING + OFFENSE + 20) / 4
 const NET_SIZES := 0x1C74A
@@ -48,6 +51,8 @@ func _init(sim_: MwRinkSim) -> void:
 
 # --- `$5E74`: the update --------------------------------------------------------------------
 
+## `$5E74`: the puck's update over [param e] ticks - the faceoff drop, the pick-up lock, held
+## at the carrier's stick or in the goalie's glove, else loose physics and [method environment].
 func update(e: int) -> void:
 	if s.phase == 1:
 		pk.motion.vel[0] = 0
@@ -101,9 +106,9 @@ func update(e: int) -> void:
 	pk.prev_x = MwRinkSim.s16(px.x)
 	pk.prev_y = MwRinkSim.s16(px.y)
 	if pk.flags & MwRinkState.Puck.CARRIED:
-		var c := pk.carrier
-		var st := stick(c)
-		_hold_at(st.x, st.y, 0, c)
+		var player := pk.carrier
+		var st := stick(player)
+		_hold_at(st.x, st.y, 0, player)
 		return
 	var t := e
 	if pk.flags & MwRinkState.Puck.ROCKET and pk.flags & MwRinkState.Puck.SHOT \
@@ -137,6 +142,8 @@ func stick(p: MwRinkState.Player) -> Vector2i:
 
 # --- `$7A50`: the environment -------------------------------------------------------------------
 
+## `$7A50`: the puck against its surroundings after its step - the crease mark, corpses, nets
+## and goals, in-ice hazards, the boards and out of play, the corners.
 func environment() -> void:
 	var px := pk.motion.pixels()
 	_x = MwRinkSim.s16(px.x)
@@ -183,12 +190,12 @@ func environment() -> void:
 
 ## `$426A`: inside the goal crease as the AI and pick-ups see it
 ## (x' = x - x / 4, |y| - 329, length <= 45).
-func crease(o: MwRinkState.Actor) -> bool:
-	var p := o.motion.pixels()
-	var y := MwRinkSim.s16(absi(MwRinkSim.s16(p.y)) - GOAL_LINE)
+func crease(actor: MwRinkState.Actor) -> bool:
+	var point := actor.motion.pixels()
+	var y := MwRinkSim.s16(absi(MwRinkSim.s16(point.y)) - GOAL_LINE)
 	if y >= 0:
 		return false
-	var x := MwRinkSim.s16(p.x - MwRinkSim.asr(MwRinkSim.s16(p.x), 2))
+	var x := MwRinkSim.s16(point.x - MwRinkSim.asr(MwRinkSim.s16(point.x), 2))
 	return MwTrig.distance(x, y) & 0xFFFF <= 0x2D
 
 
@@ -210,7 +217,8 @@ func _out_of_play() -> void:
 		a += 8
 		spot += 2
 	var d1 := MwTrig.distance(MwRinkSim.s16(x - MwGfx.s16(rom, a)), MwRinkSim.s16(y - MwGfx.s16(rom, a + 2))) & 0xFFFF
-	var d2 := MwTrig.distance(MwRinkSim.s16(x - MwGfx.s16(rom, a + 4)), MwRinkSim.s16(y - MwGfx.s16(rom, a + 6))) & 0xFFFF
+	var d2 := MwTrig.distance(MwRinkSim.s16(x - MwGfx.s16(rom, a + 4)),
+			MwRinkSim.s16(y - MwGfx.s16(rom, a + 6))) & 0xFFFF
 	if MwRinkSim.s16(d2) <= MwRinkSim.s16(d1):
 		spot += 1
 	s.faceoff_spot = spot
@@ -218,10 +226,10 @@ func _out_of_play() -> void:
 
 ## `$7B62`: a corpse (kind 11) at the puck's height bounces it back.
 func _corpses() -> void:
-	for o in s.objects:
-		if o.kind != MwRinkState.KIND_CORPSE:
+	for rink_object in s.objects:
+		if rink_object.kind != MwRinkState.KIND_CORPSE:
 			continue
-		var op := o.motion.pixels()
+		var op := rink_object.motion.pixels()
 		if absi(MwRinkSim.s16(op.z - _z)) >= 0xA:
 			continue
 		var d := MwTrig.distance(MwRinkSim.s16(op.x - _x), MwRinkSim.s16(op.y - _y)) & 0xFFFF
@@ -309,8 +317,8 @@ func _nets() -> void:
 			return
 	# the sides
 	var sneg := pk.prev_x < 0
-	var c := _cross(_y, _x, pk.prev_y, pk.prev_x, sneg, hw, 1)
-	if c.x == 0:
+	var side_crossing := _cross(_y, _x, pk.prev_y, pk.prev_x, sneg, hw, 1)
+	if side_crossing.x == 0:
 		return
 	s.crease_y = MwRinkSim.s16(MwRinkSim.asr(pk.motion.pos[1], 8))
 	_net_sound()
@@ -319,7 +327,7 @@ func _nets() -> void:
 	if MwRinkSim.s16(vx ^ (-1 if sneg else 0)) < 0:
 		vx = MwRinkSim.s16(-vx)
 	pk.motion.vel[0] = MwRinkSim.asr(vx, 1)
-	pk.motion.pos[1] = c.y * 256
+	pk.motion.pos[1] = side_crossing.y * 256
 	pk.motion.vel[1] = MwRinkSim.asr(pk.motion.vel[1], 1)
 
 
@@ -394,16 +402,16 @@ func _power_play(scoring: MwRinkState.Team, conceding: MwRinkState.Team) -> bool
 ## `$7FA0`: pits and holes let a fast puck hop over; slower, or a mine:
 ## bounced back.
 func _hazards() -> void:
-	for h in s.hazards:
-		if h.kind == 0 or h.kind == 1:
+	for hazard in s.hazards:
+		if hazard.kind == 0 or hazard.kind == 1:
 			continue
-		var w := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (h.kind - 1) + 4) - 6)
-		var hh := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (h.kind - 1) + 6) - 6)
-		if MwRinkSim.s16(absi(MwRinkSim.s16(h.x - _x)) - 4 - w) >= 0:
+		var w := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (hazard.kind - 1) + 4) - 6)
+		var hh := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (hazard.kind - 1) + 6) - 6)
+		if MwRinkSim.s16(absi(MwRinkSim.s16(hazard.x - _x)) - 4 - w) >= 0:
 			continue
-		if MwRinkSim.s16(absi(MwRinkSim.s16(h.y - _y)) - 4 - hh) >= 0:
+		if MwRinkSim.s16(absi(MwRinkSim.s16(hazard.y - _y)) - 4 - hh) >= 0:
 			continue
-		if h.kind != 4:
+		if hazard.kind != 4:
 			var sp := MwTrig.distance(pk.motion.vel[0], pk.motion.vel[1]) & 0xFFFF
 			if sp > 0x100:
 				pk.motion.vel[2] = MwRinkSim.s16(sp)
@@ -470,35 +478,35 @@ func _stick_reach(p: MwRinkState.Player) -> bool:
 ## a goalie takes it from him; a skater rolls `rng_range(0, 6c + p - 1) < p`
 ## (c = avg(carrier's OFFENSE), p = avg(own DEFENSE)) to poke it loose.
 func _challenge(p: MwRinkState.Player) -> void:
-	var c := pk.carrier
-	if c == p or c == null or c.position == 5:
+	var player := pk.carrier
+	if player == p or player == null or player.position == 5:
 		return
 	var puck_a := not pk.flags & MwRinkState.Puck.BY_TEAM_B
 	var team_a := sim.team_of(p).flags4 & 1 == 0
 	if puck_a == team_a:
 		return
 	if p.position == 5:
-		drop(c)
+		drop(player)
 		_take(p)
 		return
-	var cv := sim.avg(sim.team_of(c), rom[c.record + 0xB] >> 4)
+	var cv := sim.avg(sim.team_of(player), rom[player.record + 0xB] >> 4)
 	var pv := sim.avg(sim.team_of(p), rom[p.record + 0xB] & 0xF)
 	var n := (6 * cv + pv) & 0xFFFF
 	if n == 0:
 		return
 	if sim.rng_range(0, n - 1) >= MwRinkSim.s16(pv):
 		return
-	_poke(p, c)
+	_poke(p, player)
 
 
 ## `$519A`: knocked loose between the two (mean of their velocity angles,
 ## their mean speed, at least 1 px per tick), popping up; skaters can't
 ## touch it for 30 ticks.
-func _poke(p: MwRinkState.Player, c: MwRinkState.Player) -> void:
+func _poke(p: MwRinkState.Player, player: MwRinkState.Player) -> void:
 	sim.tick_at(2)
-	drop(c)
-	var cm := MwSimPlayers.own_motion(c)
-	var ca := cm.y if cm.x != 0 else c.angle
+	drop(player)
+	var cm := MwSimPlayers.own_motion(player)
+	var ca := cm.y if cm.x != 0 else player.angle
 	var pm := MwSimPlayers.own_motion(p)
 	var pa := pm.y if pm.x != 0 else p.angle
 	var a := _mean_angle(pa, ca)
@@ -567,10 +575,10 @@ func _take(p: MwRinkState.Player) -> void:
 		pk.flags ^= MwRinkState.Puck.BY_TEAM_B
 	var who := p
 	if not p.flags & MwRinkState.Player.HUMAN:
-		var h := sim.human.pickup_switch(p, team)
-		if h != null and h != p:
-			sim.human.hand_over(h, p)
-		elif h == null:
+		var player := sim.human.pickup_switch(p, team)
+		if player != null and player != p:
+			sim.human.hand_over(player, p)
+		elif player == null:
 			possess(p)
 			return
 	possess(p)
@@ -617,7 +625,8 @@ func possess(p: MwRinkState.Player) -> void:
 
 ## `$478C`: the shot: power (`$1C216`[avg(POWER)], slap x1.5), spread by
 ## ACCURACY, aimed at the attacked net (a human's held d-pad picks the
-## corner and lift, the CPU's a random nibble), statistics.
+## corner and lift - the port's shot heights the lift instead -, the CPU's
+## a random nibble), statistics.
 func shoot(p: MwRinkState.Player) -> void:
 	drop(p)
 	s.crowd = MwRinkSim.s16(s.crowd + 0xC8)
@@ -644,8 +653,9 @@ func shoot(p: MwRinkState.Player) -> void:
 	var me := p.motion.pixels()
 	var net := s.nets[1] if team.flags4 & 2 else s.nets[0]
 	var np := net.motion.pixels()
-	pk.motion.vel[2] = MwGfx.s16(rom, AIM_LIFT + 2 * k)
-	var ax := MwRinkSim.s16(np.x + MwGfx.s16(rom, AIM_X + 2 * k))
+	var aim := shot_aim(k, sim.human.stick(p, team), sim.human.height(p, team))
+	pk.motion.vel[2] = aim.y
+	var ax := MwRinkSim.s16(np.x + aim.x)
 	var a := MwTrig.angle_of(rom, MwRinkSim.s16(ax - me.x), MwRinkSim.s16(np.y - me.y))
 	a = MwRinkSim.s16(a + r)
 	var v := sim.polar(a, power)
@@ -660,6 +670,41 @@ func shoot(p: MwRinkState.Player) -> void:
 		sim.add_player_stat(g, 2, 1)
 
 
+## The shot's aim: (x offset at the net, lift) for held d-pad nibble [param
+## k] (`$1C1D6`, `$1C1F6`: left / right pick the corner, up / down the
+## lift), or with stick [param st] (the port's analogue control) between
+## them: each axis's share of the way from the middle to that side's value
+## (the direction squared out to the corners, times the travel). With the
+## port's shot heights ([param h] >= 0: 0 none, 1 high, 2 low;
+## MwSettings.shot_heights) the lift is the table's for no direction, Up or
+## Down whatever the D-pad or the stick says, and they only aim left / right:
+## the D-pad at the middle or a corner, the stick by its sideways push alone,
+## in proportion (owner, 2026-10-09: analogue left / right aiming; squared out,
+## anything within 45 degrees of sideways would aim at the corner itself).
+func shot_aim(k: int, st: Vector2i, h := -1) -> Vector2i:
+	if h >= 0:
+		k &= 0xC                                     # the D-pad's left / right only
+	var mid := Vector2i(MwGfx.s16(rom, AIM_X), MwGfx.s16(rom, AIM_LIFT))
+	var out: Vector2i
+	if st == Vector2i.ZERO:
+		out = Vector2i(MwGfx.s16(rom, AIM_X + 2 * k), MwGfx.s16(rom, AIM_LIFT + 2 * k))
+	elif h >= 0:
+		var side := MwGfx.s16(rom, AIM_X + 2 * (8 if st.x > 0 else 4))        # R / L
+		out = Vector2i(mid.x + (side - mid.x) * mini(absi(st.x), 256) / 256, mid.y)
+	else:
+		var big := maxi(absi(st.x), absi(st.y))
+		var travel := MwHumanControl.stick_length(st)
+		var sx := st.x * travel / big                # -256..256
+		var sy := st.y * travel / big
+		var side_x := MwGfx.s16(rom, AIM_X + 2 * (8 if sx > 0 else 4))        # R / L
+		var side_lift := MwGfx.s16(rom, AIM_LIFT + 2 * (2 if sy > 0 else 1))  # D / U
+		out = Vector2i(mid.x + (side_x - mid.x) * absi(sx) / 256,
+				mid.y + (side_lift - mid.y) * absi(sy) / 256)
+	if h >= 0:
+		out.y = MwGfx.s16(rom, AIM_LIFT + 2 * h)    # none / Up / Down: the middle, high, along the ice
+	return out
+
+
 ## `$4DBE`: the pass's aim: the facing; a human's held d-pad (a goalie can't
 ## aim at his own end) and his receiver (`$4E94`: the team-mate - an
 ## opponent for an exploding puck - closest to the aim within 32 units, as
@@ -669,16 +714,23 @@ func aim_pass(p: MwRinkState.Player) -> int:
 	if not p.flags & MwRinkState.Player.HUMAN:
 		return aim
 	var d := sim.human.pad_held(p, sim.team_of(p)) & 0xF
+	var st := sim.human.stick(p, sim.team_of(p))
 	if p.position == 5:
 		d &= ~(1 << (0 if p.motion.pos[1] < 0 else 1))
+		if (st.y < 0) == (p.motion.pos[1] < 0):
+			st.y = 0                              # the stick likewise
+		if absi(st.x) <= STICK_AIM_MIN and st.y == 0:
+			st = Vector2i.ZERO
 	var t := MwGfx.s16(rom, PASS_AIM + 2 * d)
+	if st != Vector2i.ZERO:
+		t = sim.human.stick_angle(st)             # the port's analogue control: the stick's angle
 	if t >= 0:
 		aim = t
 	var team := sim.team_of(p)
 	if pk.flags & MwRinkState.Puck.EXPLODING:
 		team = sim.other_team(p)
 	var best := 0x7FFF
-	var r: MwRinkState.Player = null
+	var player: MwRinkState.Player = null
 	for q in team.players:
 		if q == p or not q.present:
 			continue
@@ -686,8 +738,8 @@ func aim_pass(p: MwRinkState.Player) -> int:
 		if dev > 0x20 or dev > best:
 			continue
 		best = dev
-		r = q
-	pk.receiver = r
+		player = q
+	pk.receiver = player
 	return aim
 
 
@@ -699,9 +751,9 @@ func pass_release(p: MwRinkState.Player) -> void:
 	pk.flags &= ~MwRinkState.Puck.CARRIED
 	pk.flags |= MwRinkState.Puck.PASS
 	var aim := aim_pass(p)
-	var r := pk.receiver as MwRinkState.Player
-	if r != null:
-		_lead_pass(r, p)
+	var player := pk.receiver as MwRinkState.Player
+	if player != null:
+		_lead_pass(player, p)
 		sim.team_of(p).add_stat(0x498, 1)
 	else:
 		var v := sim.polar(aim, 0x380 if p.position == 5 else 0x600)
@@ -713,25 +765,26 @@ func pass_release(p: MwRinkState.Player) -> void:
 ## `$4EDE`: lead the receiver by 2^k ticks (k from his distance to the
 ## puck, +1 when he faces away), at the speed that gets there, spread by the
 ## passer's PASSING + OFFENSE.
-func _lead_pass(r: MwRinkState.Player, passer: MwRinkState.Player) -> void:
-	sim.positional(0x26, r)                       # `$4EE6`, A5 the receiver
+func _lead_pass(player: MwRinkState.Player, passer: MwRinkState.Player) -> void:
+	sim.positional(0x26, player)                       # `$4EE6`, A5 the receiver
 	var at := LEAD_SHIFT
-	while r.puck_dist > MwGfx.u16(rom, at):
+	while player.puck_dist > MwGfx.u16(rom, at):
 		at += 4
 	var k := MwGfx.u16(rom, at + 2)
-	var a := (r.puck_angle + 0x60) & 0xFF
+	var a := (player.puck_angle + 0x60) & 0xFF
 	if sim.team_of(passer).flags4 & 2:
 		a = (a + 0x80) & 0xFF
 	if a <= 0x40:
 		k += 1
-	var tx := r.motion.pos[0] + (r.motion.vel[0] << k)
-	var ty := r.motion.pos[1] + (r.motion.vel[1] << k)
+	var tx := player.motion.pos[0] + (player.motion.vel[0] << k)
+	var ty := player.motion.pos[1] + (player.motion.vel[1] << k)
 	var dx := MwRinkSim.asr(tx - pk.motion.pos[0], 8)
 	var dy := MwRinkSim.asr(ty - pk.motion.pos[1], 8)
 	var da := sim.dist_angle(dx, dy)
 	var sh := (8 - k) & 63
 	var speed := (da.x << sh) & 0xFFFF if sh < 16 else 0
-	var spread := MwGfx.s8(rom, PASS_SPREAD + MwRinkSim.asr((rom[passer.record + 0xA] >> 4) + (rom[passer.record + 0xB] >> 4) + 0x14, 2))
+	var spread := MwGfx.s8(rom, PASS_SPREAD + MwRinkSim.asr((rom[passer.record + 0xA] >> 4)
+			+ (rom[passer.record + 0xB] >> 4) + 0x14, 2))
 	var ang := (da.y + sim.rng_range(-spread, spread)) & 0xFF
 	if passer.position == 5 and speed >= 0x380:
 		speed = 0x380

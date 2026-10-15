@@ -7,16 +7,42 @@ extends RefCounted
 
 const TABLE := 0x1F628
 const ATAN := 0x1F6AA
+## Plan 42: the ratios [method _search] can be asked about (0 .. $7FFD; at
+## $7FFE and over the angle is $20 without a search).
+const RATIOS := 0x7FFE
+
+## Plan 42 (speed): [method _search]'s answer for every ratio, worked out
+## once per ROM ([method _table]) - the walk costs ~3 us in GDScript and the
+## rink asks ~150 angles a pass (the geometry, the AI, the collisions).
+static var _atan := PackedByteArray()
+static var _atan_rom_size := -1
+static var _sin := PackedInt32Array()
+static var _sin_rom_size := -1
 
 
+## `$14214`: the sine of byte angle [param angle] from the quarter-wave table in
+## [param rom], -$7FFF..$7FFF.
 static func sin_(rom: PackedByteArray, angle: int) -> int:
 	var i := angle & 0x3F
 	if angle & 0x40:
 		i = 0x40 - i
-	var v := MwGfx.s16(rom, TABLE + 2 * i)
+	if _sin_rom_size != rom.size():
+		_sines(rom)
+	var v := _sin[i]
 	return -v if angle & 0x80 else v
 
 
+## Plan 42 (speed): the quarter wave's 65 words read once per ROM ([member _sin]).
+static func _sines(rom: PackedByteArray) -> void:
+	var t := PackedInt32Array()
+	for i in 65:
+		t.append(MwGfx.s16(rom, TABLE + 2 * i))
+	_sin = t
+	_sin_rom_size = rom.size()
+
+
+## `$1423C`: the cosine of byte angle [param angle] ([method sin_] a quarter
+## turn on).
 static func cos_(rom: PackedByteArray, angle: int) -> int:
 	return sin_(rom, (angle + 0x40) & 0xFF)
 
@@ -63,10 +89,12 @@ static func angle_of(rom: PackedByteArray, dx: int, dy: int) -> int:
 			dy = t
 			octant += 2
 		var q := ((dy << 16) >> 1) / dx
-		if q >= 0x7FFE:
+		if q >= RATIOS:
 			a = 0x20
 		else:
-			a = _search(rom, q)
+			if _atan_rom_size != rom.size():
+				_table(rom)
+			a = _atan[q]
 	match octant:
 		2: a = 0x40 - a
 		4: a = 0x80 - a
@@ -76,6 +104,36 @@ static func angle_of(rom: PackedByteArray, dx: int, dy: int) -> int:
 		12: a = 0x80 + a
 		14: a = 0xC0 - a
 	return a & 0xFF
+
+
+## Plan 42: [method _search] for every ratio into [member _atan]. The walk's
+## answer rises with the ratio, a step at a time (32 steps over the table's
+## 32 entries: test_trig_table checks every ratio), so each step's last
+## ratio is found by halving - some 500 walks, not 32766. Keyed by the ROM's
+## size: the game has one ROM (MwRom.data(); the sim's, the camera's, the
+## AI's are it).
+static func _table(rom: PackedByteArray) -> void:
+	var t := PackedByteArray()
+	t.resize(RATIOS)
+	var q := 0
+	while q < RATIOS:
+		var v := _search(rom, q)
+		var lo := q
+		var hi := RATIOS - 1
+		if _search(rom, hi) == v:
+			lo = hi
+		else:
+			while hi - lo > 1:                  # _search(lo) == v, _search(hi) != v
+				var mid := (lo + hi) >> 1
+				if _search(rom, mid) == v:
+					lo = mid
+				else:
+					hi = mid
+		for k in range(q, lo + 1):
+			t[k] = v
+		q = lo + 1
+	_atan = t
+	_atan_rom_size = rom.size()
 
 
 ## The table walk at `$142B8` (labels are the code's addresses).

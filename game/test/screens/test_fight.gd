@@ -6,6 +6,7 @@ extends "res://test/rom/rom_test_base.gd"
 ## for the rink, the pause, the penalty calls and the fight card. The
 ## original pass for pass: `tools/bin/screen-check` (out/sim/scr_1041_v10,
 ## scr_1033_v3).
+## Short names: f the MwFightSim under test.
 
 const NONE := [0, 0, 0, 0]
 
@@ -83,18 +84,19 @@ func test_setup() -> void:
 	var rng0 := s.rng.state
 	var f := MwFightSim.new(rom)
 	f.enter(s, 18, 5)
-	var a := f.fighters[0]
-	var b := f.fighters[1]
+	var fighter_a := f.fighters[0]
+	var fighter_b := f.fighters[1]
 	assert_eq(s.rng.state, rng0, "flagged fighters: no draw")
-	assert_eq(a.player, flagged)
-	assert_eq(b.player, s.teams[1].players[2], "the lowest flagged slot")
+	assert_eq(fighter_a.player, flagged)
+	assert_eq(fighter_b.player, s.teams[1].players[2], "the lowest flagged slot")
 	assert_eq(s.projection, 1, "the side view")
-	assert_eq([a.motion.pixels(), b.motion.pixels()], [Vector3i(-80, 224, 8000), Vector3i(400, 224, 8000)])
-	assert_eq([a.motion.vel[0], b.motion.vel[0]], [0x180, -0x180], "walking in at 1.5 px a tick")
-	assert_eq([a.attr, b.attr], [0xA8, 0xC0], "team A flipped to face right")
-	assert_eq([a.pad, b.pad], [0, -1], "team A on pad 1, team B the CPU")
-	for x in f.fighters:
-		var fx: MwFightSim.Fighter = x
+	assert_eq([fighter_a.motion.pixels(), fighter_b.motion.pixels()],
+			[Vector3i(-80, 224, 8000), Vector3i(400, 224, 8000)])
+	assert_eq([fighter_a.motion.vel[0], fighter_b.motion.vel[0]], [0x180, -0x180], "walking in at 1.5 px a tick")
+	assert_eq([fighter_a.attr, fighter_b.attr], [0xA8, 0xC0], "team A flipped to face right")
+	assert_eq([fighter_a.pad, fighter_b.pad], [0, -1], "team A on pad 1, team B the CPU")
+	for fighter in f.fighters:
+		var fx: MwFightSim.Fighter = fighter
 		var team := s.teams[fx.player.team]
 		assert_eq(fx.health, 0x7800)
 		assert_eq(fx.rating, sim.avg(team, rom[fx.record + 9] >> 4), "FIGHTING with the skulls")
@@ -120,8 +122,8 @@ func test_unflagged_teams_draw_their_fighter() -> void:
 	var f := MwFightSim.new(rom)
 	f.enter(s, 18, 5)
 	assert_ne(s.rng.state, rng0, "rng_range(0, 4) per team")
-	for x in f.fighters:
-		var fx: MwFightSim.Fighter = x
+	for fighter in f.fighters:
+		var fx: MwFightSim.Fighter = fighter
 		assert_true(fx.player.present)
 		assert_true(fx.player.index < 5, "never the goalie")
 	assert_eq([f.fighters[0].pad, f.fighters[1].pad], [0, 2], "both human: pads 1 and 2 (word offsets)")
@@ -157,23 +159,23 @@ func test_walk_limits() -> void:
 		return
 	var f := _fight()
 	_walk_in(f)
-	var a := f.fighters[0]
-	var b := f.fighters[1]
+	var fighter_a := f.fighters[0]
+	var fighter := f.fighters[1]
 	_close_in(f)
-	assert_eq(a.x(), b.x() - MwFightSim.GAP, "never closer than 74 px")
+	assert_eq(fighter_a.x(), fighter.x() - MwFightSim.GAP, "never closer than 74 px")
 	for i in 300:
 		_run(f, 1, _pad(0, 0x04))
-	assert_eq(a.x(), MwFightSim.LEFT_WALL, "the left wall")
+	assert_eq(fighter_a.x(), MwFightSim.LEFT_WALL, "the left wall")
 	for i in 300:
 		_run(f, 1, _pad(1, 0x08))
-	assert_eq(b.x(), MwFightSim.RIGHT_WALL, "the right wall")
+	assert_eq(fighter.x(), MwFightSim.RIGHT_WALL, "the right wall")
 	for i in 300:
 		_run(f, 1, _pad(1, 0x04 | 0x01))                # left with up: still left
-	assert_eq(b.x(), a.x() + MwFightSim.GAP)
-	var x := b.x()
+	assert_eq(fighter.x(), fighter_a.x() + MwFightSim.GAP)
+	var x := fighter.x()
 	for i in 20:
 		_run(f, 1, _pad(1, 0x0C))                       # left and right: nothing
-	assert_eq(b.x(), x)
+	assert_eq(fighter.x(), x)
 
 
 # --- punches -----------------------------------------------------------------------------------
@@ -200,41 +202,41 @@ func test_punch_lands() -> void:
 	var f := _fight()
 	_walk_in(f)
 	_close_in(f)
-	var a := f.fighters[0]
-	var b := f.fighters[1]
+	var puncher := f.fighters[0]
+	var fighter := f.fighters[1]
 	var r0 := s.rng.state
-	var x := b.x()
+	var x := fighter.x()
 	_run(f, 1, NONE, _pad(0, 0x10))
-	assert_eq(a.state, MwFightSim.PUNCH, "B punches")
-	assert_eq(a.motion.pos[2], 8001 << 8, "the puncher in front")
-	assert_eq(b.motion.pos[2], 8000 << 8)
+	assert_eq(puncher.state, MwFightSim.PUNCH, "B punches")
+	assert_eq(puncher.motion.pos[2], 8001 << 8, "the puncher in front")
+	assert_eq(fighter.motion.pos[2], 8000 << 8)
 	for i in 60:
 		_run(f, 1)
-		if b.state != MwFightSim.STAND:
+		if fighter.state != MwFightSim.STAND:
 			break
-	assert_eq(b.state, MwFightSim.HIT)
-	assert_eq([a.thrown, a.landed], [1, 1])
-	assert_eq(b.stun, 0x14 - 1, "stunned 20 passes (one gone in its own step)")
+	assert_eq(fighter.state, MwFightSim.HIT)
+	assert_eq([puncher.thrown, puncher.landed], [1, 1])
+	assert_eq(fighter.stun, 0x14 - 1, "stunned 20 passes (one gone in its own step)")
 	var rng := MlhRng.new(r0)
 	rng.next_state()                                     # the sound
 	var big := (rng.next_state() & 0xFFFF) < 0x800
-	assert_eq(b.health, 0x7800 - a.damage * (4 if big else 1))
+	assert_eq(fighter.health, 0x7800 - puncher.damage * (4 if big else 1))
 	assert_eq(s.rng.state, rng.state, "two draws: the sound, the damage")
-	if b.species(rom) != 1:
-		assert_true(b.fx.playing(), "the hit's second animation")
-		assert_eq(b.fx.address, MwFightSim.HURT_FX)
-		assert_eq(b.fx_y, 70)
+	if fighter.species(rom) != 1:
+		assert_true(fighter.fx.playing(), "the hit's second animation")
+		assert_eq(fighter.fx.address, MwFightSim.HURT_FX)
+		assert_eq(fighter.fx_y, 70)
 	else:
-		assert_false(b.fx.playing(), "none for species 1")
+		assert_false(fighter.fx.playing(), "none for species 1")
 	_run(f, 1)
-	assert_true(b.motion.vel[0] > 0, "knocked back, away from the puncher")
-	assert_eq(b.motion.vel[0], MwRinkSim.asr(b.speed * 0x13, 3), "speed x stun / 8")
+	assert_true(fighter.motion.vel[0] > 0, "knocked back, away from the puncher")
+	assert_eq(fighter.motion.vel[0], MwRinkSim.asr(fighter.speed * 0x13, 3), "speed x stun / 8")
 
 	for i in 40:
 		_run(f, 1)
-	assert_eq(b.stun, 0, "the stun runs out pass by pass")
-	assert_true(b.x() > x)
-	assert_eq(b.state, MwFightSim.STAND, "the hit over")
+	assert_eq(fighter.stun, 0, "the stun runs out pass by pass")
+	assert_true(fighter.x() > x)
+	assert_eq(fighter.state, MwFightSim.STAND, "the hit over")
 
 
 func test_block() -> void:
@@ -243,25 +245,25 @@ func test_block() -> void:
 	var f := _fight()
 	_walk_in(f)
 	_close_in(f)
-	var a := f.fighters[0]
-	var b := f.fighters[1]
+	var puncher := f.fighters[0]
+	var fighter := f.fighters[1]
 	var sounds := _punch(f, 0x40, 0x40)
 	assert_has(sounds, MwFightSim.BLOCK_SOUND, "A newly pressed blocks, held keeps it")
-	assert_eq(a.landed, 0)
-	assert_eq(a.thrown, 1)
-	var blocks := (0x7800 - b.health) / (a.damage >> 4)
-	assert_eq((0x7800 - b.health) % (a.damage >> 4), 0, "a sixteenth of the damage per blocked pass")
+	assert_eq(puncher.landed, 0)
+	assert_eq(puncher.thrown, 1)
+	var blocks := (0x7800 - fighter.health) / (puncher.damage >> 4)
+	assert_eq((0x7800 - fighter.health) % (puncher.damage >> 4), 0, "a sixteenth of the damage per blocked pass")
 	assert_true(blocks >= 1)
 	_run(f, 1, _pad(1, 0x40), _pad(1, 0x40))
-	assert_eq(b.state, MwFightSim.BLOCK)
+	assert_eq(fighter.state, MwFightSim.BLOCK)
 	for i in 29:
 		_run(f, 1, _pad(1, 0x40))
-	assert_eq(b.state, MwFightSim.BLOCK, "held")
+	assert_eq(fighter.state, MwFightSim.BLOCK, "held")
 	_run(f, 1, _pad(1, 0x40))
-	assert_eq(b.state, MwFightSim.STAND, "30 ticks at most")
+	assert_eq(fighter.state, MwFightSim.STAND, "30 ticks at most")
 	_run(f, 1, _pad(1, 0x40), _pad(1, 0x40))
 	_run(f, 1)
-	assert_eq(b.state, MwFightSim.STAND, "or released")
+	assert_eq(fighter.state, MwFightSim.STAND, "or released")
 
 
 func test_held_a_does_not_block() -> void:
@@ -279,11 +281,11 @@ func test_punch_cancelled_into_block() -> void:
 		return
 	var f := _fight()
 	_walk_in(f)
-	var a := f.fighters[0]
+	var fighter := f.fighters[0]
 	_run(f, 1, NONE, _pad(0, 0x20))
-	assert_eq(a.state, MwFightSim.PUNCH, "C punches like B")
+	assert_eq(fighter.state, MwFightSim.PUNCH, "C punches like B")
 	_run(f, 1, _pad(0, 0x40), _pad(0, 0x40))
-	assert_eq(a.state, MwFightSim.BLOCK)
+	assert_eq(fighter.state, MwFightSim.BLOCK)
 
 
 func test_cpu_never_blocks() -> void:
@@ -291,12 +293,12 @@ func test_cpu_never_blocks() -> void:
 		return
 	var f := _fight(0)
 	_walk_in(f)
-	var b := f.fighters[1]
+	var fighter := f.fighters[1]
 	var states := {}
 	for i in 1500:
 		var new := _pad(0, 0x10) if i % 6 == 0 else NONE
 		_run(f, 1, _pad(0, 0x08), new)
-		states[b.state] = true
+		states[fighter.state] = true
 		if f.state != MwFightSim.FIGHTING:
 			break
 	assert_false(states.has(MwFightSim.BLOCK), "the AI's held A never blocks")
@@ -308,13 +310,13 @@ func test_cpu_draws_once_per_pass() -> void:
 		return
 	var f := _fight(0)
 	_walk_in(f)
-	var r := MlhRng.new(s.rng.state)
+	var rng := MlhRng.new(s.rng.state)
 	_run(f, 1)
-	r.next_state()
-	assert_eq(s.rng.state, r.state, "one rng_next for the CPU fighter")
+	rng.next_state()
+	assert_eq(s.rng.state, rng.state, "one rng_next for the CPU fighter")
 	_run(f, 3)
-	r.next_state()
-	assert_eq(s.rng.state, r.state, "per pass, whatever its length")
+	rng.next_state()
+	assert_eq(s.rng.state, rng.state, "per pass, whatever its length")
 
 
 # --- the end -----------------------------------------------------------------------------------
@@ -325,35 +327,35 @@ func test_knockout() -> void:
 	var f := _fight()
 	_walk_in(f)
 	_close_in(f)
-	var a := f.fighters[0]
-	var b := f.fighters[1]
-	b.health = 1
+	var puncher := f.fighters[0]
+	var fighter := f.fighters[1]
+	fighter.health = 1
 	_run(f, 1, NONE, _pad(0, 0x10))
 	for i in 60:
 		_run(f, 1)
-		if b.state != MwFightSim.STAND:
+		if fighter.state != MwFightSim.STAND:
 			break
-	assert_eq(b.state, MwFightSim.KNOCKED)
-	assert_eq(b.health, 0)
-	assert_eq(b.fx.address, MwFightSim.KO_FX)
-	assert_eq(a.memory, 0)
+	assert_eq(fighter.state, MwFightSim.KNOCKED)
+	assert_eq(fighter.health, 0)
+	assert_eq(fighter.fx.address, MwFightSim.KO_FX)
+	assert_eq(puncher.memory, 0)
 	var t0 := s.tick
 	var time := f.fight_time
-	while b.state == MwFightSim.KNOCKED and s.tick - t0 < 400:
+	while fighter.state == MwFightSim.KNOCKED and s.tick - t0 < 400:
 		_run(f, 1)
-	assert_eq(b.state, MwFightSim.DOWN)
-	assert_true(b.motion.pixels().y >= 0x130, "fallen below the screen")
+	assert_eq(fighter.state, MwFightSim.DOWN)
+	assert_true(fighter.motion.pixels().y >= 0x130, "fallen below the screen")
 	assert_eq(f.fight_time, time, "the clock held")
 	var t1 := s.tick
 	while f.state == MwFightSim.FIGHTING and s.tick - t1 < 400:
 		_run(f, 1)
 	assert_eq(s.tick - t1, 120, "down 120 ticks, out")
-	assert_eq(b.state, MwFightSim.OUT)
+	assert_eq(fighter.state, MwFightSim.OUT)
 	assert_eq(f.state, MwFightSim.RESULT_PANEL)
 	assert_eq(f.result, 2)
-	assert_eq(f.winner, a)
+	assert_eq(f.winner, puncher)
 	assert_eq(s.goal_kind, 2, "`$FFC63A` 2: a knockout")
-	assert_eq(s.scorer, MwScoreboardSim.player_long(a.player))
+	assert_eq(s.scorer, MwScoreboardSim.player_long(puncher.player))
 	assert_eq(s.teams[0].stat(0x49C), 1, "team A's fights won")
 	assert_eq(s.teams[1].stat(0x49C), 0)
 	for i in 40:
@@ -469,12 +471,12 @@ func test_penalty_calls() -> void:
 	var f := _time_up(3, 1)
 	s.penalties = 1
 	_to_card(f)
-	var a := f.fighters[0].player
-	var b := f.fighters[1].player
+	var winner := f.fighters[0].player
+	var player := f.fighters[1].player
 	assert_true(f.card)
-	assert_true(a.flags & MwRinkState.Player.IN_BOX and b.flags & MwRinkState.Player.IN_BOX)
-	assert_eq(a.penalty, 0xF9, "the winner a minor (-7)")
-	assert_eq(b.penalty, 1, "the loser a major (1)")
+	assert_true(winner.flags & MwRinkState.Player.IN_BOX and player.flags & MwRinkState.Player.IN_BOX)
+	assert_eq(winner.penalty, 0xF9, "the winner a minor (-7)")
+	assert_eq(player.penalty, 1, "the loser a major (1)")
 	assert_eq(MwRinkPenalties.byte(s.teams[0], MwRinkPenalties.PENDING), 1)
 	assert_eq(MwRinkPenalties.byte(s.teams[1], MwRinkPenalties.PENDING), 1)
 
@@ -494,8 +496,8 @@ func test_no_calls_with_penalties_off() -> void:
 	var f := _time_up(3, 1)
 	s.penalties = 0
 	_to_card(f)
-	for x in f.fighters:
-		assert_eq((x as MwFightSim.Fighter).player.flags & MwRinkState.Player.IN_BOX, 0)
+	for fighter in f.fighters:
+		assert_eq((fighter as MwFightSim.Fighter).player.flags & MwRinkState.Player.IN_BOX, 0)
 
 
 func test_card() -> void:
@@ -537,8 +539,8 @@ func test_card_joke_values() -> void:
 		return
 	var f := _time_up(9, 3)
 	_to_card(f)
-	var a := f.fighters[0]
-	var b := f.fighters[1]
+	var fighter_a := f.fighters[0]
+	var fighter := f.fighters[1]
 	var counts := f.window_ops.filter(func(o: Array) -> bool: return o[0] == "glyph" and int(o[3]) == 0x12)
 	assert_eq(counts.size(), 2, "a count per fighter on row 18")
 	match f.joke:
@@ -546,5 +548,6 @@ func test_card_joke_values() -> void:
 			assert_eq(int(f.window_ops[f.window_ops.find(counts[1]) + 1][4]), 0x32, "black eyes: team A landed 9")
 		2:
 			assert_eq(int(f.window_ops[f.window_ops.find(counts[1]) + 1][4]), 0x31, "bruised ego: the loser's")
-	assert_eq(f.window_ops.filter(func(o: Array) -> bool: return o[0] == "glyph" and int(o[3]) == 0xF and int(o[2]) == 0x14).size(), 1)
-	assert_true(a.landed == 9 and b.landed == 3)
+	assert_eq(f.window_ops.filter(func(o: Array) -> bool: return o[0] == "glyph" and int(o[3]) == 0xF \
+			and int(o[2]) == 0x14).size(), 1)
+	assert_true(fighter_a.landed == 9 and fighter.landed == 3)

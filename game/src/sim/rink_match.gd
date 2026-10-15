@@ -22,8 +22,6 @@ extends RefCounted
 ## 10). The period-end step at an entry with the clock at 0 (`$FEBA`) is
 ## [method MwRinkPhases.enter]'s.
 
-const TEAM_RECORDS := 0x18D8A        ## $9E bytes per team
-const TEAM_SIZE := 0x9E
 const PAD_MODES := 0x1BFFE           ## pad mode x 4 (+2 team B): the team's two pad slots
 const ARROWS := 0x1C4D0              ## by pad: the off-screen arrow's animation
 const LINEUPS := 0x1B904             ## by faceoff spot: 12 x (dx, dy, -, facing)
@@ -35,10 +33,13 @@ const SPECIAL_ODDS := 0x1E9D8        ## by play 0-11: chance (/65536) the CPU ar
 const PHASE_FORFEIT := 13
 
 
-## A new match: [param s] set up for stadium [param stadium], team ids
+## A new match: [param sim]'s state set up for stadium [param stadium], team ids
 ## [param team_a] / [param team_b], pad mode, Reserves and Death Index.
+## Plan 34: [param extended] - an extended set-up's teams' match pads
+## (MwMatchSetup.extended; [param pad_mode] the nearest original mode's),
+## empty for the original's set-ups.
 static func start(sim: MwRinkSim, stadium: int, team_a: int, team_b: int, pad_mode: int,
-		reserves: bool, death_index: int) -> void:
+		reserves: bool, death_index: int, extended: Array = []) -> void:
 	var s := sim.s
 	var rom := sim.rom
 	s.setup(rom, stadium)
@@ -46,8 +47,8 @@ static func start(sim: MwRinkSim, stadium: int, team_a: int, team_b: int, pad_mo
 	s.death_index = death_index
 	s.pad_mode = pad_mode
 	s.crowd = 0x32
-	team_setup(sim, 0, team_a)
-	team_setup(sim, 1, team_b)
+	team_setup(sim, 0, team_a, extended)
+	team_setup(sim, 1, team_b, extended)
 	s.bribe = 0
 	s.puck.flags &= ~MwRinkState.Puck.EXPLODING
 
@@ -58,7 +59,9 @@ static func start(sim: MwRinkSim, stadium: int, team_a: int, team_b: int, pad_mo
 ## `$2524`: period 1, the clock full), the stadium (in the playoff modes the
 ## home team's: team A's when the series' bit 0 ([param series], `$FFBD7C`)
 ## is set, else team B's; written back to the setup), then [method start]
-## (`$5572`, `$3698` x 2, the bribe, the exploding puck).
+## (`$5572`, `$3698` x 2, the bribe, the exploding puck). Plan 44: the
+## setup's EXTENDED rules into the state ([member MwRinkState.extended_play],
+## [member MwRinkState.extended_penalties], [member MwRinkState.extended_cpu]).
 static func matchup_setup(sim: MwRinkSim, su: MwMatchSetup, series: int) -> void:
 	var s := sim.s
 	s.clock_widget = 0
@@ -77,21 +80,27 @@ static func matchup_setup(sim: MwRinkSim, su: MwMatchSetup, series: int) -> void
 	s.clock_flags &= ~1
 	if su.play_mode != 0:
 		su.stadium = su.team_a if series & 1 else su.team_b
-	start(sim, su.stadium, su.team_a, su.team_b, su.pads, su.reserves != 0, su.death_index)
+	start(sim, su.stadium, su.team_a, su.team_b, su.pads, su.reserves != 0, su.death_index, su.extended)
+	s.extended_play = su.extended_play              # plan 44: an EXTENDED match (the port's)
+	s.extended_penalties = su.extended_penalties    # (and its EXTENDED PENALTIES,
+	s.extended_cpu = su.extended_cpu                #  EXTENDED CPU)
 
 
-## `$3698` + `$3700`: team [param t] with team record [param id].
-static func team_setup(sim: MwRinkSim, t: int, id: int) -> void:
+## `$3698` + `$3700`: team [param t] with team record [param id]. Plan 34:
+## an extended set-up's ([param extended] not empty) teams then get their
+## players' pad slots, markers, arrows and plates (MwRinkState.extend) -
+## the original's two slot bytes keep the nearest mode's values.
+static func team_setup(sim: MwRinkSim, t: int, id: int, extended: Array = []) -> void:
 	var s := sim.s
 	var rom := sim.rom
 	var team := s.teams[t]
-	team.record = TEAM_RECORDS + TEAM_SIZE * id
+	team.record = MwTeams.record(id)
 	team.score = 0
 	team.flags4 = 0
 	team.flags5 = 0
 	for i in 3:
-		team.x330[i] = rom[team.record + 0x14 + i]
-		team.x330[3 + i] = 9 + i
+		team.x330[i] = rom[team.record + MwTeams.NASTY + i]
+		team.x330[3 + i] = MwCustomOverlay.special(rom, team.record, i)   # 9 + i (a custom team: its own, plan 38)
 	team.special = 0
 	for i in 4:
 		team.x330[6 + i] = 0                # +$336: nobody under the ice
@@ -113,12 +122,14 @@ static func team_setup(sim: MwRinkSim, t: int, id: int) -> void:
 	s.init_marker(team, 1, team.pads[1] & 3)
 	for k in 2:
 		team.arrows[k] = MwAnimState.from_record(rom, MwGfx.u32(rom, ARROWS + 4 * (team.pads[k] & 3)))
+	if extended.size() == 2:
+		s.extend(rom, t, PackedInt32Array(extended[t]))
 	for i in 24:
 		team.health[i] = 0x800000
 	for i in 6:
 		var p := team.players[i]
 		p.team = t
-		sim.players.create(p, team, i, i, i, MwGfx.u32(rom, team.record + 0x18 + 4 * i))
+		sim.players.create(p, team, i, i, i, MwTeams.roster_record(rom, team.record, i))
 	team.add_stat(0x49A, -team.stat(0x49A))
 
 
@@ -158,7 +169,7 @@ static func period_change(sim: MwRinkSim, team: MwRinkState.Team) -> void:
 		if not p.present:
 			var h := team.health[p.slot]
 			d0_hi = (h >> 16) & 0xFFFF
-			if h != 0 and not sim.players._in_box(team, p.slot):
+			if h != 0 and not MwSimPlayers.in_box(team, p.slot):
 				p.record = p.original
 	for i in 24:
 		if team.health[i] != 0:
@@ -166,9 +177,9 @@ static func period_change(sim: MwRinkSim, team: MwRinkState.Team) -> void:
 	team.flags4 |= 0x10
 	if team.flags4 & 2 and s.nets[0].style == 0:
 		team.flags4 &= ~0x08
-		var n := s.nets[0]
-		n.style = rom[MwRinkState.stadium_record(rom, s.stadium) + 5]
-		n.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, MwRinkState.NET_ANIMS + 4 * n.style), 1)
+		var net := s.nets[0]
+		net.style = rom[MwRinkState.stadium_record(rom, s.stadium) + 5]
+		net.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, MwRinkState.NET_ANIMS + 4 * net.style), 1)
 		sim.players.substitute(team.players[5])
 	team.flags4 ^= 0x02
 
@@ -265,19 +276,19 @@ static func faceoff(sim: MwRinkSim, spot: int) -> void:
 	s.faceoff_step = 0
 
 
-## `$AF74`: overlay [param o] set up from entry [param entry] of `$1CAE6`
+## `$AF74`: overlay [param overlay] set up from entry [param entry] of `$1CAE6`
 ## (animation record, x, y): its animation (variant [param variant]), that
 ## position (screen pixels for the ref icons), [param depth], [param attr],
 ## hidden; entries from 4 on have the small border.
-static func overlay_setup(rom: PackedByteArray, o: MwRinkState.Overlay, variant: int, depth: int,
+static func overlay_setup(rom: PackedByteArray, overlay: MwRinkState.Overlay, variant: int, depth: int,
 		entry: int, attr: int) -> void:
 	var a := PORTRAITS + 8 * entry
-	o.x = MwGfx.s16(rom, a + 4)
-	o.y = MwGfx.s16(rom, a + 6)
-	o.flags = 1 if entry >= 4 else 0
-	o.depth = depth & 0xFFFF
-	o.attr = attr & 0xFF
-	o.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, a), variant)
+	overlay.x = MwGfx.s16(rom, a + 4)
+	overlay.y = MwGfx.s16(rom, a + 6)
+	overlay.flags = 1 if entry >= 4 else 0
+	overlay.depth = depth & 0xFFFF
+	overlay.attr = attr & 0xFF
+	overlay.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, a), variant)
 
 
 ## The ref icons' set-ups, once at power-on (`boot_init` `$20C0`): the
@@ -298,13 +309,13 @@ static func boot_icons(sim: MwRinkSim) -> void:
 ## `$AF62` (from `$AB2C`): the faceoff portrait `$1CAE6[1]` at the map
 ## point of (x - 28, y - 64, 96) (`$5AC2`), depth $FFFE, attr $E0, flags 0.
 static func _portrait(sim: MwRinkSim, x: int, y: int) -> void:
-	var o := sim.s.faceoff
-	o.x = MwRinkSim.s16(x - 0x1C + 0x100)
-	o.y = MwRinkSim.s16(y - 0x40 + 0x1CD - 0x60)
-	o.flags = 0
-	o.depth = 0xFFFE
-	o.attr = 0xE0
-	o.anim = MwAnimState.from_record(sim.rom, MwGfx.u32(sim.rom, PORTRAITS + 8), 0)
+	var overlay := sim.s.faceoff
+	overlay.x = MwRinkSim.s16(x - 0x1C + 0x100)
+	overlay.y = MwRinkSim.s16(y - 0x40 + 0x1CD - 0x60)
+	overlay.flags = 0
+	overlay.depth = 0xFFFE
+	overlay.attr = 0xE0
+	overlay.anim = MwAnimState.from_record(sim.rom, MwGfx.u32(sim.rom, PORTRAITS + 8), 0)
 
 
 # --- the rink entries ---------------------------------------------------------------------
@@ -366,16 +377,16 @@ static func enter(sim: MwRinkSim, screen: int) -> int:
 ## stay); at a faceoff fires and under-ice players and corpses go
 ## (thrown items and bombs stay).
 static func _drop_objects(s: MwRinkState, period: bool) -> void:
-	for i in 8:
+	for i in s.objects.size():
 		if i < s.stadium_objects:
 			continue
-		var o := s.objects[i]
-		var k := o.kind
+		var rink_object := s.objects[i]
+		var k := rink_object.kind
 		if period:
 			if k > 6 or (k >= 3 and k != 6):
-				o.kind = 0
+				rink_object.kind = 0
 		elif k == MwRinkState.KIND_FIRE or (k >= 8 and k <= 0xB):
-			o.kind = 0
+			rink_object.kind = 0
 
 
 ## `$25AA`: the clock widget drawn (window cells; the power-play form is
@@ -398,14 +409,37 @@ static func drop(sim: MwRinkSim) -> void:
 
 ## `$3A28`: free the impaled, place every player on the ice (`$B22`), the
 ## first one is the team's nearest to the puck, and the team's pads take
-## the first players in order (a random draw picks the pad slot).
+## the first players in order (a random draw picks the pad slot). Plan 34,
+## an extended set-up: [method lineup_players] instead of the draws - with
+## owners MwRinkControl.lineup (everyone on their own position); the CPU's
+## line changes and special play also for a team whose players all left
+## (MwRinkState.has_players); players away (QUIT GAME, their own menu open)
+## drive nobody (MwRinkControl.after_lineup).
 static func lineup(sim: MwRinkSim, team: MwRinkState.Team, x: int, y: int) -> void:
 	for p in team.players:
 		if p.state == 0x11:
 			sim.collide._free(p)
-	if not team.flags4 & 4:
+	if not sim.s.has_players(team):
 		cpu_line_changes(sim, team)
 		cpu_special_play(sim, team)
+	var control := sim.s.control
+	if sim.s.extended:
+		var k := 0
+		for p in team.players:
+			if not p.present:
+				continue
+			if k == 0:
+				team.nearest = p
+			place(sim, p, team, x, y, k)
+			k += 1
+			p.flags &= ~MwRinkState.Player.HUMAN
+		if control != null and control.owned:
+			control.lineup(sim, team)
+		else:
+			lineup_players(team)
+		if control != null:
+			control.after_lineup(sim, team)
+		return
 	var free := 0
 	if team.pads[0] != 0xFF:
 		free |= 1
@@ -429,6 +463,28 @@ static func lineup(sim: MwRinkSim, team: MwRinkState.Team, x: int, y: int) -> vo
 			if k:
 				p.flags |= MwRinkState.Player.SECOND_PAD
 			free &= ~(1 << k)
+	if control != null:
+		control.after_lineup(sim, team)
+
+
+## Plan 34, an extended set-up's line-up (no owners yet - the players play
+## like the original's co-op): the team's players in number order on C, LW,
+## RW, LD and RD (+$69), the skaters on the ice in that order - a missing
+## position's next one moves up - and a player left over, with every skater
+## taken, in goal; no draw (the original's `rng_next & 1` per human picks one
+## of two pad slots). Players beyond those drive nobody until the next
+## line-up.
+static func lineup_players(team: MwRinkState.Team) -> void:
+	var order: Array[MwRinkState.Player] = []
+	for pos in 6:
+		for p in team.players:
+			if p.present and p.position == pos and not p in order:
+				order.append(p)
+	for i in mini(team.port_pads.size(), order.size()):
+		var p := order[i]
+		p.flags |= MwRinkState.Player.HUMAN
+		p.flags &= ~MwRinkState.Player.SECOND_PAD
+		p.pad = team.port_pads[i]
 
 
 ## `$B22`: [param p] at his line-up point for the spot (goalies at their
@@ -471,7 +527,7 @@ static func cpu_line_changes(sim: MwRinkSim, team: MwRinkState.Team) -> void:
 		return
 	for p in team.players:
 		if p.original != 0:
-			if sim.players._in_box(team, p.slot):
+			if MwSimPlayers.in_box(team, p.slot):
 				continue
 			if (team.health[p.slot] & 0xFFFFFFFF) >= 0x400000:
 				if sim.rng_next() & 0xFFFF >= 0x4000:
@@ -492,11 +548,11 @@ static func cpu_line_changes(sim: MwRinkSim, team: MwRinkState.Team) -> void:
 ## `$6C8` for the top net: style [param style] (0 Demon Net), its
 ## animation (variant 1), back in place.
 static func set_top_net(sim: MwRinkSim, style: int) -> void:
-	var n := sim.s.nets[0]
-	n.style = style & 0xFF
-	n.bottom = false
-	n.anim = MwAnimState.from_record(sim.rom, MwGfx.u32(sim.rom, MwRinkState.NET_ANIMS + 4 * n.style), 1)
-	n.motion.init(0, -MwRinkState.NET_Y, 0)
+	var net := sim.s.nets[0]
+	net.style = style & 0xFF
+	net.bottom = false
+	net.anim = MwAnimState.from_record(sim.rom, MwGfx.u32(sim.rom, MwRinkState.NET_ANIMS + 4 * net.style), 1)
+	net.motion.init(0, -MwRinkState.NET_Y, 0)
 
 
 ## `$F59E` (not in the attract demo): the CPU coach may arm a special play

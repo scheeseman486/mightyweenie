@@ -13,12 +13,13 @@ func after_each() -> void:
 	host = null
 
 
-func _camera(mode: int) -> MwRinkCamera3D:
+func _camera(mode: int, size := MwRink3D.SCREEN) -> MwRinkCamera3D:
 	var vp := SubViewport.new()
-	vp.size = MwRink3D.SCREEN
+	vp.size = size
 	vp.own_world_3d = true
 	add_child_autofree(vp)
 	var cam := MwRinkCamera3D.new()
+	cam.view = Vector2(size)
 	cam.mode = mode as MwRinkCamera3D.Mode
 	vp.add_child(cam)
 	cam.current = true
@@ -26,24 +27,24 @@ func _camera(mode: int) -> MwRinkCamera3D:
 
 
 func _shot(puck: Vector3, players: Array = []) -> MwRinkShot3D:
-	var s := MwRinkShot3D.new()
-	s.puck = puck
-	s.look = Vector3(puck.x, puck.y, 0)
-	s.players = PackedVector3Array(players)
-	return s
+	var shot := MwRinkShot3D.new()
+	shot.puck = puck
+	shot.look = Vector3(puck.x, puck.y, 0)
+	shot.players = PackedVector3Array(players)
+	return shot
 
 
-## The sim camera's shown point that looks at rink point [param p].
-func _shown(p: Vector3) -> Vector2:
-	return MwRink3D.map_point(p.x, p.y, 0) - Vector2(MwRink3D.SCREEN) / 2.0
+## The sim camera's shown point that looks at rink point [param point].
+func _shown(point: Vector3) -> Vector2:
+	return MwRink3D.map_point(point.x, point.y, 0) - Vector2(MwRink3D.SCREEN) / 2.0
 
 
 func _eye(cam: MwRinkCamera3D) -> Vector3:
 	return MwRink3D.rink(cam.global_position)
 
 
-func _screen(cam: MwRinkCamera3D, p: Vector3) -> Vector2:
-	return cam.unproject_position(MwRink3D.world(p.x, p.y, p.z) * cam.world_scale())
+func _screen(cam: MwRinkCamera3D, point: Vector3) -> Vector2:
+	return cam.unproject_position(MwRink3D.world(point.x, point.y, point.z) * cam.world_scale())
 
 
 func test_damping_is_the_same_at_any_frame_rate() -> void:
@@ -57,8 +58,8 @@ func test_damping_is_the_same_at_any_frame_rate() -> void:
 				x = r[0]
 				v = r[1]
 			ends.append(x)
-		for e: float in ends:
-			assert_almost_eq(e, ends[0], absf(target) * 0.03, "1 s at any frame rate")
+		for reached: float in ends:
+			assert_almost_eq(reached, ends[0], absf(target) * 0.03, "1 s at any frame rate")
 		assert_almost_eq(ends[0], target, absf(target) * 0.06, "settled after 1 s at omega 5")
 	var a := MwRinkCamera3D.damp(Vector3.ZERO, Vector3.ZERO, Vector3(10, 0, 0), 5.0, 0.0)
 	assert_eq(a[0], Vector3.ZERO, "no time, no move")
@@ -128,9 +129,9 @@ func test_birds_eye_shows_the_whole_rink() -> void:
 		cam.follow(_shown(Vector3(80, 300, 0)))
 		for x in [-185.0, 185.0]:
 			for y in [-372.0, 372.0]:
-				var s := _screen(cam, Vector3(x, y, 0))
-				assert_between(s.x, 0.0, 320.0, "corner (%d, %d) on screen" % [x, y])
-				assert_between(s.y, 0.0, 224.0, "corner (%d, %d) on screen" % [x, y])
+				var corner := _screen(cam, Vector3(x, y, 0))
+				assert_between(corner.x, 0.0, 320.0, "corner (%d, %d) on screen" % [x, y])
+				assert_between(corner.y, 0.0, 224.0, "corner (%d, %d) on screen" % [x, y])
 		var north := _screen(cam, Vector3(0, -372, 0))
 		var south := _screen(cam, Vector3(0, 372, 0))
 		if mode == MwRinkCamera3D.Mode.BIRDS_EYE:
@@ -142,18 +143,18 @@ func test_birds_eye_shows_the_whole_rink() -> void:
 
 func test_first_person_rides_with_his_player() -> void:
 	var cam := _camera(MwRinkCamera3D.Mode.FIRST_PERSON)
-	var s := _shot(Vector3(40, 40, 0))
-	s.rider = "t0.p2.1A"
-	s.rider_at = Vector3(30, 60, 0)
-	s.rider_heading = PI / 2.0
-	cam.shot = s
+	var shot := _shot(Vector3(40, 40, 0))
+	shot.rider = "t0.p2.1A"
+	shot.rider_at = Vector3(30, 60, 0)
+	shot.rider_heading = PI / 2.0
+	cam.shot = shot
 	cam.follow(_shown(Vector3.ZERO))
 	assert_almost_eq(_eye(cam), Vector3(30, 60, cam.eye_height_px), Vector3.ONE * 0.01, "his eyes")
 	assert_almost_eq(cam.heading(), PI / 2.0, 0.01, "looking his way")
 	assert_eq(cam.hidden_subject(), "t0.p2.1A")
 	assert_eq(cam.turn_eighths(), 2, "player 1's pad: up = where he looks")
 	# he turns round: the camera follows smoothly, never in one frame
-	s.rider_heading = -PI / 2.0
+	shot.rider_heading = -PI / 2.0
 	cam.dt = 1.0 / 60.0
 	cam.follow(_shown(Vector3.ZERO))
 	assert_gt(absf(angle_difference(cam.heading(), -PI / 2.0)), 2.5, "no snap")
@@ -168,10 +169,10 @@ func test_first_person_rides_with_his_player() -> void:
 
 func test_first_person_hides_his_frames_and_those_at_the_lens() -> void:
 	var cam := _camera(MwRinkCamera3D.Mode.FIRST_PERSON)
-	var s := _shot(Vector3(40, 40, 0))
-	s.rider = "t0.p2.1A"
-	s.rider_at = Vector3(30, 60, 0)
-	cam.shot = s
+	var shot := _shot(Vector3(40, 40, 0))
+	shot.rider = "t0.p2.1A"
+	shot.rider_at = Vector3(30, 60, 0)
+	cam.shot = shot
 	cam.follow(_shown(Vector3.ZERO))
 	var items := [
 		{"key": "t0.p2.1A/body", "place": MwRinkDraw3D.UPRIGHT, "at": Vector3(30, 60, 0)},
@@ -188,8 +189,8 @@ func test_first_person_hides_his_frames_and_those_at_the_lens() -> void:
 
 func test_the_director_films_the_play() -> void:
 	var cam := _camera(MwRinkCamera3D.Mode.CINEMATIC)
-	var s := _shot(Vector3(0, -300, 0), [Vector3(10, -290, 0)])
-	cam.shot = s
+	var shot := _shot(Vector3(0, -300, 0), [Vector3(10, -290, 0)])
+	cam.shot = shot
 	cam.dt = 1.0 / 30.0
 	cam.follow(_shown(Vector3(0, -300, 0)))
 	assert_eq(cam.director.shot, MwRinkDirector3D.Shot.CRANE, "a new mode starts with a crane")
@@ -226,17 +227,53 @@ func test_shots_from_a_live_faceoff() -> void:
 	var rink := (load(MwScreens.scene_path(4)) as PackedScene).instantiate() as MwRink
 	rink.screen_id = 4
 	router.adopt(rink, {"new_match": true})
-	var d := MwRinkDraw3D.new(rom)
-	d.build(rink.state)
-	var s := MwRinkShot3D.make(rink.state, d.items, Vector2(rink.state.camera.shown))
-	assert_gte(s.players.size(), 10, "the teams on the ice")
-	assert_ne(s.rider, "", "someone to ride with")
-	assert_true(s.rider.begins_with("t"), s.rider)
-	var keys := d.items.map(func(it): return it["key"])
-	assert_true(keys.has(s.rider + "/body"), "the rider's frames carry his subject")
-	var half := MwRinkShot3D.blend(s, s, 0.5)
-	assert_eq(half.rider, s.rider)
-	assert_almost_eq(half.puck, s.puck, Vector3.ONE * 0.001)
+	var drawer := MwRinkDraw3D.new(rom)
+	drawer.build(rink.state)
+	var shot := MwRinkShot3D.make(rink.state, drawer.items, Vector2(rink.state.camera.shown))
+	assert_gte(shot.players.size(), 10, "the teams on the ice")
+	assert_ne(shot.rider, "", "someone to ride with")
+	assert_true(shot.rider.begins_with("t"), shot.rider)
+	var keys := drawer.items.map(func(it): return it["key"])
+	assert_true(keys.has(shot.rider + "/body"), "the rider's frames carry his subject")
+	var half := MwRinkShot3D.blend(shot, shot, 0.5)
+	assert_eq(half.rider, shot.rider)
+	assert_almost_eq(half.puck, shot.puck, Vector3.ONE * 0.001)
 	assert_almost_eq(MwRinkShot3D.heading_of(0), PI / 2.0, 1e-6, "angle 0: east")
 	assert_almost_eq(absf(MwRinkShot3D.heading_of(0x40)), PI, 1e-6, "$40: south")
 	assert_almost_eq(MwRinkShot3D.heading_of(0xC0), 0.0, 1e-6, "$C0: north")
+
+
+## Plan 25: a wide picture shows the original's 224 px high and more beside
+## it (the middle 320 as before); a tall one keeps the 320 across.
+func test_wide_and_tall_pictures_keep_the_original_framing() -> void:
+	var at := Vector3(40, 100, 0)
+	var shown := _shown(at)
+	var probe := [Vector3(at.x - 150, at.y, 0), Vector3(at.x + 150, at.y, 0), Vector3(at.x, at.y - 90, 0)]
+	for mode in [MwRinkCamera3D.Mode.FOLLOW, MwRinkCamera3D.Mode.ORTHO]:
+		var base := _camera(mode)
+		base.follow(shown)
+		var wide := _camera(mode, Vector2i(398, 224))
+		wide.follow(shown)
+		assert_almost_eq(wide.fov, base.fov, 0.0001, "%d: wide - the same height" % mode)
+		var tall := _camera(mode, Vector2i(320, 240))
+		tall.follow(shown)
+		assert_gt(tall.fov, base.fov, "%d: tall - grown" % mode)
+		for point: Vector3 in probe:
+			var b := _screen(base, point)
+			assert_almost_eq(_screen(wide, point), b + Vector2(39, 0), Vector2(0.6, 0.6),
+					"%d: the middle 320 as before" % mode)
+			assert_almost_eq(_screen(tall, point).x, b.x, 0.6, "%d: the 320 across kept" % mode)
+
+
+func test_birds_eye_fits_the_wide_picture() -> void:
+	for mode in [MwRinkCamera3D.Mode.BIRDS_EYE, MwRinkCamera3D.Mode.BIRDS_EYE_ACROSS]:
+		var base := _camera(mode)
+		base.follow(_shown(Vector3.ZERO))
+		var cam := _camera(mode, Vector2i(530, 224))
+		cam.follow(_shown(Vector3.ZERO))
+		assert_lte(cam.fov, base.fov + 0.0001, "%d: no wider than needed" % mode)
+		for x in [-185.0, 185.0]:
+			for y in [-372.0, 372.0]:
+				var corner := _screen(cam, Vector3(x, y, 0))
+				assert_between(corner.x, 0.0, 530.0, "corner (%d, %d) in the picture" % [x, y])
+				assert_between(corner.y, 0.0, 224.0, "corner (%d, %d) in the picture" % [x, y])

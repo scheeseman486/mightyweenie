@@ -39,6 +39,20 @@ var shake_16 := 0
 var shown := Vector2i.ZERO
 
 
+## A copy (plan 40: the client's dead reckoning moves a copy, MwNetReckoning).
+func copy() -> MwRinkCamera:
+	var camera := MwRinkCamera.new()
+	camera.x = x
+	camera.y = y
+	camera.speed = speed
+	camera.lead = lead
+	camera.shake = shake
+	camera.amp = amp
+	camera.shake_16 = shake_16
+	camera.shown = shown
+	return camera
+
+
 ## The camera's range: map size minus the screen (192 x 680 on the rink).
 static func limits(rom: PackedByteArray) -> Vector2i:
 	return Vector2i(8 * MwGfx.u16(rom, MAP + 8) - 320, 8 * MwGfx.u16(rom, MAP + 0xA) - 224)
@@ -71,15 +85,15 @@ func place(rom: PackedByteArray, rx: int, ry: int) -> void:
 func update(rom: PackedByteArray, elapsed: int, target: MwMotion, new_lead: Variant = null) -> Vector2i:
 	var hi := limits(rom)
 	if target != null:
-		var p := target.pixels()
-		var tx := MwMotion.s16(p.x + MwMotion.asr(target.vel[0], 4))
-		var ty := MwMotion.s16(p.y + MwMotion.asr(target.vel[1], 4))
+		var point := target.pixels()
+		var tx := MwRinkSim.s16(point.x + MwMotion.asr(target.vel[0], 4))
+		var ty := MwRinkSim.s16(point.y + MwMotion.asr(target.vel[1], 4))
 		if new_lead != null:
 			lead = int(new_lead)
-		var want := clamp_to(Vector2i(MwMotion.s16(tx + 0x100 - CENTRE.x),
-				MwMotion.s16(ty + 0x1CD - CENTRE.y + lead)), hi)
-		var dx := MwMotion.s16(want.x - (x >> 8))
-		var dy := MwMotion.s16(want.y - (y >> 8))
+		var want := clamp_to(Vector2i(MwRinkSim.s16(tx + 0x100 - CENTRE.x),
+				MwRinkSim.s16(ty + 0x1CD - CENTRE.y + lead)), hi)
+		var dx := MwRinkSim.s16(want.x - (x >> 8))
+		var dy := MwRinkSim.s16(want.y - (y >> 8))
 		var d := MwTrig.distance(dx, dy) & 0xFFFF
 		var a := MwTrig.angle_of(rom, dx, dy)
 		var lim := ((d * elapsed) << 3) & 0xFFFF        # mulu.w, lsl.w #3
@@ -89,16 +103,16 @@ func update(rom: PackedByteArray, elapsed: int, target: MwMotion, new_lead: Vari
 			speed = (speed + STEP * elapsed) & 0xFFFF
 			if speed >= lim:
 				speed = lim
-		var step := MwTrig.polar(rom, a, MwMotion.s16(speed))
-		x += MwMotion.s16(step.x)
-		y += clampi(MwMotion.s16(step.y), -MAX_DY, MAX_DY)
-	var sx := MwMotion.s16(x >> 8)
-	var sy := MwMotion.s16(y >> 8)
+		var step := MwTrig.polar(rom, a, MwRinkSim.s16(speed))
+		x += MwRinkSim.s16(step.x)
+		y += clampi(MwRinkSim.s16(step.y), -MAX_DY, MAX_DY)
+	var sx := MwRinkSim.s16(x >> 8)
+	var sy := MwRinkSim.s16(y >> 8)
 	if shake != 0:
-		shake = MwMotion.s16(shake - elapsed)
+		shake = MwRinkSim.s16(shake - elapsed)
 		if shake > 0:
-			amp = MwMotion.s16(-amp)
-			sx = MwMotion.s16(sx + amp)
+			amp = MwRinkSim.s16(-amp)
+			sx = MwRinkSim.s16(sx + amp)
 		else:
 			shake = 0
 			amp = 0

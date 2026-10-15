@@ -41,7 +41,8 @@ var pic_w := 0
 var pic_h := 0
 var picture := PackedInt32Array()   # the whole picture (pic_w x pic_h)
 var crowd := PackedInt32Array()     # the left half's crowd (HALF x pic_h), NOT_CROWD elsewhere
-var templates := {}                 # figure name -> {w, h, t: PackedInt32Array, source, ox, oy (the box's top-left in t)}
+# figure name -> {w, h, t: PackedInt32Array, source, ox, oy (the box's top-left in t)}
+var templates := {}
 var figures := {}                   # figure name -> its crowd.json entry
 
 
@@ -53,8 +54,42 @@ static func load_data() -> Dictionary:
 	return JSON.parse_string(f.get_as_text())
 
 
+## What the figures are cut by: editing one cuts them again (plan 27's cache).
+const SOURCES := ["res://src/crowd/crowd.gd", "res://src/rom/gfx.gd", DATA]
+
+
 ## Cuts every figure of [param data_] (crowd.json) from the ROM [param rom].
+## With crowd.json's own figures (no [param data_]) the cut is kept in the
+## disk cache (MwCache, plan 27) and read back on later runs.
 func build(rom: PackedByteArray, data_: Dictionary = {}) -> void:
+	if data_.is_empty() and _restore(MwCache.read("crowd", SOURCES)):
+		return
+	_cut_all(rom, data_)
+	if data_.is_empty():
+		MwCache.write("crowd", SOURCES, {"data": data, "pic_w": pic_w, "pic_h": pic_h,
+				"picture": picture, "crowd": crowd, "templates": templates, "figures": figures})
+
+
+## Takes a cut kept by [method build]; false if [param kept] isn't one.
+func _restore(kept: Variant) -> bool:
+	if not kept is Dictionary:
+		return false
+	for k in ["data", "pic_w", "pic_h", "picture", "crowd", "templates", "figures"]:
+		if not kept.has(k):
+			return false
+	if not (kept["picture"] is PackedInt32Array and kept["crowd"] is PackedInt32Array):
+		return false
+	data = kept["data"]
+	pic_w = kept["pic_w"]
+	pic_h = kept["pic_h"]
+	picture = kept["picture"]
+	crowd = kept["crowd"]
+	templates = kept["templates"]
+	figures = kept["figures"]
+	return picture.size() == pic_w * pic_h
+
+
+func _cut_all(rom: PackedByteArray, data_: Dictionary) -> void:
 	data = data_ if not data_.is_empty() else load_data()
 	var img := MwGfx.picture_image(rom, MwGfx.picture(rom, PICTURE))
 	pic_w = img["w"]
@@ -97,21 +132,22 @@ static func crowd_area(pic: PackedInt32Array, w: int, h: int) -> PackedInt32Arra
 		stack.append(Vector2i(x, 0))
 		stack.append(Vector2i(x, h - 1))
 	while not stack.is_empty():
-		var p: Vector2i = stack.pop_back()
-		var i := p.y * HALF + p.x
-		if reach[i] or pic[p.y * w + p.x] < LINE:
+		var point: Vector2i = stack.pop_back()
+		var i := point.y * HALF + point.x
+		if reach[i] or pic[point.y * w + point.x] < LINE:
 			continue
 		reach[i] = 1
 		for d: Vector2i in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
-			var q := p + d
-			if q.x >= 0 and q.x < HALF and q.y >= 0 and q.y < h and not reach[q.y * HALF + q.x]:
-				stack.append(q)
+			var point_2 := point + d
+			if point_2.x >= 0 and point_2.x < HALF and point_2.y >= 0 and point_2.y < h \
+					and not reach[point_2.y * HALF + point_2.x]:
+				stack.append(point_2)
 	var out := PackedInt32Array()
 	out.resize(HALF * h)
 	for y in h:
 		for x in HALF:
-			var inside := reach[y * HALF + x] and not TOP_CENTRE.has_point(Vector2i(x, y))
-			out[y * HALF + x] = pic[y * w + x] if inside else NOT_CROWD
+			var in_crowd := reach[y * HALF + x] and not TOP_CENTRE.has_point(Vector2i(x, y))
+			out[y * HALF + x] = pic[y * w + x] if in_crowd else NOT_CROWD
 	return out
 
 
@@ -175,10 +211,10 @@ static func figure_colours(a: PackedInt32Array, w: int, h: int) -> PackedByteArr
 			if a[i] != DARK_GREY:
 				continue
 			for d: Vector2i in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
-				var q := Vector2i(x, y) + d
-				if q.x < 0 or q.x >= w or q.y < 0 or q.y >= h:
+				var point_2 := Vector2i(x, y) + d
+				if point_2.x < 0 or point_2.x >= w or point_2.y < 0 or point_2.y >= h:
 					continue
-				var j := q.y * w + q.x
+				var j := point_2.y * w + point_2.x
 				if light[j] or a[j] == DARK_GREY:
 					out[i] = 1
 					break
@@ -192,19 +228,20 @@ static func flood(allowed: PackedByteArray, w: int, h: int, seeds: Array) -> Pac
 	var out := PackedByteArray()
 	out.resize(w * h)
 	var stack: Array[Vector2i] = []
-	for s: Vector2i in seeds:
-		if s.x >= 0 and s.x < w and s.y >= 0 and s.y < h and allowed[s.y * w + s.x]:
-			out[s.y * w + s.x] = 1
-			stack.append(s)
+	for seed_point: Vector2i in seeds:
+		if seed_point.x >= 0 and seed_point.x < w and seed_point.y >= 0 and seed_point.y < h \
+				and allowed[seed_point.y * w + seed_point.x]:
+			out[seed_point.y * w + seed_point.x] = 1
+			stack.append(seed_point)
 	while not stack.is_empty():
-		var p: Vector2i = stack.pop_back()
+		var point: Vector2i = stack.pop_back()
 		for d: Vector2i in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
-			var q := p + d
-			if q.x >= 0 and q.x < w and q.y >= 0 and q.y < h:
-				var j := q.y * w + q.x
+			var point_2 := point + d
+			if point_2.x >= 0 and point_2.x < w and point_2.y >= 0 and point_2.y < h:
+				var j := point_2.y * w + point_2.x
 				if allowed[j] and not out[j]:
 					out[j] = 1
-					stack.append(q)
+					stack.append(point_2)
 	return out
 
 
@@ -255,9 +292,9 @@ static func outline(parts: PackedByteArray, a: PackedInt32Array, w: int, h: int)
 static func rule_mask(view: PackedInt32Array, w: int, h: int, seeds: Array, walls: Array,
 		patches: Array) -> PackedByteArray:
 	var allowed := figure_colours(view, w, h)
-	for p: Vector2i in walls:
-		if p.x >= 0 and p.x < w and p.y >= 0 and p.y < h:
-			allowed[p.y * w + p.x] = 0
+	for point: Vector2i in walls:
+		if point.x >= 0 and point.x < w and point.y >= 0 and point.y < h:
+			allowed[point.y * w + point.x] = 0
 	var parts := flood(allowed, w, h, seeds)
 	var mask := _or(parts, outline(parts, view, w, h))
 	for pt: Vector3i in patches:
@@ -402,19 +439,19 @@ func cut(f: Dictionary, view: PackedInt32Array, like := PackedInt32Array()) -> P
 		return marked(f, box, lasso_mask(view, w, h, inside(f["lasso"], w, h, bx, by)))
 	var seeds := _points(f.get("seeds", []), bx, by)
 	var pads: Array = []
-	for p: Array in f.get("patches", []):
-		pads.append(Vector3i(int(p[0]) - bx, int(p[1]) - by, int(p[2])))
+	for patch: Array in f.get("patches", []):
+		pads.append(Vector3i(int(patch[0]) - bx, int(patch[1]) - by, int(patch[2])))
 	if not like.is_empty():
 		var kept: Array = []
-		for s: Vector2i in seeds:
-			if _at(view, w, h, s) == _at(like, w, h, s):
-				kept.append(s)
+		for seed_point: Vector2i in seeds:
+			if _at(view, w, h, seed_point) == _at(like, w, h, seed_point):
+				kept.append(seed_point)
 		seeds = kept
 		var kept_pads: Array = []
-		for p: Vector3i in pads:
-			var s := Vector2i(p.x, p.y)
-			if _at(view, w, h, s) == _at(like, w, h, s):
-				kept_pads.append(p)
+		for point: Vector3i in pads:
+			var pad_point := Vector2i(point.x, point.y)
+			if _at(view, w, h, pad_point) == _at(like, w, h, pad_point):
+				kept_pads.append(point)
 		pads = kept_pads
 		for i in w * h:
 			if like[i] >= LINE and not _dark(like[i]) and view[i] == like[i]:
@@ -422,15 +459,15 @@ func cut(f: Dictionary, view: PackedInt32Array, like := PackedInt32Array()) -> P
 	return marked(f, box, rule_mask(view, w, h, seeds, _points(f.get("walls", []), bx, by), pads))
 
 
-## A box value at s, NumPy-style (negative indices count from the end).
-static func _at(a: PackedInt32Array, w: int, h: int, s: Vector2i) -> int:
-	return a[posmod(s.y, h) * w + posmod(s.x, w)]
+## The box value at [param point], NumPy-style (negative indices count from the end).
+static func _at(a: PackedInt32Array, w: int, h: int, point: Vector2i) -> int:
+	return a[posmod(point.y, h) * w + posmod(point.x, w)]
 
 
 static func _points(pts: Array, bx: int, by: int) -> Array:
 	var out: Array = []
-	for p: Array in pts:
-		out.append(Vector2i(int(p[0]) - bx, int(p[1]) - by))
+	for point: Array in pts:
+		out.append(Vector2i(int(point[0]) - bx, int(point[1]) - by))
 	return out
 
 

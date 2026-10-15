@@ -13,9 +13,10 @@ func after_each() -> void:
 		host = null
 
 
-func _icon_ok(o: MwRinkState.Overlay, what: String) -> void:
-	assert_eq(o.anim.address, MwGfx.u32(rom, MwRinkMatch.PORTRAITS + 8 * 4), what + ": the ref's animation")
-	assert_eq([o.x, o.y, o.depth, o.attr, o.flags], [240, 16, 0xFFFF, 0xA0, 1], what + ": screen (240, 16), small border, hidden")
+func _icon_ok(overlay: MwRinkState.Overlay, what: String) -> void:
+	assert_eq(overlay.anim.address, MwGfx.u32(rom, MwRinkMatch.PORTRAITS + 8 * 4), what + ": the ref's animation")
+	assert_eq([overlay.x, overlay.y, overlay.depth, overlay.attr, overlay.flags], [240, 16, 0xFFFF, 0xA0, 1],
+			what + ": screen (240, 16), small border, hidden")
 
 
 func test_boot_set_ups() -> void:
@@ -39,10 +40,10 @@ func test_a_pending_icing_draws_the_icon() -> void:
 	s.phase = MwRinkState.PHASE_PLAY
 	s.puck_rule = 1
 	s.stoppage.flags |= 0x80
-	var d := MwRinkDraw.new(rom)
-	d.build(s)
-	assert_between(d.head.size(), 2, 20, "the small border and the ref (%d pieces)" % d.head.size())
-	for h: Array in d.head:
+	var drawer := MwRinkDraw.new(rom)
+	drawer.build(s)
+	assert_between(drawer.head.size(), 2, 20, "the small border and the ref (%d pieces)" % drawer.head.size())
+	for h: Array in drawer.head:
 		assert_between(int(h[0]) - MwRinkDraw.SPRITE_ORIGIN, 200, 300, "near x 240")
 		assert_between(int(h[1]) - MwRinkDraw.SPRITE_ORIGIN, -20, 60, "near y 16")
 

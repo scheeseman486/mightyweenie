@@ -6,23 +6,20 @@
 #   tools/bin/sim-check [NAME ...] --think   # also our AI against every recorded think
 #   tools/bin/sim-check [NAME ...] --ai      # our AI as the CPU control (no recorded thinks)
 #   tools/bin/sim-check NAME --detail PASS [--ai]
+#   -j N: N recordings at once (the output as one at a time)
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 here="$(dirname "${BASH_SOURCE[0]}")"
+source "$here/_recordings.sh"
 names=(); opts=()
 while (( $# )); do
   case "$1" in
+    -j) export MW_JOBS="$2"; shift 2 ;;
     --only|--show|--from|--count|--detail) opts+=("$1" "$2"); shift 2 ;;
     --*) opts+=("$1"); shift ;;
     *) names+=("$1"); shift ;;
   esac
 done
 if (( ${#names[@]} == 0 )); then
-  names=(cpu_s0 p1_s9 p1p2_s4 cpu_s10 p1_s8 p1p2_s17 coop_s14 p1_s2 cpu_s16 p1_s5 p4_s22)
+  names=("${MW_REC_V2[@]}")
 fi
-status=0
-for n in "${names[@]}"; do
-  "$here/godot-headless" -s res://test/sim/sim_check.gd -- "$n" "${opts[@]}" 2>&1 \
-    | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)' || true
-  (( ${PIPESTATUS[0]} == 0 )) || status=1
-done
-exit $status
+mw_each_recording res://test/sim/sim_check.gd "${names[@]}" -- "${opts[@]}"

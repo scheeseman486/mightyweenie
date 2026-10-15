@@ -51,7 +51,8 @@ const DROP := 0xFFBE3C
 const PLATES := 0xFFBE80
 const SHARK_OSC := 0xFFC280         ## two oscillators of 12 bytes
 const GOAL_MESSAGE := 0xFFC2B6
-const REPLAY := 0xFFC2BE             ## the ring object; frames .w at +$10, start +$12, open +$14, playback +$15, pan +$16
+## the ring object; frames .w at +$10, start +$12, open +$14, playback +$15, pan +$16
+const REPLAY := 0xFFC2BE
 const PENALTY_TICK := 0xFFC2D8
 const PENALTY := 0xFFC2DC
 const BOX_CLOCK := 0xFFC2F2
@@ -113,45 +114,55 @@ const IGNORE := [[0xFFC298, 0xFFC2B0], [0xFFCA30, 0xFFCA4E], [0xFFCA56, 0xFFCA5A
 
 # --- big-endian access -----------------------------------------------------------
 
+## The unsigned byte at RAM address [param a] in snapshot [param r].
 static func u8(r: PackedByteArray, a: int) -> int:
 	return r[a - BASE]
 
 
+## The signed byte at RAM address [param a] in snapshot [param r].
 static func s8(r: PackedByteArray, a: int) -> int:
 	var v := r[a - BASE]
 	return v - 256 if v >= 128 else v
 
 
+## The unsigned big-endian word at RAM address [param a] in snapshot [param r].
 static func u16(r: PackedByteArray, a: int) -> int:
 	var i := a - BASE
 	return (r[i] << 8) | r[i + 1]
 
 
+## The signed big-endian word at RAM address [param a] in snapshot [param r].
 static func s16(r: PackedByteArray, a: int) -> int:
 	var v := u16(r, a)
 	return v - 0x10000 if v >= 0x8000 else v
 
 
+## The unsigned big-endian long at RAM address [param a] in snapshot [param r].
 static func u32(r: PackedByteArray, a: int) -> int:
 	var i := a - BASE
 	return (r[i] << 24) | (r[i + 1] << 16) | (r[i + 2] << 8) | r[i + 3]
 
 
+## The signed big-endian long at RAM address [param a] in snapshot [param r].
 static func s32(r: PackedByteArray, a: int) -> int:
 	var v := u32(r, a)
 	return v - 0x100000000 if v >= 0x80000000 else v
 
 
+## Writes the low byte of [param v] at RAM address [param a] in snapshot [param r]; an
+## address past the snapshot's end (an AI snapshot's) is left out.
 static func w8(r: PackedByteArray, a: int, v: int) -> void:
 	if a - BASE < r.size():
 		r[a - BASE] = v & 0xFF
 
 
+## Writes [param v] as a big-endian word at RAM address [param a] in [param r] (as [method w8]).
 static func w16(r: PackedByteArray, a: int, v: int) -> void:
 	w8(r, a, v >> 8)
 	w8(r, a + 1, v)
 
 
+## Writes [param v] as a big-endian long at RAM address [param a] in [param r] (as [method w8]).
 static func w32(r: PackedByteArray, a: int, v: int) -> void:
 	w16(r, a, v >> 16)
 	w16(r, a + 2, v)
@@ -159,6 +170,7 @@ static func w32(r: PackedByteArray, a: int, v: int) -> void:
 
 # --- objects ------------------------------------------------------------------------
 
+## The RAM address of player [param i] of team [param t].
 static func player_address(t: int, i: int) -> int:
 	return TEAMS[t] + PLAYERS + PLAYER_SIZE * i
 
@@ -184,64 +196,65 @@ static func object_at(s: MwRinkState, word: int) -> MwRinkState.Actor:
 
 
 ## The RAM word of an object (0 for null).
-static func word_of(s: MwRinkState, o: MwRinkState.Actor) -> int:
-	if o == null:
+static func word_of(s: MwRinkState, actor: MwRinkState.Actor) -> int:
+	if actor == null:
 		return 0
-	if o == s.puck:
+	if actor == s.puck:
 		return PUCK & 0xFFFF
-	if o == s.referee:
+	if actor == s.referee:
 		return REF & 0xFFFF
-	if o is MwRinkState.Player:
-		var p := o as MwRinkState.Player
+	if actor is MwRinkState.Player:
+		var p := actor as MwRinkState.Player
 		return player_address(p.team, p.index) & 0xFFFF
 	for i in 8:
-		if o == s.objects[i]:
+		if actor == s.objects[i]:
 			return (OBJECTS + OBJECT_SIZE * i) & 0xFFFF
 	return 0
 
 
-static func _motion(r: PackedByteArray, a: int, m: MwMotion) -> void:
-	m.pos = PackedInt32Array([s32(r, a), s32(r, a + 8), s32(r, a + 0x10)])
-	m.vel = PackedInt32Array([s16(r, a + 4), s16(r, a + 0xC), s16(r, a + 0x14)])
-	m.acc = PackedInt32Array([s16(r, a + 6), s16(r, a + 0xE), s16(r, a + 0x16)])
+static func _motion(r: PackedByteArray, a: int, motion: MwMotion) -> void:
+	motion.pos = PackedInt32Array([s32(r, a), s32(r, a + 8), s32(r, a + 0x10)])
+	motion.vel = PackedInt32Array([s16(r, a + 4), s16(r, a + 0xC), s16(r, a + 0x14)])
+	motion.acc = PackedInt32Array([s16(r, a + 6), s16(r, a + 0xE), s16(r, a + 0x16)])
 
 
-static func _put_motion(r: PackedByteArray, a: int, m: MwMotion) -> void:
+static func _put_motion(r: PackedByteArray, a: int, motion: MwMotion) -> void:
 	for k in 3:
-		w32(r, a + 8 * k, m.pos[k])
-		w16(r, a + 8 * k + 4, m.vel[k])
-		w16(r, a + 8 * k + 6, m.acc[k])
+		w32(r, a + 8 * k, motion.pos[k])
+		w16(r, a + 8 * k + 4, motion.vel[k])
+		w16(r, a + 8 * k + 6, motion.acc[k])
 
 
 static func _anim(rom: PackedByteArray, r: PackedByteArray, a: int) -> MwAnimState:
-	return MwAnimState.from_fields(rom, [u32(r, a), u16(r, a + 4), u8(r, a + 6), u8(r, a + 7), u16(r, a + 8), u8(r, a + 0xA)])
+	return MwAnimState.from_fields(rom, [u32(r, a), u16(r, a + 4), u8(r, a + 6), u8(r, a + 7), u16(r, a + 8),
+			u8(r, a + 0xA)])
 
 
-static func _put_anim(r: PackedByteArray, a: int, n: MwAnimState) -> void:
-	w32(r, a, n.address)
-	w16(r, a + 4, n.speed)
-	w8(r, a + 6, n.flags)
-	w8(r, a + 7, n.variant)
-	w16(r, a + 8, n.position)
-	w8(r, a + 0xA, n.frame)
+static func _put_anim(r: PackedByteArray, a: int, anim: MwAnimState) -> void:
+	w32(r, a, anim.address)
+	w16(r, a + 4, anim.speed)
+	w8(r, a + 6, anim.flags)
+	w8(r, a + 7, anim.variant)
+	w16(r, a + 8, anim.position)
+	w8(r, a + 0xA, anim.frame)
 
 
 static func _params(r: PackedByteArray, a: int) -> MwMotion.Params:
-	var p := MwMotion.Params.new(s16(r, a), s16(r, a + 2), s16(r, a + 4), s16(r, a + 6))
+	var params := MwMotion.Params.new(s16(r, a), s16(r, a + 2), s16(r, a + 4), s16(r, a + 6))
 	for i in 8:
-		p.ground[i] = u16(r, a + 8 + 2 * i)
-		p.air[i] = u16(r, a + 0x18 + 2 * i)
-	return p
+		params.ground[i] = u16(r, a + 8 + 2 * i)
+		params.air[i] = u16(r, a + 0x18 + 2 * i)
+	return params
 
 
-static func _put_params(r: PackedByteArray, a: int, p: MwMotion.Params) -> void:
-	w16(r, a, p.gravity)
-	w16(r, a + 2, p.restitution)
-	w16(r, a + 4, p.friction_ground)
-	w16(r, a + 6, p.friction_air)
+static func _put_params(r: PackedByteArray, a: int, params: MwMotion.Params) -> void:
+	w16(r, a, params.gravity)
+	w16(r, a + 2, params.restitution)
+	w16(r, a + 4, params.friction_ground)
+	w16(r, a + 6, params.friction_air)
 	for i in 8:
-		w16(r, a + 8 + 2 * i, p.ground[i])
-		w16(r, a + 0x18 + 2 * i, p.air[i])
+		w16(r, a + 8 + 2 * i, params.ground[i])
+		w16(r, a + 0x18 + 2 * i, params.air[i])
 
 
 # --- decode -------------------------------------------------------------------------
@@ -276,44 +289,44 @@ static func decode_into(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray
 	s.camera.shown = Vector2i(s16(r, PLANE_B + 4), s16(r, PLANE_B + 6))
 	s.plane_b_cell = Vector2i(u16(r, PLANE_B + 0x10), u16(r, PLANE_B + 0x12))
 	s.scroll_b = Vector2i(u16(r, SCROLL_B), u16(r, SCROLL_B + 4))
-	var c := s.camera
-	c.speed = u16(r, RINK + 6)
-	c.x = s32(r, RINK + 8)
-	c.y = s32(r, RINK + 0xC)
-	c.lead = s16(r, RINK + 0x10)
-	c.shake = s16(r, RINK + 0x12)
-	c.amp = s16(r, RINK + 0x14)
-	c.shake_16 = s16(r, RINK + 0x16)
+	var camera := s.camera
+	camera.speed = u16(r, RINK + 6)
+	camera.x = s32(r, RINK + 8)
+	camera.y = s32(r, RINK + 0xC)
+	camera.lead = s16(r, RINK + 0x10)
+	camera.shake = s16(r, RINK + 0x12)
+	camera.amp = s16(r, RINK + 0x14)
+	camera.shake_16 = s16(r, RINK + 0x16)
 	s.player_params = _params(r, RINK + 0x64)
 	s.puck_params = _params(r, RINK + 0x8C)
 	for i in 2:
-		var n := s.nets[i]
+		var net := s.nets[i]
 		var a: int = RINK + (0x18 if i == 0 else 0x3E)
-		_motion(r, a, n.motion)
-		n.anim = _anim(rom, r, a + 0x18)
-		n.style = u8(r, a + 0x24)
-		n.bottom = u8(r, a + 0x25) & 1 != 0
-		var l := s.lamps[i]
+		_motion(r, a, net.motion)
+		net.anim = _anim(rom, r, a + 0x18)
+		net.style = u8(r, a + 0x24)
+		net.bottom = u8(r, a + 0x25) & 1 != 0
+		var actor := s.lamps[i]
 		a = RINK + (0xB4 if i == 0 else 0xD8)
-		_motion(r, a, l.motion)
-		l.anim = _anim(rom, r, a + 0x18)
+		_motion(r, a, actor.motion)
+		actor.anim = _anim(rom, r, a + 0x18)
 	for i in 4:
-		var h := s.hazards[i]
+		var hazard := s.hazards[i]
 		var a := HAZARDS + 10 * i
-		h.x = s16(r, a)
-		h.y = s16(r, a + 2)
-		h.x4 = u32(r, a + 4)
-		h.kind = u8(r, a + 8)
-		h.flags = u8(r, a + 9)
+		hazard.x = s16(r, a)
+		hazard.y = s16(r, a + 2)
+		hazard.x4 = u32(r, a + 4)
+		hazard.kind = u8(r, a + 8)
+		hazard.flags = u8(r, a + 9)
 	for i in 8:
-		var o := s.objects[i]
+		var rink_object := s.objects[i]
 		var a := OBJECTS + OBJECT_SIZE * i
-		_motion(r, a, o.motion)
-		o.anim = _anim(rom, r, a + 0x18)
-		o.t24 = u16(r, a + 0x24)
-		o.t26 = u16(r, a + 0x26)
-		o.kind = u8(r, a + 0x28)
-		o.flags = u8(r, a + 0x29)
+		_motion(r, a, rink_object.motion)
+		rink_object.anim = _anim(rom, r, a + 0x18)
+		rink_object.t24 = u16(r, a + 0x24)
+		rink_object.t26 = u16(r, a + 0x26)
+		rink_object.kind = u8(r, a + 0x28)
+		rink_object.flags = u8(r, a + 0x29)
 	s.crowd = s16(r, RINK + 0x276)
 	s.stadium_objects = u16(r, RINK + 0x274)
 	# puck (references after the teams exist: same objects)
@@ -332,14 +345,14 @@ static func decode_into(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray
 			tm.x330[i] = u8(r, b + 0x330 + i)
 		for k in 2:
 			tm.arrows[k] = _anim(rom, r, b + (0x33A if k == 0 else 0x34E))
-			var m := tm.markers[k]
+			var marker := tm.markers[k]
 			var a: int = b + (0x346 if k == 0 else 0x35A)
-			m.x = s16(r, a)
-			m.y = s16(r, a + 2)
-			m.plate = u8(r, a + 4)
-			m.number = u8(r, a + 5)
-			m.position = u8(r, a + 6)
-			m.health = u8(r, a + 7)
+			marker.x = s16(r, a)
+			marker.y = s16(r, a + 2)
+			marker.plate = u8(r, a + 4)
+			marker.number = u8(r, a + 5)
+			marker.position = u8(r, a + 6)
+			marker.health = u8(r, a + 7)
 		for i in tm.stats.size():
 			tm.stats[i] = u8(r, b + MwRinkState.Team.STATS_AT + i)
 		tm.score = u16(r, b + 0x4A2)
@@ -378,13 +391,13 @@ static func decode_into(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray
 	s.penalty = _overlay(rom, r, PENALTY)
 	s.stoppage = _overlay(rom, r, STOPPAGE)
 	for i in 2:
-		var o := s.shark_osc[i]
+		var oscillator := s.shark_osc[i]
 		var a := SHARK_OSC + 12 * i
-		o.start = u32(r, a)
-		o.base = s16(r, a + 4)
-		o.amp = s16(r, a + 6)
-		o.rate = u16(r, a + 8)
-		o.phase = u16(r, a + 0xA)
+		oscillator.start = u32(r, a)
+		oscillator.base = s16(r, a + 4)
+		oscillator.amp = s16(r, a + 6)
+		oscillator.rate = u16(r, a + 8)
+		oscillator.phase = u16(r, a + 0xA)
 	s.goal_message = u16(r, GOAL_MESSAGE)
 	s.goal_message_step = u16(r, GOAL_MESSAGE + 2)
 	var rp := s.replay
@@ -424,6 +437,8 @@ static func decode_into(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray
 		s.pads_new[p] = u8(r, PADS + 2 * p + 1)
 
 
+## The puck of [param s] from snapshot [param r], its carrier and receiver included
+## ([method object_at]).
 static func decode_puck(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray) -> void:
 	var pk := s.puck
 	_motion(r, PUCK, pk.motion)
@@ -444,6 +459,7 @@ static func decode_puck(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray
 	pk.receiver = object_at(s, u16(r, PUCK + 0x3A))
 
 
+## The puck of [param s] into snapshot [param r].
 static func encode_puck(s: MwRinkState, r: PackedByteArray) -> void:
 	var pk := s.puck
 	_put_motion(r, PUCK, pk.motion)
@@ -466,7 +482,8 @@ static func encode_puck(s: MwRinkState, r: PackedByteArray) -> void:
 
 ## Player [param i] of team [param t] from [param r] (references too, unless
 ## [param refs] is false: then they wait for the whole state).
-static func decode_player(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray, t: int, i: int, refs := true) -> void:
+static func decode_player(rom: PackedByteArray, s: MwRinkState, r: PackedByteArray, t: int, i: int,
+		refs := true) -> void:
 	var p := s.teams[t].players[i]
 	var a := player_address(t, i)
 	_motion(r, a, p.motion)
@@ -511,23 +528,23 @@ static func decode_player(rom: PackedByteArray, s: MwRinkState, r: PackedByteArr
 
 
 static func _overlay(rom: PackedByteArray, r: PackedByteArray, a: int) -> MwRinkState.Overlay:
-	var o := MwRinkState.Overlay.new()
-	o.anim = _anim(rom, r, a)
-	o.x = s16(r, a + 0xC)
-	o.y = s16(r, a + 0xE)
-	o.depth = u16(r, a + 0x10)
-	o.attr = u8(r, a + 0x12)
-	o.flags = u8(r, a + 0x13)
-	return o
+	var overlay := MwRinkState.Overlay.new()
+	overlay.anim = _anim(rom, r, a)
+	overlay.x = s16(r, a + 0xC)
+	overlay.y = s16(r, a + 0xE)
+	overlay.depth = u16(r, a + 0x10)
+	overlay.attr = u8(r, a + 0x12)
+	overlay.flags = u8(r, a + 0x13)
+	return overlay
 
 
-static func _put_overlay(r: PackedByteArray, a: int, o: MwRinkState.Overlay) -> void:
-	_put_anim(r, a, o.anim)
-	w16(r, a + 0xC, o.x)
-	w16(r, a + 0xE, o.y)
-	w16(r, a + 0x10, o.depth)
-	w8(r, a + 0x12, o.attr)
-	w8(r, a + 0x13, o.flags)
+static func _put_overlay(r: PackedByteArray, a: int, overlay: MwRinkState.Overlay) -> void:
+	_put_anim(r, a, overlay.anim)
+	w16(r, a + 0xC, overlay.x)
+	w16(r, a + 0xE, overlay.y)
+	w16(r, a + 0x10, overlay.depth)
+	w8(r, a + 0x12, overlay.attr)
+	w8(r, a + 0x13, overlay.flags)
 
 
 ## What a plate's RAM tiles show (MwPlate.tiles in reverse; $FF = blank).
@@ -563,45 +580,45 @@ static func encode(s: MwRinkState, template: PackedByteArray) -> PackedByteArray
 	w16(r, PLANE_B + 0x12, s.plane_b_cell.y)
 	w16(r, SCROLL_B, s.scroll_b.x)
 	w16(r, SCROLL_B + 4, s.scroll_b.y)
-	var c := s.camera
+	var camera := s.camera
 	w16(r, RINK + 4, word_of(s, s.camera_target))
-	w16(r, RINK + 6, c.speed)
-	w32(r, RINK + 8, c.x)
-	w32(r, RINK + 0xC, c.y)
-	w16(r, RINK + 0x10, c.lead)
-	w16(r, RINK + 0x12, c.shake)
-	w16(r, RINK + 0x14, c.amp)
-	w16(r, RINK + 0x16, c.shake_16)
+	w16(r, RINK + 6, camera.speed)
+	w32(r, RINK + 8, camera.x)
+	w32(r, RINK + 0xC, camera.y)
+	w16(r, RINK + 0x10, camera.lead)
+	w16(r, RINK + 0x12, camera.shake)
+	w16(r, RINK + 0x14, camera.amp)
+	w16(r, RINK + 0x16, camera.shake_16)
 	_put_params(r, RINK + 0x64, s.player_params)
 	_put_params(r, RINK + 0x8C, s.puck_params)
 	for i in 2:
-		var n := s.nets[i]
+		var net := s.nets[i]
 		var a: int = RINK + (0x18 if i == 0 else 0x3E)
-		_put_motion(r, a, n.motion)
-		_put_anim(r, a + 0x18, n.anim)
-		w8(r, a + 0x24, n.style)
-		w8(r, a + 0x25, (u8(r, a + 0x25) & ~1) | (1 if n.bottom else 0))
-		var l := s.lamps[i]
+		_put_motion(r, a, net.motion)
+		_put_anim(r, a + 0x18, net.anim)
+		w8(r, a + 0x24, net.style)
+		w8(r, a + 0x25, (u8(r, a + 0x25) & ~1) | (1 if net.bottom else 0))
+		var actor := s.lamps[i]
 		a = RINK + (0xB4 if i == 0 else 0xD8)
-		_put_motion(r, a, l.motion)
-		_put_anim(r, a + 0x18, l.anim)
+		_put_motion(r, a, actor.motion)
+		_put_anim(r, a + 0x18, actor.anim)
 	for i in 4:
-		var h := s.hazards[i]
+		var hazard := s.hazards[i]
 		var a := HAZARDS + 10 * i
-		w16(r, a, h.x)
-		w16(r, a + 2, h.y)
-		w32(r, a + 4, h.x4)
-		w8(r, a + 8, h.kind)
-		w8(r, a + 9, h.flags)
+		w16(r, a, hazard.x)
+		w16(r, a + 2, hazard.y)
+		w32(r, a + 4, hazard.x4)
+		w8(r, a + 8, hazard.kind)
+		w8(r, a + 9, hazard.flags)
 	for i in 8:
-		var o := s.objects[i]
+		var rink_object := s.objects[i]
 		var a := OBJECTS + OBJECT_SIZE * i
-		_put_motion(r, a, o.motion)
-		_put_anim(r, a + 0x18, o.anim)
-		w16(r, a + 0x24, o.t24)
-		w16(r, a + 0x26, o.t26)
-		w8(r, a + 0x28, o.kind)
-		w8(r, a + 0x29, o.flags)
+		_put_motion(r, a, rink_object.motion)
+		_put_anim(r, a + 0x18, rink_object.anim)
+		w16(r, a + 0x24, rink_object.t24)
+		w16(r, a + 0x26, rink_object.t26)
+		w8(r, a + 0x28, rink_object.kind)
+		w8(r, a + 0x29, rink_object.flags)
 	w16(r, RINK + 0x276, s.crowd)
 	w16(r, RINK + 0x274, s.stadium_objects)
 	encode_puck(s, r)
@@ -623,14 +640,14 @@ static func encode(s: MwRinkState, template: PackedByteArray) -> PackedByteArray
 			w8(r, b + 0x330 + i, tm.x330[i])
 		for k in 2:
 			_put_anim(r, b + (0x33A if k == 0 else 0x34E), tm.arrows[k])
-			var m := tm.markers[k]
+			var marker := tm.markers[k]
 			var a: int = b + (0x346 if k == 0 else 0x35A)
-			w16(r, a, m.x)
-			w16(r, a + 2, m.y)
-			w8(r, a + 4, m.plate)
-			w8(r, a + 5, m.number)
-			w8(r, a + 6, m.position)
-			w8(r, a + 7, m.health)
+			w16(r, a, marker.x)
+			w16(r, a + 2, marker.y)
+			w8(r, a + 4, marker.plate)
+			w8(r, a + 5, marker.number)
+			w8(r, a + 6, marker.position)
+			w8(r, a + 7, marker.health)
 		for i in tm.stats.size():
 			w8(r, b + MwRinkState.Team.STATS_AT + i, tm.stats[i])
 		w16(r, b + 0x4A0, word_of(s, tm.nearest))
@@ -660,13 +677,13 @@ static func encode(s: MwRinkState, template: PackedByteArray) -> PackedByteArray
 	_put_overlay(r, PENALTY, s.penalty)
 	_put_overlay(r, STOPPAGE, s.stoppage)
 	for i in 2:
-		var o := s.shark_osc[i]
+		var oscillator := s.shark_osc[i]
 		var a := SHARK_OSC + 12 * i
-		w32(r, a, o.start)
-		w16(r, a + 4, o.base)
-		w16(r, a + 6, o.amp)
-		w16(r, a + 8, o.rate)
-		w16(r, a + 0xA, o.phase)
+		w32(r, a, oscillator.start)
+		w16(r, a + 4, oscillator.base)
+		w16(r, a + 6, oscillator.amp)
+		w16(r, a + 8, oscillator.rate)
+		w16(r, a + 0xA, oscillator.phase)
 	w16(r, GOAL_MESSAGE, s.goal_message)
 	w16(r, GOAL_MESSAGE + 2, s.goal_message_step)
 	var rp := s.replay
@@ -1002,7 +1019,8 @@ static func describe(a: int) -> String:
 		return "plate %d" % ((a - PLATES) / 256)
 	# the fields between segments (MwRinkUpdate)
 	var named := [[CLOCK_TEXT, 6, "clock text"], [CLOCK_TIMER, 8, "clock timer"], [PERIOD, 1, "period"],
-			[CLOCK_WIDGET, 1, "clock widget"], [PP_SECONDS, 2, "power-play seconds"], [PLANE_B, 0x18, "plane B"], [SCROLL_B, 6, "scroll B"],
+			[CLOCK_WIDGET, 1, "clock widget"], [PP_SECONDS, 2, "power-play seconds"], [PLANE_B, 0x18, "plane B"],
+			[SCROLL_B, 6, "scroll B"],
 			[SHARK_OSC, 24, "shark target"], [GOAL_MESSAGE, 4, "goal message"], [REPLAY, 0x1A, "replay ring"],
 			[PENALTY_TICK, 4, "penalty icon stamp"], [BOX_CLOCK, 2, "box clock"], [PASS_TICK, 4, "pass tick"],
 			[FIRST_PASS, 2, "first pass"], [REPLAY_ON, 2, "replay on"], [CROWD_QUIET, 2, "crowd quiet"],
@@ -1014,8 +1032,10 @@ static func describe(a: int) -> String:
 			[TEXT_BOX, 0x16, "text box"], [BOX_FILL, 2, "box fill"], [BOX_C3BC, 2, "box $C3BC"],
 			[STOPPAGE, 0x14, "stoppage icon"], [STOP_TICK, 4, "stoppage stamp"], [CREASE_Y, 2, "puck rule y"],
 			[PUCK_RULE, 2, "puck rule"], [RULE_TEAM_B, 1, "puck rule team B"], [RULE_CLOCK, 2, "puck rule clock"],
-			[RULE_HOLD, 2, "puck rule hold"], [RULE_SPOT, 4, "puck rule spot"], [QUOTE, MwRinkState.QUOTE_SIZE, "quote"],
-			[PHASE_TICK, 4, "phase stamp"], [PHASE, 2, "phase"], [SUBPHASE, 2, "subphase"], [QUOTE_PTR, 4, "quote address"],
+			[RULE_HOLD, 2, "puck rule hold"], [RULE_SPOT, 4, "puck rule spot"],
+			[QUOTE, MwRinkState.QUOTE_SIZE, "quote"],
+			[PHASE_TICK, 4, "phase stamp"], [PHASE, 2, "phase"], [SUBPHASE, 2, "subphase"],
+			[QUOTE_PTR, 4, "quote address"],
 			[COACH_NAME, 4, "coach name"], [QUOTE_VALUE, 2, "quote value"], [PORTRAIT, 0x20, "coach portrait"],
 			[SPEAKER, 2, "speaking side"], [PLAYOFF_RESULT, 2, "playoff result"], [GOAL_KIND, 2, "goal situation"],
 			[SCORER, 4, "scorer"], [SCORING, 4, "event team"], [PENALTY, 0x14, "penalty icon"]]

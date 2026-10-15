@@ -1,5 +1,6 @@
 extends "res://test/rom/rom_test_base.gd"
 ## RomArchive: metadata only, bytes read from the file and never saved.
+## Short names: a the RomArchive under test.
 
 
 func test_describe_reads_metadata() -> void:

@@ -47,6 +47,13 @@
                              simulation recordings of the original (BlastEm,
                              ~90-165 s each) -> out/sim/NAME/ (docs/compare.md,
                              Simulation recordings; runs: RUNS, RUNS3)
+  load-record [NAME ...] [--passes N] [--budget S] [--out DIR] [--sound]
+                             sim-record runs with the 68000's cycle stamps
+                             through every rink pass (plan 36) -> out/load/NAME/
+                             (--sound: the sound driver's work too -> out/load_sound)
+  load-fit --features DIR [--check] [--write]
+                             the rink pass load model (plan 36): held-out
+                             check, weights -> game/src/sim/pass_cost_weights.gd
   title-timeline [--update]  ticks of screen 0's milestones in the original
                              (no input + skips) -> compare/fixtures/title_timeline.json
   gfx-checkpoints [NAME ...] [--update]
@@ -360,6 +367,18 @@ def main() -> None:
     sr.add_argument("--soak", type=int, default=None, help="record soak run SEED (plan 10)")
     sr.add_argument("--from-visit", type=int, default=1, help="--soak: the first rink visit recorded")
     sr.set_defaults(fn=lambda a: __import__("mw_harness.sim_record", fromlist=["main"]).main(a))
+    lr = sub.add_parser("load-record", help="pass costs of the original's rink loop (plan 36)")
+    lr.add_argument("names", nargs="+")
+    lr.add_argument("--passes", type=int, default=None)
+    lr.add_argument("--budget", type=float, default=None, help="seconds (default 165)")
+    lr.add_argument("--out", default=None, help="folder (default out/load)")
+    lr.add_argument("--sound", action="store_true", help="also count the sound driver's work per VBlank")
+    lr.set_defaults(fn=lambda a: __import__("mw_harness.load_record", fromlist=["main"]).main(a))
+    lf = sub.add_parser("load-fit", help="the rink pass load model's weights (plan 36)")
+    lf.add_argument("--features", required=True, help="the port's features (pass-check --load-features DIR)")
+    lf.add_argument("--check", action="store_true", help="held-out evaluation")
+    lf.add_argument("--write", action="store_true", help="write game/src/sim/pass_cost_weights.gd")
+    lf.set_defaults(fn=lambda a: __import__("mw_harness.load_fit", fromlist=["main"]).main(a))
     sk = sub.add_parser("soak", help="seeded soak runs with code coverage (plan 10)")
     __import__("mw_harness.soak", fromlist=["add_arguments"]).add_arguments(sk)
     sk.set_defaults(fn=lambda a: __import__("mw_harness.soak", fromlist=["main"]).main(a))

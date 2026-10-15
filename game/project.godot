@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="mightyweenie"
+config/version="0.2"
 config/description="Mutant League Hockey (Genesis, 1994) reimplementation. Stage 1: 2D."
 run/main_scene="res://scenes/boot/boot.tscn"
 config/use_custom_user_dir=true
@@ -21,6 +22,12 @@ config/features=PackedStringArray("4.7")
 
 Rom="*res://src/rom/rom_service.gd"
 Router="*res://src/flow/router_service.gd"
+
+[debug]
+
+gdscript/warnings/integer_division=0
+gdscript/warnings/incompatible_ternary=0
+gdscript/warnings/int_as_enum_without_cast=0
 
 [display]
 

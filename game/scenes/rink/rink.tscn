@@ -11,7 +11,7 @@
 [sub_resource type="Resource" id="pal_rink"]
 script = ExtResource("3_pal")
 screen = 4
-steps = PackedStringArray("screen_palette", "rom 1BD8A 3")
+steps = PackedStringArray("screen_palette", "rom 1BD8A 3", "player_lines")
 
 [sub_resource type="Resource" id="tiles_rink"]
 script = ExtResource("5_ts")

@@ -28,28 +28,50 @@ const STACK := 0xFFFE00
 const STACK_SIZE := 0x200
 
 
+## Recordings somewhere else than out/sim (plan 36: the load recordings in
+## out/load), absolute or relative to the repository; "" = out/sim.
+static var dir_override := ""
+
+
+## The folder the recordings are in: [member dir_override] when set (absolute, or relative to
+## the repository), else out/sim ([method local_out]).
 static func folder() -> String:
-	return ProjectSettings.globalize_path("res://").path_join("../out/sim").simplify_path()
+	if dir_override != "":
+		return dir_override if dir_override.is_absolute_path() else local_out(dir_override)
+	return local_out("out/sim")
 
 
+## [param rel] (a folder of the repository's out/, local: never committed)
+## as an absolute path: this checkout's, or - in a plan's worktree
+## (`.worktrees/NAME`) that has none - the main checkout's (plan 40: the
+## recordings live there; no symlink needed).
+static func local_out(rel: String) -> String:
+	var repo := ProjectSettings.globalize_path("res://").path_join("..").simplify_path()
+	var here := repo.path_join(rel).simplify_path()
+	if not DirAccess.dir_exists_absolute(here) and repo.contains("/.worktrees/"):
+		return repo.get_slice("/.worktrees/", 0).path_join(rel).simplify_path()
+	return here
+
+
+## Recording [param name_] (its folder in [method folder]) read in; null without its meta.json.
 static func open(name_: String) -> MwSimRecording:
 	var dir := folder().path_join(name_)
 	if not FileAccess.file_exists(dir.path_join("meta.json")):
 		return null
-	var r := MwSimRecording.new()
-	r.name = name_
-	r.meta = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("meta.json")))
-	r.passes = r.meta["passes"]
-	r._start = _gunzip(dir.path_join("start.bin.gz"))
-	r._mid = _gunzip(dir.path_join("mid.bin.gz"))
-	r._end = _gunzip(dir.path_join("end.bin.gz"))
-	r._ai = _gunzip(dir.path_join("ai.bin.gz"))
+	var recording := MwSimRecording.new()
+	recording.name = name_
+	recording.meta = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("meta.json")))
+	recording.passes = recording.meta["passes"]
+	recording._start = _gunzip(dir.path_join("start.bin.gz"))
+	recording._mid = _gunzip(dir.path_join("mid.bin.gz"))
+	recording._end = _gunzip(dir.path_join("end.bin.gz"))
+	recording._ai = _gunzip(dir.path_join("ai.bin.gz"))
 	if FileAccess.file_exists(dir.path_join("ring.bin.gz")):
-		r.ring0 = _gunzip(dir.path_join("ring.bin.gz"))
-	r.screen_passes = r.meta.get("screen_passes", [])
+		recording.ring0 = _gunzip(dir.path_join("ring.bin.gz"))
+	recording.screen_passes = recording.meta.get("screen_passes", [])
 	if FileAccess.file_exists(dir.path_join("screens.bin.gz")):
-		r._screens = _gunzip(dir.path_join("screens.bin.gz"))
-	return r
+		recording._screens = _gunzip(dir.path_join("screens.bin.gz"))
+	return recording
 
 
 static func _gunzip(path: String) -> PackedByteArray:
@@ -57,6 +79,7 @@ static func _gunzip(path: String) -> PackedByteArray:
 	return data.decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
 
 
+## How many rink passes were recorded.
 func count() -> int:
 	return passes.size()
 
@@ -69,14 +92,18 @@ func ring_start() -> PackedByteArray:
 	return MwRinkState.ReplayRing.new().ring_bytes
 
 
+## The RAM at the start of pass [param i]'s segment (an [MwRinkRam] image).
 func start(i: int) -> PackedByteArray:
 	return _start.slice(i * MwRinkRam.SIZE, (i + 1) * MwRinkRam.SIZE)
 
 
+## The RAM at the end of pass [param i]'s segment (an [MwRinkRam] image).
 func end(i: int) -> PackedByteArray:
 	return _end.slice(i * MwRinkRam.SIZE, (i + 1) * MwRinkRam.SIZE)
 
 
+## The RAM after both team updates of pass [param i] (mid; the AI snapshots' range, to
+## `$FFBDC1`).
 func mid(i: int) -> PackedByteArray:
 	return _mid.slice(i * MwRinkRam.AI_SIZE, (i + 1) * MwRinkRam.AI_SIZE)
 
@@ -110,6 +137,7 @@ func stack_u16(i: int, addr: int) -> int:
 	return (b[o] << 8) | b[o + 1]
 
 
+## The byte at [param addr] of the stack page at screen record [param i].
 func stack_u8(i: int, addr: int) -> int:
 	return screen_stack(i)[(addr & 0xFFFFFF) - STACK]
 
@@ -119,9 +147,9 @@ func stack_u8(i: int, addr: int) -> int:
 func screen_visits() -> Array:
 	var out := []
 	for i in screen_passes.size():
-		var e: Array = screen_passes[i]
-		if int(e[3]) == SCREEN_ENTRY or out.is_empty():
-			out.append([i, i, int(e[1])])
+		var record: Array = screen_passes[i]
+		if int(record[3]) == SCREEN_ENTRY or out.is_empty():
+			out.append([i, i, int(record[1])])
 		else:
 			out[out.size() - 1][1] = i
 	return out
@@ -130,15 +158,15 @@ func screen_visits() -> Array:
 ## Recorder v5: log [param kind]'s entries during screen record [param i].
 func screen_log(kind: String, i: int) -> Array:
 	var d: Dictionary = meta.get("screen_log_data", {}).get(kind, {})
-	var e: Variant = d.get(str(i))
-	return e if e != null else []
+	var entry: Variant = d.get(str(i))
+	return entry if entry != null else []
 
 
 ## Log [param kind]'s entries of pass [param i] ([param after]: the entries
 ## after the segment instead): arrays of 32-bit values.
 func log_entries(kind: String, i: int, after := false) -> Array:
 	var d: Dictionary = meta["log_data"].get(kind, {})
-	var e: Variant = d.get(str(i))
-	if e == null:
+	var entry: Variant = d.get(str(i))
+	if entry == null:
 		return []
-	return e[1 if after else 0]
+	return entry[1 if after else 0]

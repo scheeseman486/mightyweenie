@@ -192,9 +192,9 @@ func _apply_cap() -> void:
 func _present(continuous := false) -> void:
 	if passes.is_empty():
 		return
-	var p: Dictionary = passes[at]
-	var state := MwRinkState.from_dict(rom, p["state"])
-	var list := drawer.build(state, p.get("phase_adds", []))
+	var recorded_pass: Dictionary = passes[at]
+	var state := MwRinkState.from_dict(rom, recorded_pass["state"])
+	var list := drawer.build(state, recorded_pass.get("phase_adds", []))
 	var tiles := {}
 	for slot in 4:
 		var v: Array = state.plates[slot]
@@ -219,7 +219,7 @@ func _present(continuous := false) -> void:
 			layer.show_list(list)
 		plane_low.position = Vector2(-state.camera.shown)
 		plane_high.position = Vector2(-state.camera.shown)
-	var c: Variant = p["state"].get("clock")
+	var c: Variant = recorded_pass["state"].get("clock")
 	MwClockHud.erase(window, true)
 	if c != null and int(c["flags"]) & 2:
 		var pp := int(c["powerplay"]) if int(c["flags"]) & 1 else -1

@@ -54,7 +54,7 @@ func test_formats_on_synthetic_data() -> void:
 	assert_eq(MwGfx.color_rgb8(0x0E00), PackedByteArray([0, 0, 255]))
 	var c := MwGfx.cell(0xF9FF)
 	assert_eq([c.priority, c.line, c.vflip, c.hflip, c.tile], [true, 3, true, true, 0x1FF])
-	var p := MwGfx.piece(PackedByteArray([0xF8, 5, (1 << 2) | 2, 0x08 | 0x10 | (2 << 5), 0x12, 0x34]), 0)
-	assert_eq([p.x, p.y, p.w, p.h, p.tile], [-8, 5, 2, 3, 0x1234])
+	var piece := MwGfx.piece(PackedByteArray([0xF8, 5, (1 << 2) | 2, 0x08 | 0x10 | (2 << 5), 0x12, 0x34]), 0)
+	assert_eq([piece.x, piece.y, piece.w, piece.h, piece.tile], [-8, 5, 2, 3, 0x1234])
 	var f: Dictionary = MwGfx.flip_pieces([{"x": -8, "y": 4, "w": 2, "h": 1, "attr": 0, "tile": 0x800}], 1)[0]
 	assert_eq([f.x, f.y, f.attr & 0x08], [-8, 4, 0x08])

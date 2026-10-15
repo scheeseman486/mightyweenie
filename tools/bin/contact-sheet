@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# PNGs side by side on one sheet, each labelled with its name (plan 40, T8:
+# the review sheets every session wrote a sheet.py for).
+#   tools/bin/contact-sheet OUT.png [--cols N] [--scale K] IMAGE...
+# Needs python3 with Pillow.
+out="$1"; shift
+cols=4; scale=1
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --cols) cols="$2"; shift 2 ;;
+    --scale) scale="$2"; shift 2 ;;
+    *) echo "contact-sheet: unknown option $1" >&2; exit 2 ;;
+  esac
+done
+exec python3 - "$out" "$cols" "$scale" "$@" <<'PY'
+import os, sys
+from PIL import Image, ImageDraw
+out, cols, scale, files = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4:]
+cols = max(1, min(cols, len(files)))
+if not files:
+    sys.exit("contact-sheet: no images")
+ims = [Image.open(f).convert("RGB") for f in files]
+ims = [im.resize((im.width * scale, im.height * scale), Image.NEAREST) for im in ims]
+w = max(im.width for im in ims) + 4
+h = max(im.height for im in ims) + 16
+rows = (len(ims) + cols - 1) // cols
+sheet = Image.new("RGB", (cols * w, rows * h), (40, 40, 40))
+draw = ImageDraw.Draw(sheet)
+for i, (f, im) in enumerate(zip(files, ims)):
+    x, y = (i % cols) * w, (i // cols) * h
+    sheet.paste(im, (x + 2, y + 14))
+    draw.text((x + 4, y + 1), os.path.basename(f), fill=(255, 255, 0))
+os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+sheet.save(out)
+print(f"contact-sheet: {len(ims)} images -> {out}")
+PY

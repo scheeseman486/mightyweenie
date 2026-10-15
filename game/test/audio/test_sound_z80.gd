@@ -6,6 +6,7 @@ extends "res://test/rom/rom_test_base.gd"
 ## picked from MwSoundSamples by their properties (no ROM bytes here). The
 ## proofs against the driver's code and the measured busy lengths are
 ## `soundz80_check.gd` and out/plan12/portz80/.
+## Short names: z the MwSoundZ80 under test.
 
 
 ## Records the MwSoundOut calls as arrays.
@@ -117,8 +118,8 @@ static func _pick(z: MwSoundZ80, pred: Callable) -> int:
 	return -1
 
 
-static func _raw_once(d: MwSoundSamples.Desc) -> bool:
-	return d.codec == MwSoundSamples.CODEC_RAW and not d.loops()
+static func _raw_once(desc: MwSoundSamples.Desc) -> bool:
+	return desc.codec == MwSoundSamples.CODEC_RAW and not desc.loops()
 
 
 # --- the chips ---------------------------------------------------------------------
@@ -129,7 +130,8 @@ func test_reset_uploads_the_driver_and_the_patches() -> void:
 	var z := _z80()
 	var n := (rom[MwSoundZ80.Z80_DRIVER] << 8) | rom[MwSoundZ80.Z80_DRIVER + 1]
 	var m := (rom[MwSoundZ80.FM_PATCHES_LEN] << 8) | rom[MwSoundZ80.FM_PATCHES_LEN + 1]
-	assert_eq(z.ram.slice(n, n + m), rom.slice(MwSoundZ80.FM_PATCHES, MwSoundZ80.FM_PATCHES + m), "patches after the driver")
+	assert_eq(z.ram.slice(n, n + m), rom.slice(MwSoundZ80.FM_PATCHES, MwSoundZ80.FM_PATCHES + m),
+			"patches after the driver")
 	assert_eq(z.ram.slice(0, n), rom.slice(MwSoundZ80.Z80_DRIVER + 2, MwSoundZ80.Z80_DRIVER + 2 + n))
 	for k in 4:
 		assert_eq(z.voice_status(k), 0)
@@ -224,10 +226,11 @@ func test_start_dac_and_end() -> void:
 		return
 	var z := _z80()
 	var i := _pick(z, _raw_once)
-	var d := z.samples.desc(i)
+	var desc := z.samples.desc(i)
 	var b := _batch()
-	_start(b, 2, d.copies[0])
-	assert_eq(_tick(z, b).slice(0, 4), [["start", 2, i, 0], ["ym", 0, 0x2B, 0x80], ["rate", 2, 0x100], ["volume", 2, 0x80]])
+	_start(b, 2, desc.copies[0])
+	assert_eq(_tick(z, b).slice(0, 4), [["start", 2, i, 0], ["ym", 0, 0x2B, 0x80], ["rate", 2, 0x100],
+			["volume", 2, 0x80]])
 	assert_eq(z.voice_status(2), MwSoundZ80.STATUS_PLAYING)
 	assert_eq(z.active(), PackedInt32Array([2]))
 	var ticks := 1
@@ -239,8 +242,8 @@ func test_start_dac_and_end() -> void:
 		outputs.append(z.channels[2].outputs)
 	assert_eq(z.voice_status(2), MwSoundZ80.STATUS_ENDED, "ended")
 	assert_eq(calls, [["stop", 2], ["ym", 0, 0x2B, 0x00]], "the end, then the DAC off")
-	assert_eq(z.channels[2].outputs, d.length, "one output per byte")
-	assert_eq(z.position(2), d.length, "at the end marker")
+	assert_eq(z.channels[2].outputs, desc.length, "one output per byte")
+	assert_eq(z.position(2), desc.length, "at the end marker")
 	for t in range(2, outputs.size() - 1):
 		var per := outputs[t] - outputs[t - 1]
 		assert_true(per == 183 or per == 184, "a tick without a batch mixes (59 736 - 354) / 324 outputs, got %d" % per)
@@ -274,10 +277,10 @@ func test_reset_stops_samples_and_forgets_the_dac() -> void:
 	if not need_rom():
 		return
 	var z := _z80()
-	var d := z.samples.desc(_pick(z, _raw_once))
+	var desc := z.samples.desc(_pick(z, _raw_once))
 	var b := _batch()
-	_start(b, 0, d.copies[0])
-	_start(b, 3, d.copies[0])
+	_start(b, 0, desc.copies[0])
+	_start(b, 3, desc.copies[0])
 	_tick(z, b)
 	_tick(z)
 	z.reset()
@@ -287,9 +290,10 @@ func test_reset_stops_samples_and_forgets_the_dac() -> void:
 	assert_false(z.dac_on, "the Z80 forgot it switched the DAC on")
 	assert_eq(_tick(z), [], "the DAC stays on (FM 6 muted)")
 	b = _batch()
-	_start(b, 1, d.copies[0])
+	_start(b, 1, desc.copies[0])
 	var calls := _tick(z, b)
-	assert_eq(calls.slice(0, 2), [["start", 1, z.samples.find_header(d.copies[0]), 0], ["ym", 0, 0x2B, 0x80]], "switched on again")
+	assert_eq(calls.slice(0, 2), [["start", 1, z.samples.find_header(desc.copies[0]), 0], ["ym", 0, 0x2B, 0x80]],
+			"switched on again")
 	while z.voice_status(1) == MwSoundZ80.STATUS_PLAYING:
 		calls = _tick(z)
 	assert_eq(calls, [["stop", 1], ["ym", 0, 0x2B, 0x00]], "off when that sample ends")
@@ -301,13 +305,14 @@ func test_ch0_rule_and_effective_values() -> void:
 	if not need_rom():
 		return
 	var z := _z80()
-	var a := z.samples.desc(_pick(z, func(d: MwSoundSamples.Desc) -> bool: return _raw_once(d) and d.length > 3000))
-	var c := z.samples.desc(_pick(z, func(d: MwSoundSamples.Desc) -> bool: return d.loops()))
+	var one_shot := z.samples.desc(_pick(z, func(d: MwSoundSamples.Desc) -> bool: return _raw_once(d) \
+			and d.length > 3000))
+	var desc := z.samples.desc(_pick(z, func(d: MwSoundSamples.Desc) -> bool: return d.loops()))
 	var b := _batch()
-	_start(b, 0, a.copies[0], 0x180, 0x60)
+	_start(b, 0, one_shot.copies[0], 0x180, 0x60)
 	assert_eq(_tick(z, b).slice(2), [["rate", 0, 0x180], ["volume", 0, 0x60]], "alone: ch0, its own pitch and volume")
 	b = _batch()
-	_start(b, 3, c.copies[0], 0xE0, 0x20, c.loop_start)
+	_start(b, 3, desc.copies[0], 0xE0, 0x20, desc.loop_start)
 	var calls := _tick(z, b)
 	assert_eq(calls.slice(1), [["rate", 0, 0x100], ["volume", 0, 0x80], ["rate", 3, 0xE0], ["volume", 3, 0x20]],
 			"$EE comes first: ch0 = channel 3; channel 0 plays at step $100, volume $80")
@@ -334,9 +339,9 @@ func test_ch0_advances_by_its_step() -> void:
 	if not need_rom():
 		return
 	var z := _z80()
-	var d := z.samples.desc(_pick(z, func(e: MwSoundSamples.Desc) -> bool: return _raw_once(e) and e.length > 3000))
+	var desc := z.samples.desc(_pick(z, func(e: MwSoundSamples.Desc) -> bool: return _raw_once(e) and e.length > 3000))
 	var b := _batch()
-	_start(b, 3, d.copies[0], 0x80)
+	_start(b, 3, desc.copies[0], 0x80)
 	_tick(z, b)
 	var o := z.channels[3].outputs
 	var p := z.channels[3].index * 256 + z.channels[3].frac
@@ -351,16 +356,16 @@ func test_loop_never_ends() -> void:
 		return
 	var z := _z80()
 	var i := _pick(z, func(d: MwSoundSamples.Desc) -> bool: return d.loops())
-	var d := z.samples.desc(i)
+	var desc := z.samples.desc(i)
 	var b := _batch()
-	_start(b, 3, d.copies[0], 0x100, 0x80, d.loop_start)
+	_start(b, 3, desc.copies[0], 0x100, 0x80, desc.loop_start)
 	_tick(z, b)
-	var ticks := 3 * d.length / 180 + 5
+	var ticks := 3 * desc.length / 180 + 5
 	for t in ticks:
 		assert_eq(_tick(z), [], "no call while it loops")
 	assert_eq(z.voice_status(3), MwSoundZ80.STATUS_PLAYING)
-	assert_gt(z.channels[3].outputs, 2 * d.length)
-	assert_between(z.position(3), d.loop_start, d.length)
+	assert_gt(z.channels[3].outputs, 2 * desc.length)
+	assert_between(z.position(3), desc.loop_start, desc.length)
 
 
 func test_dpcm_alone_ignores_the_step() -> void:
@@ -368,16 +373,17 @@ func test_dpcm_alone_ignores_the_step() -> void:
 		return
 	var z := _z80()
 	var i := _pick(z, func(d: MwSoundSamples.Desc) -> bool: return d.codec == MwSoundSamples.CODEC_DPCM)
-	var d := z.samples.desc(i)
+	var desc := z.samples.desc(i)
 	var b := _batch()
-	_start(b, 3, d.copies[0], 0x200, 0x40)
-	assert_eq(_tick(z, b).slice(2), [["rate", 3, 0x100], ["volume", 3, 0x40]], "one code per output; the volume table applies")
+	_start(b, 3, desc.copies[0], 0x200, 0x40)
+	assert_eq(_tick(z, b).slice(2), [["rate", 3, 0x100], ["volume", 3, 0x40]],
+			"one code per output; the volume table applies")
 	var ticks := 1
 	while z.voice_status(3) == MwSoundZ80.STATUS_PLAYING and ticks < 1000:
 		_tick(z)
 		ticks += 1
-	assert_eq(z.channels[3].outputs, 2 * d.length, "two outputs per byte")
-	var expect := 2 * d.length * 655 / 2 / (MwSoundZ80.FRAME_T - 354)
+	assert_eq(z.channels[3].outputs, 2 * desc.length, "two outputs per byte")
+	var expect := 2 * desc.length * 655 / 2 / (MwSoundZ80.FRAME_T - 354)
 	assert_between(ticks, expect, expect + 2, "ends after its length at 655 T per byte")
 
 
@@ -417,25 +423,25 @@ func test_the_status_handshake_with_the_68000() -> void:
 	if not need_rom():
 		return
 	var z := _z80()
-	var s := MwSound68k.new(rom)
-	s.reset()
+	var driver := MwSound68k.new(rom)
+	driver.reset()
 	var sid := -1
 	for id: int in z.samples.sound_id_map():
 		var j := z.samples.by_instrument(z.samples.sound_id_map()[id])
 		if j >= 0 and _raw_once(z.samples.desc(j)):
 			sid = id
 			break
-	var h := s.sound_play(sid)
+	var h := driver.sound_play(sid)
 	var ended := -1
 	var freed := -1
 	for t in 400:
-		var batch := s.vblank(z)
+		var batch := driver.vblank(z)
 		if not batch.is_empty():
 			z.apply_batch(batch)
 		z.advance(not batch.is_empty())
 		if ended < 0 and z.active().is_empty():
 			ended = t
-		if not s.sound_busy(h):
+		if not driver.sound_busy(h):
 			freed = t
 			break
 	assert_gt(ended, 0)
@@ -448,9 +454,9 @@ func test_volume_rebuild_costs_mixing_time() -> void:
 	if not need_rom():
 		return
 	var z := _z80()
-	var d := z.samples.desc(_pick(z, func(e: MwSoundSamples.Desc) -> bool: return e.loops()))
+	var desc := z.samples.desc(_pick(z, func(e: MwSoundSamples.Desc) -> bool: return e.loops()))
 	var b := _batch()
-	_start(b, 3, d.copies[0], 0x100, 0x80, d.loop_start)
+	_start(b, 3, desc.copies[0], 0x100, 0x80, desc.loop_start)
 	_tick(z, b)
 	var o := z.channels[3].outputs
 	b = _batch()
@@ -469,21 +475,24 @@ func test_channel_bytes_as_the_z80_keeps_them() -> void:
 	if not need_rom():
 		return
 	var z := _z80()
-	var r := z.samples.desc(_pick(z, func(e: MwSoundSamples.Desc) -> bool: return e.loops()))
-	var d := z.samples.desc(_pick(z, func(e: MwSoundSamples.Desc) -> bool: return e.codec == MwSoundSamples.CODEC_DPCM))
+	var looping := z.samples.desc(_pick(z, func(e: MwSoundSamples.Desc) -> bool: return e.loops()))
+	var desc := z.samples.desc(_pick(z, \
+			func(e: MwSoundSamples.Desc) -> bool: return e.codec == MwSoundSamples.CODEC_DPCM))
 	var b := _batch()
-	_start(b, 3, r.copies[0], 0xE0, 0x40, r.loop_start)
+	_start(b, 3, looping.copies[0], 0xE0, 0x40, looping.loop_start)
 	_tick(z, b)
 	_tick(z)
 	var c := z.channel_bytes(3)
-	var a := r.data + z.channels[3].index
+	var a := looping.data + z.channels[3].index
 	assert_eq(c.size(), 16)
-	assert_eq([c[0], c[1] | (c[2] << 8), c[3]], [1, 0x8000 | (a & 0x7FFF), a >> 15], "status, pointer in the window, bank")
-	assert_eq([c[4], c[5] | (c[6] << 8), c[7]], [1, 0x8000 | ((r.data + r.loop_start) & 0x7FFF), (r.data + r.loop_start) >> 15],
+	assert_eq([c[0], c[1] | (c[2] << 8), c[3]], [1, 0x8000 | (a & 0x7FFF), a >> 15],
+			"status, pointer in the window, bank")
+	assert_eq([c[4], c[5] | (c[6] << 8), c[7]], [1, 0x8000 | ((looping.data + looping.loop_start) & 0x7FFF),
+			(looping.data + looping.loop_start) >> 15],
 			"loop flag, loop address (the trigger's + 1), loop bank")
 	assert_eq([c[8], c[9], c[11], c[12]], [0x00, 0xE0, 0x40, MwSoundSamples.CODEC_RAW], "step, volume, codec")
 	b = _batch()
-	_start(b, 2, d.copies[0])
+	_start(b, 2, desc.copies[0])
 	_tick(z, b)
 	_stop(b, 3)
 	b[MwSoundZ80.PCM_TRIGGERS + 24] = 0xFF      # only the stop of channel 3
@@ -491,5 +500,6 @@ func test_channel_bytes_as_the_z80_keeps_them() -> void:
 	_tick(z)
 	c = z.channel_bytes(2)
 	var t := z.position(2)
-	assert_eq([c[12], c[14], c[15]], [MwSoundSamples.CODEC_DPCM, t & 1, z.samples.decode(z.samples.find_header(d.copies[0]))[t - 1]],
+	assert_eq([c[12], c[14], c[15]], [MwSoundSamples.CODEC_DPCM, t & 1,
+			z.samples.decode(z.samples.find_header(desc.copies[0]))[t - 1]],
 			"DPCM: nibble phase and the value after the last code")

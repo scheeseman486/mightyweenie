@@ -12,6 +12,16 @@ extends RefCounted
 ## Tap / hold verbs (docs/re/input.md): the input layer turns verbs into the
 ## original's pad bytes; a meaning whose verb is bound alone arrives in
 ## [member direct] and acts at once, without the timer.
+##
+## Analogue control (the port's, plan 22; MwSettings.analogue): a pad's stick
+## ([method stick]) steers at its own angle ([method target]) and sets the
+## pace (MwSimPlayers.skate), aims a pass at its angle and a shot between
+## the D-pad's corners (MwSimPuck). Without one every reader takes the
+## D-pad as the original.
+##
+## Shot heights (the port's; MwSettings.shot_heights): a pad's own HIGH /
+## LOW SHOT inputs ([method height]) lift a shot instead of the D-pad's Up
+## / Down (MwSimPuck.shot_aim).
 
 const ACTIONS := 0x1B24
 const ENTRIES := 0x1BC1E
@@ -27,7 +37,8 @@ const BUTTON_A := 0x40
 
 ## Meanings pressed this pass on inputs bound to them alone, per pad
 ## ("pass", "release_puck", "change_player", "wrist_shot", "slap_shot",
-## "check", "punch", "dive", "special_play"); the input layer fills them.
+## "check", "punch", "dive", "special_play"); the input layer fills them
+## (an extended set-up's twelve match pads: as many).
 var direct: Array = [[], [], [], []]
 
 var sim: MwRinkSim
@@ -58,29 +69,79 @@ func _init(sim_: MwRinkSim) -> void:
 	s = sim.s
 
 
-## The pad of [param p]'s control slot (team +$66 / +$67).
+## The pad of [param p]'s control slot (team +$66 / +$67). Plan 34, an
+## extended set-up: the match pad of the human driving [param p] (its
+## [member MwRinkState.Player.pad]; $FF none).
 func pad_of(p: MwRinkState.Player, team: MwRinkState.Team) -> int:
+	if s.extended:
+		return p.pad if p.flags & MwRinkState.Player.HUMAN and p.pad >= 0 else 0xFF
 	return team.pads[1 if p.flags & MwRinkState.Player.SECOND_PAD else 0]
+
+
+## Where [param p]'s pad's bytes are in [member MwRinkState.pads_held]
+## (the original's pad & 3; an extended set-up's match pad), -1 none.
+func pad_index(p: MwRinkState.Player, team: MwRinkState.Team) -> int:
+	var pad: int = pad_of(p, team)
+	if pad == 0xFF:
+		return -1
+	return pad if s.extended else pad & 3
 
 
 ## The pad's held byte as read this pass (`$FFCA5A` + 2 pad).
 func pad_held(p: MwRinkState.Player, team: MwRinkState.Team) -> int:
-	var pad: int = pad_of(p, team)
-	return s.pads_held[pad & 3] if pad != 0xFF else 0
+	var i := pad_index(p, team)
+	return s.pads_held[i] if i >= 0 else 0
 
 
-## `$19A6`: the team's copy of [param p]'s pad (held << 8 | newly pressed).
+## The analogue stick of [param p]'s pad (each axis -256..256, x right, y
+## down; [member MwRinkState.pad_sticks]); ZERO for none: no stick, no
+## pad, or not a human's player.
+func stick(p: MwRinkState.Player, team: MwRinkState.Team) -> Vector2i:
+	if not p.flags & MwRinkState.Player.HUMAN:
+		return Vector2i.ZERO
+	var i := pad_index(p, team)
+	return s.pad_sticks[i] if i >= 0 else Vector2i.ZERO
+
+
+## The shot height [param p]'s pad picked on its own inputs ([member
+## MwRinkState.pad_heights]: 0 none, 1 high, 2 low), or -1: the D-pad
+## lifts the shot (the original; also no pad, or not a human's player).
+## Plan 34: the pad as [method pad_index] gives it (an extended set-up's
+## twelve).
+func height(p: MwRinkState.Player, team: MwRinkState.Team) -> int:
+	if not p.flags & MwRinkState.Player.HUMAN:
+		return -1
+	var i := pad_index(p, team)
+	return s.pad_heights[i] if i >= 0 and i < s.pad_heights.size() else -1
+
+
+## [param v]'s angle in the game's units (0 = +x, $40 = +y; `$14290`).
+func stick_angle(v: Vector2i) -> int:
+	return MwTrig.angle_of(rom, v.x, v.y)
+
+
+## [param v]'s length in 256ths (to 256; `$1425E`'s estimate).
+static func stick_length(v: Vector2i) -> int:
+	return mini(MwTrig.distance(v.x, v.y), 0x100)
+
+
+## `$19A6`: the team's copy of [param p]'s pad (held << 8 | newly pressed;
+## its control slot's: MwRinkState.Team.control_slot).
 func pad_word(p: MwRinkState.Player) -> int:
 	var team := sim.team_of(p)
-	var k := 1 if p.flags & MwRinkState.Player.SECOND_PAD else 0
-	return (team.pad_held[k] << 8) | team.pad_new[k]
+	var k := team.control_slot(p)
+	return (int(team.pad_held[k]) << 8) | int(team.pad_new[k])
 
 
 # --- `$19B8` ------------------------------------------------------------------------------------
 
+## `$19B8`: [param p]'s pad (of [param team]) over [param e] ticks: copied to the team's slot
+## (the A/B/C presses consumed), his target point from the held pad, the meanings bound to
+## their own inputs, a new A/B/C press acted on at once or watched until let go (tap, +2) or
+## held long enough (hold, +4); a goalie's save pose ends when A is let go.
 func buttons(p: MwRinkState.Player, team: MwRinkState.Team, e: int) -> void:
-	var k := 1 if p.flags & MwRinkState.Player.SECOND_PAD else 0
-	var pad: int = pad_of(p, team) & 3
+	var k := team.control_slot(p)
+	var pad: int = maxi(pad_index(p, team), 0) if s.extended else pad_of(p, team) & 3
 	team.pad_held[k] = s.pads_held[pad]
 	var pressed := s.pads_new[pad]
 	var kept := pressed & 0x8F
@@ -91,7 +152,7 @@ func buttons(p: MwRinkState.Player, team: MwRinkState.Team, e: int) -> void:
 	var held_abc: int = held & 0x70
 	p.flags &= ~MwRinkState.Player.BURST
 	target(p, held)
-	for m in direct[pad]:
+	for m in (direct[pad] if pad < direct.size() else []):
 		_direct(p, team, m)
 	var acted := false
 	if new_abc != 0:
@@ -147,12 +208,16 @@ func _context(p: MwRinkState.Player) -> int:
 
 
 ## `$17FC`: the target point from the held D-pad: 100 px that way, or
-## coasting 15 px ahead (goalies stop); none at a faceoff.
+## coasting 15 px ahead (goalies stop); none at a faceoff. A stick (the
+## port's analogue control): 100 px at its angle.
 func target(p: MwRinkState.Player, held: int) -> void:
 	var off := Vector2i.ZERO
 	if s.phase != 1 and s.phase != 9:
 		var dir := MwGfx.s8(rom, DIRECTIONS + (held & 0xF))
-		if dir >= 0:
+		var st := stick(p, sim.team_of(p))
+		if st != Vector2i.ZERO:
+			off = sim.polar(stick_angle(st), 0x64)
+		elif dir >= 0:
 			off = sim.polar(dir << 5, 0x64)
 		elif p.position != 5:
 			off = sim.polar(p.angle, 0xF)
@@ -350,9 +415,9 @@ func save(p: MwRinkState.Player) -> void:
 ## `$43C6`: the puck's point [param ticks] ahead (its carrier's velocity).
 func predict(ticks: int) -> Vector2i:
 	var pk := s.puck
-	var v: MwRinkState.Actor = pk.carrier if pk.flags & MwRinkState.Puck.CARRIED and pk.carrier != null else pk
-	var x := MwRinkSim.asr(MwRinkSim.s16(v.motion.vel[0]) * ticks + pk.motion.pos[0], 8)
-	var y := MwRinkSim.asr(MwRinkSim.s16(v.motion.vel[1]) * ticks + pk.motion.pos[1], 8)
+	var actor: MwRinkState.Actor = pk.carrier if pk.flags & MwRinkState.Puck.CARRIED and pk.carrier != null else pk
+	var x := MwRinkSim.asr(MwRinkSim.s16(actor.motion.vel[0]) * ticks + pk.motion.pos[0], 8)
+	var y := MwRinkSim.asr(MwRinkSim.s16(actor.motion.vel[1]) * ticks + pk.motion.pos[1], 8)
 	return Vector2i(MwRinkSim.s16(x), MwRinkSim.s16(y))
 
 
@@ -412,8 +477,12 @@ func _end_save_pose(p: MwRinkState.Player) -> void:
 # --- who is controlled ------------------------------------------------------------------------------
 
 ## `$D1C`: a human player out of the action hands control on (`$1856`).
+## Plan 34: an owner losing their own player returns to it later
+## (MwRinkControl.taken).
 func lose_control(p: MwRinkState.Player) -> void:
 	if p.flags & MwRinkState.Player.HUMAN:
+		if s.control != null:
+			s.control.taken(p)
 		change_player(p)
 
 
@@ -428,7 +497,13 @@ func lose_control(p: MwRinkState.Player) -> void:
 ## address), flags $C6 (not carried) - reproduced here. A caller whose A6
 ## is some other frame sets [member a6_view] (screen 17).
 func change_player(p: MwRinkState.Player) -> void:
-	var team := sim.team_of(p)
+	_switch(p, best_mate(sim.team_of(p), p))
+
+
+## `$1856`'s pick: [param team]'s CPU-driven player best placed for the
+## puck (see [method change_player]); none: [param p] (plan 34: null for a
+## player driving nobody - MwRinkControl's line-up, returns and bumps).
+func best_mate(team: MwRinkState.Team, p: MwRinkState.Player) -> MwRinkState.Player:
 	var d4 := -1 if team.flags4 & 2 else 0
 	var look := 0x10
 	var d7 := 0
@@ -482,7 +557,7 @@ func change_player(p: MwRinkState.Player) -> void:
 		if d <= best:
 			best = d
 			pick = q
-	_switch(p, pick)
+	return pick
 
 
 ## `$439C`: the puck's zone for a team (d4 = attacks down): 0-1 own end, 2
@@ -518,7 +593,8 @@ func _zone_of(y: int, d4: int) -> int:
 	return d0 + 2
 
 
-## Control (and the Player Blast weapon) from [param from] to [param to].
+## Control (and the Player Blast weapon) from [param from] to [param to]
+## (plan 34, an extended set-up: the driver's match pad with it).
 func _switch(from: MwRinkState.Player, to: MwRinkState.Player) -> void:
 	from.flags &= ~MwRinkState.Player.HUMAN
 	var blast := from.flags2 & 8
@@ -527,6 +603,8 @@ func _switch(from: MwRinkState.Player, to: MwRinkState.Player) -> void:
 	to.flags &= ~MwRinkState.Player.SECOND_PAD
 	to.flags |= MwRinkState.Player.HUMAN
 	to.flags2 &= ~8
+	if s.extended:
+		to.pad = from.pad
 	if second:
 		to.flags |= MwRinkState.Player.SECOND_PAD
 	if blast:
@@ -539,12 +617,29 @@ func _switch(from: MwRinkState.Player, to: MwRinkState.Player) -> void:
 ## `$53F0`: when a CPU player of a team with a pad picks up the puck, the
 ## human to take control from: the passer if a human of this team passed it,
 ## else (two pads: alternating) the human of that pad slot. null: none.
-func pickup_switch(p: MwRinkState.Player, team: MwRinkState.Team) -> MwRinkState.Player:
+## Plan 34, an extended set-up: the team's pad slots take turns (one
+## player: always theirs). With owners (MwRinkControl.owned) a loose puck
+## picked up moves nobody (owner: the turns would yank a player off their
+## own) - unless [param goalie] (Waste the Goalie's hand-over: the
+## original's, the goalie's owner can reclaim him).
+func pickup_switch(p: MwRinkState.Player, team: MwRinkState.Team, goalie := false) -> MwRinkState.Player:
 	if not team.flags4 & 4:
 		return null
 	var last := s.puck.carrier
 	if last != null and last.flags & MwRinkState.Player.HUMAN and last.team == p.team:
 		return last
+	if s.control != null and s.control.owned and not goalie:
+		return null
+	if s.extended:
+		var n := team.port_pads.size()
+		if n == 0:
+			return null
+		var pad := team.port_pads[team.port_turn % n]
+		team.port_turn = (team.port_turn + 1) % n
+		for q in team.players:
+			if q.present and q.flags & MwRinkState.Player.HUMAN and q.pad == pad:
+				return q
+		return null
 	var d1 := 0
 	if team.pads[0] != 0xFF and team.pads[1] != 0xFF:
 		# `$FFBDB8` (team B) / `$FFBDB9` (team A) bit 0, toggled per pick-up
@@ -559,11 +654,14 @@ func pickup_switch(p: MwRinkState.Player, team: MwRinkState.Team) -> MwRinkState
 	return null
 
 
-## The hand-over on a pick-up (`$5352`): the CPU picker becomes the human.
+## The hand-over on a pick-up (`$5352`): the CPU picker becomes the human
+## (plan 34, an extended set-up: the driver's match pad with it).
 func hand_over(from: MwRinkState.Player, to: MwRinkState.Player) -> void:
 	to.flags &= ~MwRinkState.Player.SECOND_PAD
 	to.flags |= MwRinkState.Player.HUMAN
 	to.flags2 &= ~8
+	if s.extended:
+		to.pad = from.pad
 	from.flags &= ~MwRinkState.Player.HUMAN
 	if from.flags & MwRinkState.Player.SECOND_PAD:
 		to.flags |= MwRinkState.Player.SECOND_PAD

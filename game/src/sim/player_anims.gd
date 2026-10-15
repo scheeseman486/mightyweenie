@@ -9,6 +9,8 @@ extends RefCounted
 const SPECIES := 0x1C48C
 
 
+## The species of player record [param player_record] in [param rom] (byte +7, low nibble):
+## which list at [constant SPECIES] its animations come from.
 static func species(rom: PackedByteArray, player_record: int) -> int:
 	return rom[player_record + 7] & 0x0F
 

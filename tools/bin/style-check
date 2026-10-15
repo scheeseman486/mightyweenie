@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# The style rulebook's checks (docs/style.md, plan 45): tools/style/gdlint.py over the GDScript files
+# changed since main (default), every file (--all) or the files / folders named.
+#   tools/bin/style-check [--all | --since REF | PATH...] [--rules N1,C1,...] [--json]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+since=main; all=0; args=(); paths=()
+while (( $# )); do
+  case "$1" in
+    --all) all=1; shift ;;
+    --since) since="$2"; shift 2 ;;
+    --rules) args+=(--rules "$2"); shift 2 ;;
+    --json) args+=(--json); shift ;;
+    *) paths+=("$1"); shift ;;
+  esac
+done
+if (( all )); then
+  paths=("$MW_ROOT/game")
+elif (( ${#paths[@]} == 0 )); then
+  mapfile -t paths < <(git -C "$MW_ROOT" diff --name-only --diff-filter=AM "$since" -- 'game/*.gd' | sed "s|^|$MW_ROOT/|")
+  (( ${#paths[@]} )) || { echo "style-check: no GDScript changed since $since"; exit 0; }
+fi
+exec python3 "$MW_ROOT/tools/style/gdlint.py" "${args[@]}" "${paths[@]}"

@@ -32,28 +32,28 @@ var frame := 0
 ## `anim_set` ($14388; $1438A with a variant): from an animation record in
 ## the ROM, at frame 0, flags as the record has them.
 static func from_record(rom: PackedByteArray, address_: int, variant_ := 0) -> MwAnimState:
-	var s := MwAnimState.new()
-	s.address = address_
-	s.variant = variant_
-	s.speed = MwGfx.u16(rom, address_)
-	s.flags = rom[address_ + 2]
-	s.count = rom[address_ + 3]
-	return s
+	var anim := MwAnimState.new()
+	anim.address = address_
+	anim.variant = variant_
+	anim.speed = MwGfx.u16(rom, address_)
+	anim.flags = rom[address_ + 2]
+	anim.count = rom[address_ + 3]
+	return anim
 
 
 ## An animation object as recorded: [record, speed, flags, variant,
 ## position, frame] (harness/mw_harness/rink_state.py); count from the ROM.
 static func from_fields(rom: PackedByteArray, f: Array) -> MwAnimState:
-	var s := MwAnimState.new()
-	s.address = int(f[0])
-	s.speed = int(f[1])
-	s.flags = int(f[2])
-	s.variant = int(f[3])
-	s.position = int(f[4])
-	s.frame = int(f[5])
-	if s.address > 0 and s.address + 3 < rom.size():
-		s.count = rom[s.address + 3]
-	return s
+	var anim := MwAnimState.new()
+	anim.address = int(f[0])
+	anim.speed = int(f[1])
+	anim.flags = int(f[2])
+	anim.variant = int(f[3])
+	anim.position = int(f[4])
+	anim.frame = int(f[5])
+	if anim.address > 0 and anim.address + 3 < rom.size():
+		anim.count = rom[anim.address + 3]
+	return anim
 
 
 ## `$1563E`: the ROM address of the frame shown and the variant's flips
@@ -62,10 +62,17 @@ static func from_fields(rom: PackedByteArray, f: Array) -> MwAnimState:
 ## plus the list's word for [member frame] (both offsets signed words, as
 ## `adda.w`).
 func frame_address(rom: PackedByteArray) -> Vector2i:
-	var w := MwGfx.u16(rom, address + 8 + 2 * variant)
-	var lst := address + (w >> 2)
-	var off := MwGfx.s16(rom, lst + 2 * frame)
-	return Vector2i(MwGfx.u32(rom, address + 4) + off, w & 3)
+	return frame_address_of(rom, address, variant, frame)
+
+
+## Plan 42 (speed): [method frame_address] of animation record
+## [param address_], [param variant_], [param frame_] - without an object
+## (the draw pass draws a frame given by its numbers ~25 times a pass).
+static func frame_address_of(rom: PackedByteArray, address_: int, variant_: int, frame_: int) -> Vector2i:
+	var w := MwGfx.u16(rom, address_ + 8 + 2 * variant_)
+	var list_at := address_ + (w >> 2)
+	var off := MwGfx.s16(rom, list_at + 2 * frame_)
+	return Vector2i(MwGfx.u32(rom, address_ + 4) + off, w & 3)
 
 
 ## `$1438E`: switch to the animation record at [param address_] keeping
@@ -89,15 +96,15 @@ func set_mode(rom: PackedByteArray, mode_flags: int) -> void:
 
 ## A copy of this animation object.
 func copy() -> MwAnimState:
-	var c := MwAnimState.new()
-	c.address = address
-	c.variant = variant
-	c.speed = speed
-	c.flags = flags
-	c.count = count
-	c.position = position
-	c.frame = frame
-	return c
+	var anim := MwAnimState.new()
+	anim.address = address
+	anim.variant = variant
+	anim.speed = speed
+	anim.flags = flags
+	anim.count = count
+	anim.position = position
+	anim.frame = frame
+	return anim
 
 
 ## Start (again) from frame 0: what the screens do after `anim_set`.
@@ -107,6 +114,8 @@ func play() -> void:
 	flags |= PLAYING
 
 
+## Whether the animation runs ([constant PLAYING] set): [method advance] steps it
+## only then.
 func playing() -> bool:
 	return (flags & PLAYING) != 0
 

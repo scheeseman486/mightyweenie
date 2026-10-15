@@ -56,9 +56,9 @@ class ThinkCheck extends RefCounted:
 		var a := MwRinkRam.player_address(p.team, p.index)
 		var t: Array = []
 		for i in _thinks.size():
-			var e: Array = _thinks[i]
-			if int(e[0]) == a:
-				t = e
+			var recorded: Array = _thinks[i]
+			if int(recorded[0]) == a:
+				t = recorded
 				_thinks.remove_at(i)
 				break
 		if t.is_empty():
@@ -107,7 +107,8 @@ class ThinkCheck extends RefCounted:
 			if seen.has(desc):
 				continue
 			seen[desc] = true
-			out.append("%s ours %02X want %02X (was %02X)" % [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(post, addr), MwRinkRam.u8(pre, addr)])
+			out.append("%s ours %02X want %02X (was %02X)"
+					% [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(post, addr), MwRinkRam.u8(pre, addr)])
 			if out.size() >= 6:
 				out.append("... %d bytes" % d.size())
 				break
@@ -218,7 +219,8 @@ func _init() -> void:
 				continue
 			if shown < show:
 				shown += 1
-				print("  %s pass %d (e %d, phase %d): %s" % [name, k, rec.elapsed(k), MwRinkRam.u16(rec.start(k), MwRinkRam.PHASE),
+				print("  %s pass %d (e %d, phase %d): %s"
+						% [name, k, rec.elapsed(k), MwRinkRam.u16(rec.start(k), MwRinkRam.PHASE),
 						_explain(rom, rec, k, kept, mode)])
 		total += n
 		total_ok += ok
@@ -233,7 +235,8 @@ func _init() -> void:
 			print("%s: %d/%d thinks identical%s" % [name, thinks_ok, thinks,
 					("  (%d started from a state that differed)" % thinks_off) if thinks_off else ""])
 			failed = failed or thinks_ok < thinks
-		print("%s: %d/%d passes identical%s" % [name, ok, n, ("  (" + ", ".join(top) + ")") if not top.is_empty() else ""])
+		print("%s: %d/%d passes identical%s" % [name, ok, n,
+				("  (" + ", ".join(top) + ")") if not top.is_empty() else ""])
 		failed = failed or ok < n
 	print("total: %d/%d" % [total_ok, total])
 	quit(1 if failed else 0)
@@ -287,14 +290,16 @@ func _detail(rom: PackedByteArray, names: Array[String], k: int, mode: int) -> v
 	sim.log_rng = true
 	sim.run(rec.elapsed(k))
 	var d := MwRinkRam.diff(MwRinkRam.encode(s, start), rec.end(k))
-	print("pass %d e %d phase %d: %d bytes differ" % [k, rec.elapsed(k), MwRinkRam.u16(start, MwRinkRam.PHASE), d.size()])
+	print("pass %d e %d phase %d: %d bytes differ" % [k, rec.elapsed(k), MwRinkRam.u16(start, MwRinkRam.PHASE),
+			d.size()])
 	print("  " + _explain(rom, rec, k, d, mode))
 	print("original rng_next (caller, state before):")
 	for e in rec.log_entries("rn", k):
 		print("  $%06X  %08X" % [int(e[0]) & 0xFFFFFF, int(e[1])])
 	print("original rng_range (caller, lo, hi, state):")
 	for e in rec.log_entries("rr", k):
-		print("  $%06X  %d %d  %08X" % [int(e[0]) & 0xFFFFFF, MwRinkSim.s16(int(e[1])), MwRinkSim.s16(int(e[2])), int(e[3])])
+		print("  $%06X  %d %d  %08X" % [int(e[0]) & 0xFFFFFF, MwRinkSim.s16(int(e[1])), MwRinkSim.s16(int(e[2])),
+				int(e[3])])
 	print("ours:")
 	for e in sim.rng_log:
 		print("  %08X  %s" % [int(e[0]), e[1]])
@@ -305,19 +310,24 @@ func _detail(rom: PackedByteArray, names: Array[String], k: int, mode: int) -> v
 	var s0 := MwRinkRam.decode(rom, start)
 	var s1 := MwRinkRam.decode(rom, rec.end(k))
 	for pp in [["start", s0.puck], ["want", s1.puck], ["ours", s.puck]]:
-		var q: MwRinkState.Puck = pp[1]
-		print("  puck %s: flags %02X carrier %s pos %s vel %s anim $%X" % [pp[0], q.flags, MwRinkRam.word_of(s, q.carrier) if pp[0] == "ours" else "-", q.motion.pixels(), q.motion.vel, q.anim.address])
+		var pk: MwRinkState.Puck = pp[1]
+		print("  puck %s: flags %02X carrier %s pos %s vel %s anim $%X"
+				% [pp[0], pk.flags, MwRinkRam.word_of(s, pk.carrier) if pp[0] == "ours" else "-", pk.motion.pixels(),
+				pk.motion.vel, pk.anim.address])
 	for t in 2:
 		for i in 6:
-			var a := s0.teams[t].players[i]
-			var b := s1.teams[t].players[i]
-			var o := s.teams[t].players[i]
-			if not a.present:
+			var at_start := s0.teams[t].players[i]
+			var wanted := s1.teams[t].players[i]
+			var player := s.teams[t].players[i]
+			if not at_start.present:
 				continue
-			if a.state != 0 or b.state != 0 or o.state != 0 or b.anim_id != o.anim_id:
-				print("  T%d P%d state %d/%d anim %d pos %X -> want %d/%d anim %d pos %X, ours %d/%d anim %d pos %X%s" % [t, i,
-						a.state, a.substate, a.anim_id, a.anim.position, b.state, b.substate, b.anim_id, b.anim.position,
-						o.state, o.substate, o.anim_id, o.anim.position, "  (carrier)" if s0.puck.carrier == a else ""])
+			if at_start.state != 0 or wanted.state != 0 or player.state != 0 or wanted.anim_id != player.anim_id:
+				print("  T%d P%d state %d/%d anim %d pos %X -> want %d/%d anim %d pos %X, ours %d/%d anim %d pos %X%s"
+						% [t, i,
+						at_start.state, at_start.substate, at_start.anim_id, at_start.anim.position, wanted.state,
+						wanted.substate, wanted.anim_id, wanted.anim.position,
+						player.state, player.substate, player.anim_id, player.anim.position,
+						"  (carrier)" if s0.puck.carrier == at_start else ""])
 	print("penalties: ", rec.log_entries("pen", k), " events: ", sim.events)
 
 
@@ -347,7 +357,8 @@ static func _explain(rom: PackedByteArray, rec: MwSimRecording, k: int, d: Packe
 		if seen.has(desc):
 			continue
 		seen[desc] = true
-		out.append("%s ours %02X want %02X (was %02X)" % [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(want, addr), MwRinkRam.u8(start, addr)])
+		out.append("%s ours %02X want %02X (was %02X)" % [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(want, addr),
+				MwRinkRam.u8(start, addr)])
 		if out.size() >= 8:
 			out.append("... %d bytes" % d.size())
 			break

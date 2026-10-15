@@ -36,6 +36,8 @@ var events: Array = []
 ## tests, which only see [member events]. Set by the rink scene and by the
 ## screens that run the rink's code in live play.
 var live := false
+var _gx := PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])     # geometry(): positions (px)
+var _gy := PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 
 
 func _init(rom_: PackedByteArray, state: MwRinkState) -> void:
@@ -50,21 +52,44 @@ func _init(rom_: PackedByteArray, state: MwRinkState) -> void:
 	cpu = MwRinkAI.new()
 
 
-## One pass of the segment with [param e] elapsed ticks.
+## One pass of the segment with [param e] elapsed ticks. Plan 34: the
+## port's control layer first ([member MwRinkState.control]: seats, own
+## menus, QUIT GAME / REJOIN, RECLAIM - in player-number order).
 func run(e: int) -> void:
 	events.clear()
+	if s.control != null:
+		s.control.pass_start(self)
 	geometry()
-	var a := s.teams[0]
-	var b := s.teams[1]
+	var first := s.teams[0]
+	var second := s.teams[1]
 	if rng_next() & 0x40:
-		var t := a
-		a = b
-		b = t
-	players.team_update(a, b, e)
-	players.team_update(b, a, e)
+		var team := first
+		first = second
+		second = team
+	players.team_update(first, second, e)
+	players.team_update(second, first, e)
 	if hooks:
 		hooks.before_puck(self)
 	puck.update(e)
+
+
+## Plan 45: breaks this sim's reference cycles - its parts and the CPU's AI
+## keep the sim, the sim keeps them, and RefCounted objects in a cycle are
+## never freed: the sim, and through it its state (a whole match: its full
+## replay, its paint), would outlive their owner. The owner calls it when the
+## sim is done ([method MwRink._exit_tree], [method MwScreenSim.dispose], the
+## run-ahead's and the reckoning's shadows, the rehearsal, TEST SKATE); the
+## sim can't run after it.
+func dispose() -> void:
+	players = null
+	collide = null
+	puck = null
+	human = null
+	special = null
+	penalties = null
+	cpu = null
+	hooks = null
+	events = []
 
 
 # --- `$95C8`: the geometry snapshot --------------------------------------------------
@@ -73,46 +98,77 @@ func run(e: int) -> void:
 ## opponents (own slot: own speed and velocity angle), and each team's
 ## nearest eligible skater to the puck. Empty slots get (0, $7FFF) towards
 ## others but still measure the puck from their stale position.
+## Plan 42 (speed): each position read once ([member _gx] / [member _gy]),
+## the distance and angle worked out inline ([method dist16], MwTrig) - the
+## same numbers in the same order as [method dist_angle_to] gives them.
 func geometry() -> void:
+	var puck_at := s.puck.motion.pixels()
+	for t in 2:
+		var ps := s.teams[t].players
+		for i in 6:
+			var pos := ps[i].motion.pos
+			_gx[t * 6 + i] = pos[0] >> 8              # (MwMotion.asr: 32-bit words, >> is arithmetic)
+			_gy[t * 6 + i] = pos[1] >> 8
 	for t in 2:
 		var team := s.teams[t]
 		var best := 0xFFFF
 		for i in 6:
 			var p := team.players[i]
-			for j in range(i, 6):
-				if j == i:
-					var pk := s.puck.motion.pixels()
-					var da := dist_angle_to(p, pk.x, pk.y)
-					p.puck_angle = da.y
-					p.puck_dist = da.x
-					if _nearest_eligible(p) and da.x < best:
-						team.nearest = p
-						best = da.x
-					var v := dist_angle(p.motion.vel[0], p.motion.vel[1])
-					p.mate_angle[i] = v.y
-					p.mate_dist[i] = v.x
-					continue
+			var x := _gx[t * 6 + i]
+			var y := _gy[t * 6 + i]
+			var dx := ((puck_at.x - x + 0x8000) & 0xFFFF) - 0x8000          # (s16 inline)
+			var dy := ((puck_at.y - y + 0x8000) & 0xFFFF) - 0x8000
+			var dist := dist16(dx, dy)
+			p.puck_angle = MwTrig.angle_of(rom, dx, dy)
+			p.puck_dist = dist
+			if _nearest_eligible(p) and dist < best:
+				team.nearest = p
+				best = dist
+			var vx := ((p.motion.vel[0] + 0x8000) & 0xFFFF) - 0x8000
+			var vy := ((p.motion.vel[1] + 0x8000) & 0xFFFF) - 0x8000
+			p.mate_angle[i] = MwTrig.angle_of(rom, vx, vy)
+			p.mate_dist[i] = dist16(vx, vy)
+			for j in range(i + 1, 6):
 				var q := team.players[j]
-				var d := Vector2i(0x7FFF, 0)
+				var da := 0
+				var dd := 0x7FFF
 				if p.present and q.present:
-					var qp := q.motion.pixels()
-					d = dist_angle_to(p, qp.x, qp.y)
-				p.mate_angle[j] = d.y
-				p.mate_dist[j] = d.x
-				q.mate_angle[i] = d.y ^ 0x80
-				q.mate_dist[i] = d.x
+					var qx := ((_gx[t * 6 + j] - x + 0x8000) & 0xFFFF) - 0x8000
+					var qy := ((_gy[t * 6 + j] - y + 0x8000) & 0xFFFF) - 0x8000
+					dd = dist16(qx, qy)
+					da = MwTrig.angle_of(rom, qx, qy)
+				p.mate_angle[j] = da
+				p.mate_dist[j] = dd
+				q.mate_angle[i] = da ^ 0x80
+				q.mate_dist[i] = dd
 	for i in 6:
 		var p := s.teams[0].players[i]
+		var x := _gx[i]
+		var y := _gy[i]
 		for k in 6:
 			var q := s.teams[1].players[k]
-			var d := Vector2i(0x7FFF, 0)
+			var da := 0
+			var dd := 0x7FFF
 			if p.present and q.present:
-				var qp := q.motion.pixels()
-				d = dist_angle_to(p, qp.x, qp.y)
-			p.opp_angle[k] = d.y
-			p.opp_dist[k] = d.x
-			q.opp_angle[i] = d.y ^ 0x80
-			q.opp_dist[i] = d.x
+				var qx := ((_gx[6 + k] - x + 0x8000) & 0xFFFF) - 0x8000
+				var qy := ((_gy[6 + k] - y + 0x8000) & 0xFFFF) - 0x8000
+				dd = dist16(qx, qy)
+				da = MwTrig.angle_of(rom, qx, qy)
+			p.opp_angle[k] = da
+			p.opp_dist[k] = dd
+			q.opp_angle[i] = da ^ 0x80
+			q.opp_dist[i] = dd
+
+
+## [method MwTrig.distance] of (dx, dy) as [method dist_angle] keeps it (a word).
+static func dist16(dx: int, dy: int) -> int:
+	var a := absi(dx)
+	var b := absi(dy)
+	if a < b:
+		var t := a
+		a = b
+		b = t
+	return ((2 * a + b - (b >> 3)) >> 1) & 0xFFFF
 
 
 ## `$96B0`: not a goalie, state below $11, not carrying the puck.
@@ -154,10 +210,10 @@ func dist_angle(dx: int, dy: int) -> Vector2i:
 	return Vector2i(MwTrig.distance(dx, dy) & 0xFFFF, MwTrig.angle_of(rom, dx, dy))
 
 
-## `$1545A`: (distance, angle) from [param o]'s position (px) to ([param x], [param y]).
-func dist_angle_to(o: MwRinkState.Actor, x: int, y: int) -> Vector2i:
-	var p := o.motion.pixels()
-	return dist_angle(x - p.x, y - p.y)
+## `$1545A`: (distance, angle) from [param actor]'s position (px) to ([param x], [param y]).
+func dist_angle_to(actor: MwRinkState.Actor, x: int, y: int) -> Vector2i:
+	var point := actor.motion.pixels()
+	return dist_angle(x - point.x, y - point.y)
 
 
 ## `$14248`: the vector of [param length] at byte angle [param a].
@@ -165,23 +221,34 @@ func polar(a: int, length: int) -> Vector2i:
 	return MwTrig.polar(rom, a & 0xFF, s16(length))
 
 
-## `$1544A`: (speed, angle) of [param o]'s velocity.
-func velocity(o: MwRinkState.Actor) -> Vector2i:
-	return dist_angle(o.motion.vel[0], o.motion.vel[1])
+## `$1544A`: (speed, angle) of [param actor]'s velocity.
+func velocity(actor: MwRinkState.Actor) -> Vector2i:
+	return dist_angle(actor.motion.vel[0], actor.motion.vel[1])
 
 
+## [param v]'s low byte as a signed byte (-128..127).
 static func s8(v: int) -> int:
 	v &= 0xFF
 	return v - 0x100 if v >= 0x80 else v
 
 
+## [param v]'s low word as a signed word (-32768..32767).
 static func s16(v: int) -> int:
 	v &= 0xFFFF
 	return v - 0x10000 if v >= 0x8000 else v
 
 
+## Plan 40 (D8): [method s8], [method s16] and this are the one set of sign
+## helpers on values (the motion, the AI, the text layout use them; MwGfx's
+## read the ROM, the driver model's mask addresses as a 68000).
+static func s32(v: int) -> int:
+	v &= 0xFFFFFFFF
+	return v - 0x100000000 if v >= 0x80000000 else v
+
+
+## [param v] shifted right [param n] bits, arithmetic (the 68000's `asr`).
 static func asr(v: int, n: int) -> int:
-	return v >> n if v >= 0 else ~((~v) >> n)
+	return v >> n                  # (at run time `>>` on an int is arithmetic: MwMotion.asr)
 
 
 ## A rating nibble of [param p]'s player record: byte [param off], high or low.
@@ -193,13 +260,15 @@ func rating(p: MwRinkState.Player, off: int, high: bool) -> int:
 ## `$3BDE`: a rating averaged with the team's skulls ((r + `$3BF6`[team
 ## record +$B]) / 2).
 func avg(team: MwRinkState.Team, r: int) -> int:
-	return ((r + rom[0x3BF6 + rom[team.record + 0xB]]) & 0xFF) >> 1
+	return ((r + rom[0x3BF6 + rom[team.record + MwTeams.SKULLS]]) & 0xFF) >> 1
 
 
+## [param p]'s team.
 func team_of(p: MwRinkState.Player) -> MwRinkState.Team:
 	return s.teams[p.team]
 
 
+## The team [param p] plays against.
 func other_team(p: MwRinkState.Player) -> MwRinkState.Team:
 	return s.teams[1 - p.team]
 
@@ -220,24 +289,24 @@ func sound(id: int, kind := "sound") -> void:
 		MwSound.play(id)
 
 
-## `$13D58`: sound [param id] tied to [param o] (the original's A5), played
-## only while [param o] is on screen ([method on_screen], `$5C3C`; live:
+## `$13D58`: sound [param id] tied to [param actor] (the original's A5), played
+## only while [param actor] is on screen ([method on_screen], `$5C3C`; live:
 ## [method MwSound.positional]); the event ["sound", id] as [method sound].
-func positional(id: int, o: MwRinkState.Actor) -> void:
+func positional(id: int, actor: MwRinkState.Actor) -> void:
 	events.append(["sound", id])
 	if live:
-		MwSound.positional(id, on_screen(s, o))
+		MwSound.positional(id, on_screen(s, actor))
 
 
-## `$5C3C`: [param o] is on screen - its map point (`$5AC2`: the rink's
+## `$5C3C`: [param actor] is on screen - its map point (`$5AC2`: the rink's
 ## projection, or the scoreboards' side view with [member
 ## MwRinkState.projection]) minus the camera (`$FFB0F0` / `$FFB0F4`, whole
 ## pixels) within 320 x 240 (`$155A2`'s outcode 0; signed words).
-static func on_screen(st: MwRinkState, o: MwRinkState.Actor) -> bool:
-	var px := o.motion.pixels()
+static func on_screen(state: MwRinkState, actor: MwRinkState.Actor) -> bool:
+	var px := actor.motion.pixels()
 	var mx: int
 	var my: int
-	if st.projection != 0:
+	if state.projection != 0:
 		mx = s16(-absi(s16(px.x)) + 0x179)
 		my = s16(px.y + 0xA0)
 		var t := mx
@@ -246,8 +315,8 @@ static func on_screen(st: MwRinkState, o: MwRinkState.Actor) -> bool:
 	else:
 		mx = s16(px.x + 0x100)
 		my = s16(px.y + 0x1CD - px.z)
-	var sx := s16(mx - (st.camera.x >> 8))
-	var sy := s16(my - (st.camera.y >> 8))
+	var sx := s16(mx - (state.camera.x >> 8))
+	var sy := s16(my - (state.camera.y >> 8))
 	return sx >= 0 and sx < 0x140 and sy >= 0 and sy < 0xF0
 
 
@@ -270,13 +339,13 @@ func add_player_stat(p: MwRinkState.Player, off: int, n: int) -> void:
 
 ## `$5BA6`: a free rink object slot (else the first thrown item, removed); null: none.
 func free_object() -> MwRinkState.RinkObject:
-	for o in s.objects:
-		if o.kind == 0:
-			return o
-	for o in s.objects:
-		if o.kind >= 0xC:
-			o.kind = 0
-			return o
+	for slot in s.objects:
+		if slot.kind == 0:
+			return slot
+	for rink_object in s.objects:
+		if rink_object.kind >= 0xC:
+			rink_object.kind = 0
+			return rink_object
 	return null
 
 
@@ -285,48 +354,48 @@ func free_object() -> MwRinkState.RinkObject:
 ## timers 15 / 30), explosions and fires burn (playing, sound $2B), a
 ## shark sets its target oscillators, a thrown item (kinds 12-23, `$6A06`)
 ## flies at a random point of its quarter of the ice.
-func spawn(o: MwRinkState.RinkObject, x: int, y: int, kind: int, flags: int) -> void:
-	s.spawn(rom, o, x, y, kind, flags)
+func spawn(rink_object: MwRinkState.RinkObject, x: int, y: int, kind: int, flags: int) -> void:
+	s.spawn(rom, rink_object, x, y, kind, flags)
 	match kind:
 		MwRinkState.KIND_EXPLOSION, MwRinkState.KIND_FIRE:
-			positional(0x2B, o)                       # `$690A`
-			o.anim.flags |= MwAnimState.PLAYING
+			positional(0x2B, rink_object)                       # `$690A`
+			rink_object.anim.flags |= MwAnimState.PLAYING
 		MwRinkState.KIND_BOMB:
-			o.anim.flags |= MwAnimState.PLAYING
+			rink_object.anim.flags |= MwAnimState.PLAYING
 		8, 9, 10:
-			o.anim.variant = rng_next() & 7
+			rink_object.anim.variant = rng_next() & 7
 			var v := polar(rng_next(), 0x20)
-			o.motion.vel[0] = s16(v.x)
-			o.motion.vel[1] = s16(v.y)
-			o.t24 = 0xF
-			o.t26 = 0x1E
+			rink_object.motion.vel[0] = s16(v.x)
+			rink_object.motion.vel[1] = s16(v.y)
+			rink_object.t24 = 0xF
+			rink_object.t26 = 0x1E
 		_:
 			if kind >= 0xC:
-				_thrown(o)
+				_thrown(rink_object)
 
 
 ## `$6A06`: a thrown item's flight: a random target (|y| <= 329, |x| <=
 ## 155) on its own side of both centre lines (the signs of the spawn
 ## point's x and y), velocity $500 towards it, vz $280 up, animation playing.
-func _thrown(o: MwRinkState.RinkObject) -> void:
+func _thrown(rink_object: MwRinkState.RinkObject) -> void:
 	var ty := rng_range(0, 0x149)
-	if o.motion.pos[1] < 0:
+	if rink_object.motion.pos[1] < 0:
 		ty = -ty
 	var tx := rng_range(0, 0x9B)
-	if o.motion.pos[0] < 0:
+	if rink_object.motion.pos[0] < 0:
 		tx = -tx
-	var p := o.motion.pixels()
-	var a := MwTrig.angle_of(rom, s16(tx - p.x), s16(ty - p.y))
+	var point := rink_object.motion.pixels()
+	var a := MwTrig.angle_of(rom, s16(tx - point.x), s16(ty - point.y))
 	var v := polar(a, 0x500)
-	o.motion.vel[0] = s16(v.x)
-	o.motion.vel[1] = s16(v.y)
-	o.motion.vel[2] = 0x280
-	o.anim.flags |= MwAnimState.PLAYING
+	rink_object.motion.vel[0] = s16(v.x)
+	rink_object.motion.vel[1] = s16(v.y)
+	rink_object.motion.vel[2] = 0x280
+	rink_object.anim.flags |= MwAnimState.PLAYING
 
 
-## `$14472`: hotspot [param n] of [param a]'s current frame (flips applied).
-func hotspot(a: MwAnimState, n: int) -> Vector2i:
-	var f := a.frame_address(rom)
+## `$14472`: hotspot [param n] of [param anim]'s current frame (flips applied).
+func hotspot(anim: MwAnimState, n: int) -> Vector2i:
+	var f := anim.frame_address(rom)
 	var at := f.x + 2 + 6 * MwGfx.u16(rom, f.x) + 2 * n
 	var hx := MwGfx.s8(rom, at)
 	var hy := MwGfx.s8(rom, at + 1)

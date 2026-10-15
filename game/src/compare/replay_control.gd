@@ -53,22 +53,26 @@ func think(sim: MwRinkSim, p: MwRinkState.Player, _team: MwRinkState.Team, _othe
 	_note("T%d P%d: no recorded think" % [p.team, p.index])
 
 
+## MwRinkSim's hook before player [param p]: the tick the original read there (the `$86A`
+## entry log), and a note where our state first differs from the original's.
 func before_player(sim: MwRinkSim, p: MwRinkState.Player) -> void:
 	if _ent_at >= _ent.size():
 		_note("T%d P%d: no entry log" % [p.team, p.index])
 		return
-	var e: Array = _ent[_ent_at]
+	var entry: Array = _ent[_ent_at]
 	_ent_at += 1
 	var a := MwRinkRam.player_address(p.team, p.index)
-	if int(e[ENT_A5]) & 0xFFFFFF != a:
-		_note("entry %d: original updates $%06X, we T%d P%d" % [_ent_at - 1, int(e[ENT_A5]) & 0xFFFFFF, p.team, p.index])
+	if int(entry[ENT_A5]) & 0xFFFFFF != a:
+		_note("entry %d: original updates $%06X, we T%d P%d"
+				% [_ent_at - 1, int(entry[ENT_A5]) & 0xFFFFFF, p.team, p.index])
 		return
-	sim.s.tick = int(e[ENT_TICK])
-	var m := p.motion
-	var got := [m.pos[0], _w2(m.vel[0], m.acc[0]), m.pos[1], _w2(m.vel[1], m.acc[1]), m.pos[2], _w2(m.vel[2], m.acc[2]),
+	sim.s.tick = int(entry[ENT_TICK])
+	var motion := p.motion
+	var got := [motion.pos[0], _w2(motion.vel[0], motion.acc[0]), motion.pos[1], _w2(motion.vel[1], motion.acc[1]),
+			motion.pos[2], _w2(motion.vel[2], motion.acc[2]),
 			((p.anim.position & 0xFFFF) << 16) | (p.anim.frame << 8) | 0,
 			(p.state << 24) | (p.substate << 16) | (p.attacker << 8) | p.angle, sim.s.rng.state]
-	var want := [e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10]]
+	var want := [entry[2], entry[3], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9], entry[10]]
 	var what := ["x", "vx|ax", "y", "vy|ay", "z", "vz|az", "anim pos", "state", "rng"]
 	for i in got.size():
 		var g := int(got[i]) & 0xFFFFFFFF
@@ -84,15 +88,16 @@ func before_player(sim: MwRinkSim, p: MwRinkState.Player) -> void:
 ## The tick the original read at site [param tag] (the "tk" log, in order).
 func tick_at(sim: MwRinkSim, tag: int) -> void:
 	while _tk_at < _tk.size():
-		var e: Array = _tk[_tk_at]
+		var tick_read: Array = _tk[_tk_at]
 		_tk_at += 1
-		if int(e[0]) == tag:
-			sim.s.tick = int(e[1])
+		if int(tick_read[0]) == tag:
+			sim.s.tick = int(tick_read[1])
 			return
-		_note("tick site %d expected, the original read at %d" % [tag, int(e[0])])
+		_note("tick site %d expected, the original read at %d" % [tag, int(tick_read[0])])
 	_note("tick site %d: none recorded" % tag)
 
 
+## MwRinkSim's hook before the puck: the tick the original read there (the "pk" log).
 func before_puck(sim: MwRinkSim) -> void:
 	if not _pk.is_empty():
 		sim.s.tick = int(_pk[0][1])

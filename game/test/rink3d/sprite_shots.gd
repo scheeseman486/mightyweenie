@@ -76,12 +76,13 @@ func _run() -> void:
 	create_timer(600.0).timeout.connect(quit.bind(2))
 	var args := OS.get_cmdline_user_args()
 	var out_dir: String = args[0]
-	var set: String = args[1] if args.size() > 1 else "facing"
+	var shot_set: String = args[1] if args.size() > 1 else "facing"
 	var name: String = args[2] if args.size() > 2 else "demo_s3"
-	var nets_set := set in ["nets", "battle"]
+	var nets_set := shot_set in ["nets", "battle"]
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var rom := MwRom.data()
-	var path := ProjectSettings.globalize_path("res://").path_join("../out/rink/dec").path_join(name + ".json").simplify_path()
+	var path := ProjectSettings.globalize_path("res://").path_join("../out/rink/dec").path_join(name
+			+ ".json").simplify_path()
 	var passes: Array = (JSON.parse_string(FileAccess.get_file_as_string(path)) as Dictionary)["passes"]
 	var first: Dictionary = passes[0]["state"]
 	var vp := SubViewport.new()
@@ -90,20 +91,22 @@ func _run() -> void:
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	root.add_child(vp)
 	var view: MwRinkView3D = VIEW.instantiate()
-	var palette := RomPalette.make(4, PackedStringArray(["screen_palette", "rom 1BD8A 3"]),
+	var palette := RomPalette.make(4, PackedStringArray(MwScreenPalettes.RINK),
 			int(first.get("team_a", 0)), 1 if nets_set else int(first.get("stadium", 0)))
 	palette.team_b = int(first.get("team_b", 5))
 	view.palette = palette
 	vp.add_child(view)
-	view.stands.occupancy = 1.0 if set == "mix" else 0.5
+	view.stands.occupancy = 1.0 if shot_set == "mix" else 0.5
 	await process_frame
 	var drawer := MwRinkDraw3D.new(rom)
 	var cam := view.camera
-	var list: Dictionary = PASSES if set == "facing" else ({1500: "crowd"} if set in ["crowd", "mix"] else ({402: "far_goal", 3541: "near_goal"} if nets_set else ORDER))
+	var list: Dictionary = PASSES if shot_set == "facing" else ({1500: "crowd"} if shot_set in ["crowd", "mix"]
+			else ({402: "far_goal", 3541: "near_goal"} if nets_set else ORDER))
 	for at: int in list:
-		for mix: Variant in (MIX if set == "mix" else [null]):
-			var p: Dictionary = passes[at]
-			var label: String = PASSES[at] if set == "facing" or nets_set else ("crowd" if set == "crowd" else ("" if set == "mix" else ORDER[at][0]))
+		for mix: Variant in (MIX if shot_set == "mix" else [null]):
+			var recorded_pass: Dictionary = passes[at]
+			var label: String = PASSES[at] if shot_set == "facing" \
+					or nets_set else ("crowd" if shot_set == "crowd" else ("" if shot_set == "mix" else ORDER[at][0]))
 			if mix != null:
 				palette.team_a = mix[0]
 				palette.team_b = mix[1]
@@ -111,12 +114,13 @@ func _run() -> void:
 				view.stands.variety = mix[3] != "original"
 				view.stands.refresh()
 				label = mix[3]
-			var state := MwRinkState.from_dict(rom, p["state"])
-			if set == "battle":
-				for n in state.nets:
-					n.style = 2
-					n.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, MwRinkState.NET_ANIMS + 8), 0 if n.bottom else 1)
-			drawer.build(state, p.get("phase_adds", []))
+			var state := MwRinkState.from_dict(rom, recorded_pass["state"])
+			if shot_set == "battle":
+				for net in state.nets:
+					net.style = 2
+					net.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, MwRinkState.NET_ANIMS + 8),
+							0 if net.bottom else 1)
+			drawer.build(state, recorded_pass.get("phase_adds", []))
 			var tiles := {}
 			for slot in 4:
 				var v: Array = state.plates[slot]
@@ -126,28 +130,30 @@ func _run() -> void:
 			cam.mode = MwRinkCamera3D.Mode.FOLLOW
 			view.present(state, drawer, tiles, false)
 			var focus := MwRinkCamera3D.look_point(Vector2(state.camera.shown))
-			var shots: Dictionary = SHOTS if set == "facing" else (CROWD if set == "crowd" else (MIX_SHOTS if set == "mix" else (NET_SHOTS if nets_set else _order_shots(ORDER[at][1]))))
+			var shots: Dictionary = SHOTS if shot_set == "facing" \
+					else (CROWD if shot_set == "crowd"
+					else (MIX_SHOTS if shot_set == "mix" else (NET_SHOTS if nets_set else _order_shots(ORDER[at][1]))))
 			for shot: String in shots:
-				var s = shots[shot]
-				if s is int:
-					cam.mode = s
+				var spec: Variant = shots[shot]
+				if spec is int:
+					cam.mode = spec
 					view.world.scale = cam.world_scale()
 				else:
 					cam.mode = MwRinkCamera3D.Mode.FREE
 					view.world.scale = Vector3.ONE
-					var from: Vector3 = s[0]
+					var from: Vector3 = spec[0]
 					if shot == "side_low":
 						from.y = focus.y
-					var to: Vector3 = s[1] if s[1] != null else focus
+					var to: Vector3 = spec[1] if spec[1] != null else focus
 					cam.projection = Camera3D.PROJECTION_PERSPECTIVE
 					cam.keep_aspect = Camera3D.KEEP_HEIGHT
-					cam.fov = s[2]
+					cam.fov = spec[2]
 					cam.near = 0.05
 					cam.far = 400.0
 					var a := MwRink3D.world(from.x, from.y, from.z)
 					cam.transform = Transform3D(Basis.looking_at(MwRink3D.world(to.x, to.y, to.z) - a, Vector3.UP), a)
 				view.blend_to(1.0)
-				view.sprites.visible = not (nets_set and not s is int)
+				view.sprites.visible = not (nets_set and not spec is int)
 				await RenderingServer.frame_post_draw
 				await RenderingServer.frame_post_draw
 				vp.get_texture().get_image().save_png(out_dir.path_join("%s_%s.png" % [label, shot]))
@@ -155,20 +161,21 @@ func _run() -> void:
 	quit()
 
 
-## Cameras round a player at the boards [param p]: the game's, from across
+## Cameras round a player at the boards [param point]: the game's, from across
 ## the rink low, along the boards, and from outside over the stands.
-static func _order_shots(p: Vector3) -> Dictionary:
-	var sx := signf(p.x) if absf(p.x) > 1.0 else 1.0
-	var sy := signf(p.y) if absf(p.y) > 1.0 else 1.0
-	var end := absf(p.y) > 300.0
-	var outside := Vector3(p.x, sy * 600, 280) if end else Vector3(sx * 420, p.y, 260)
-	var across := Vector3(p.x, p.y - sy * 160, 45) if end else Vector3(p.x - sx * 150, p.y + 40, 45)
-	var along := Vector3(p.x - sx * 12, p.y - sy * 150, 40) if not end else Vector3(p.x - sx * 150, p.y - sy * 15, 40)
+static func _order_shots(point: Vector3) -> Dictionary:
+	var sx := signf(point.x) if absf(point.x) > 1.0 else 1.0
+	var sy := signf(point.y) if absf(point.y) > 1.0 else 1.0
+	var end := absf(point.y) > 300.0
+	var outside := Vector3(point.x, sy * 600, 280) if end else Vector3(sx * 420, point.y, 260)
+	var across := Vector3(point.x, point.y - sy * 160, 45) if end else Vector3(point.x - sx * 150, point.y + 40, 45)
+	var along := Vector3(point.x - sx * 12, point.y - sy * 150, 40) if not end \
+			else Vector3(point.x - sx * 150, point.y - sy * 15, 40)
 	return {
 		"follow": MwRinkCamera3D.Mode.FOLLOW,
 		"calibration": MwRinkCamera3D.Mode.CALIBRATION,
-		"reverse_high": [Vector3(0, -620, 300), p, 46.0],
-		"across_low": [across, p + Vector3(0, 0, 15), 50.0],
-		"along_boards": [along, p + Vector3(0, 0, 15), 50.0],
-		"outside_top": [outside, p, 40.0],
+		"reverse_high": [Vector3(0, -620, 300), point, 46.0],
+		"across_low": [across, point + Vector3(0, 0, 15), 50.0],
+		"along_boards": [along, point + Vector3(0, 0, 15), 50.0],
+		"outside_top": [outside, point, 40.0],
 	}

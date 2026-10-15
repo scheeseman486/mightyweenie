@@ -15,24 +15,24 @@ static func _repo(rel: String) -> String:
 
 func test_valid_lines() -> void:
 	for case in _fix.valid:
-		var s := MwInputScript.parse(case.text)
-		assert_eq(s.error, "", case.text)
-		assert_eq(s.events.size(), 1, case.text)
-		if s.events.size() != 1:
+		var input_script := MwInputScript.parse(case.text)
+		assert_eq(input_script.error, "", case.text)
+		assert_eq(input_script.events.size(), 1, case.text)
+		if input_script.events.size() != 1:
 			continue
-		var e: Dictionary = s.events[0]
+		var parsed: Dictionary = input_script.events[0]
 		for k in case.event:
 			var want: Variant = case.event[k]
 			if want is float:
 				want = int(want)
-			assert_eq(e[k], want, "%s: %s" % [case.text, k])
-		assert_eq(MwInputScript.event_to_text(e), case.canonical)
+			assert_eq(parsed[k], want, "%s: %s" % [case.text, k])
+		assert_eq(MwInputScript.event_to_text(parsed), case.canonical)
 
 
 func test_invalid_lines() -> void:
 	for text in _fix.invalid:
-		var s := MwInputScript.parse(text)
-		assert_true(s.error.begins_with("line 1:"), "%s -> '%s'" % [text, s.error])
+		var input_script := MwInputScript.parse(text)
+		assert_true(input_script.error.begins_with("line 1:"), "%s -> '%s'" % [text, input_script.error])
 
 
 func test_shipped_scripts_round_trip() -> void:
@@ -41,7 +41,7 @@ func test_shipped_scripts_round_trip() -> void:
 	for f in dir.get_files():
 		if not f.ends_with(".mwi"):
 			continue
-		var s := MwInputScript.load_file(_repo("compare/scripts").path_join(f))
-		assert_eq(s.error, "", f)
-		assert_gt(s.events.size(), 0, f)
-		assert_eq(MwInputScript.parse(s.to_text()).to_text(), s.to_text(), f)
+		var input_script := MwInputScript.load_file(_repo("compare/scripts").path_join(f))
+		assert_eq(input_script.error, "", f)
+		assert_gt(input_script.events.size(), 0, f)
+		assert_eq(MwInputScript.parse(input_script.to_text()).to_text(), input_script.to_text(), f)

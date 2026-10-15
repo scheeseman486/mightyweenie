@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Plan 27 desktop check (needs a display and a GPU): the real game from the
+# boot screen in a window, driven through the menus into a CPU match and
+# the screens after it (game/test/screens/stutter_run.gd), no sound. Logs
+# the start, the preloader, every screen's first visits and every frame over
+# 25 ms; fails if a frame over 50 ms (MW_LIMIT_MS) is seen - a screen up and
+# not fully covered by the fade.
+#   tools/bin/stutter-check [NAME=run] [SECONDS=60] [--cold] [--view 2D|3D]
+# --cold: empty the game's disk cache first (a first run). Log:
+# out/stutter/NAME.log.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+godot="$(mw_godot)" || exit 1
+name=run; secs=60; cold=0; view=
+pos=()
+while (( $# )); do
+  case "$1" in
+    --cold) cold=1; shift ;;
+    --view) case "$2" in 3D|3d) view=7 ;; *) view=0 ;; esac; shift 2 ;;   # MwRinkViews: FLAT 0, FOLLOW 7
+    *) pos+=("$1"); shift ;;
+  esac
+done
+[[ ${#pos[@]} -ge 1 ]] && name="${pos[0]}"
+[[ ${#pos[@]} -ge 2 ]] && secs="${pos[1]}"
+cache="${XDG_DATA_HOME:-$HOME/.local/share}/mightyweenie/cache"
+if (( cold )); then rm -rf "$cache"; fi
+out="$MW_ROOT/out/stutter"
+mkdir -p "$out"
+MW_SECONDS="$secs" MW_VIEW="$view" MW_LOG="$out/$name.log" timeout $((secs + 120)) \
+  "$godot" --path "$MW_ROOT/game" --audio-driver Dummy --resolution "${MW_SIZE:-960x540}" \
+  -s res://test/screens/stutter_run.gd 2>&1 \
+  | grep -v '^Godot Engine\|^Vulkan\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)\|^\s*$'
+exit "${PIPESTATUS[0]}"

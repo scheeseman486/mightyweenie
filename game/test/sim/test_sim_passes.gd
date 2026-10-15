@@ -56,7 +56,8 @@ func _differences(s: MwRinkState, want: Dictionary, skip: Array = []) -> Array:
 func test_fixture_covers_the_segment() -> void:
 	assert_gt((fx["passes"] as Array).size(), 30)
 	var feats: Array = fx["features"]
-	for f in ["ph:3", "ph:4", "ph:14", "pk:+1", "pk:+40", "pk:+80", "tk:1", "tk:2", "tk:3", "chg", "new:10", "new:20", "new:40", "hold", "think"]:
+	for f in ["ph:3", "ph:4", "ph:14", "pk:+1", "pk:+40", "pk:+80", "tk:1", "tk:2", "tk:3", "chg", "new:10", "new:20",
+			"new:40", "hold", "think"]:
 		assert_has(feats, f, "a pass with %s" % f)
 
 
@@ -80,7 +81,8 @@ func test_passes_end_as_the_original() -> void:
 		var d := _differences(s, want, ["tick"])
 		if not d.is_empty() or not ctl.notes.is_empty():
 			failed += 1
-			fail_test("%s pass %d (%s): %d fields differ: %s %s" % [entry["run"], entry["pass"], ", ".join(entry["features"]),
+			fail_test("%s pass %d (%s): %d fields differ: %s %s"
+					% [entry["run"], entry["pass"], ", ".join(entry["features"]),
 					d.size(), ", ".join(d.slice(0, 6)), ctl.notes])
 	assert_eq(failed, 0, "%d passes as the original" % ((fx["passes"] as Array).size() - failed))
 
@@ -96,9 +98,10 @@ func test_setup_lineup_and_period_change_as_the_original() -> void:
 			s = _state(c["before"])
 		var sim := MwRinkSim.new(rom, s)
 		if c.has("setup"):
-			var su: Dictionary = c["setup"]
-			MwRinkMatch.start(sim, int(su["stadium"]), int(su["team_a"]), int(su["team_b"]), int(su["pads"]),
-					int(su["reserves"]) != 0, int(su["death_index"]))
+			var setup: Dictionary = c["setup"]
+			MwRinkMatch.start(sim, int(setup["stadium"]), int(setup["team_a"]), int(setup["team_b"]),
+					int(setup["pads"]),
+					int(setup["reserves"]) != 0, int(setup["death_index"]))
 		else:
 			if int(c["screen"]) == 4:
 				MwRinkMatch.period_end(sim)
@@ -123,4 +126,5 @@ func test_setup_lineup_and_period_change_as_the_original() -> void:
 						fail_test("%s %d: %s other flags" % [c["run"], c["pass"], key])
 				assert_eq(humans, humans_want, "%s %d team %d: humans" % [c["run"], c["pass"], t])
 		var d := _differences(s, want, skip)
-		assert_eq(d.size(), 0, "%s pass %d (screen %d, spot %d): %s" % [c["run"], c["pass"], c["screen"], c["spot"], ", ".join(d.slice(0, 8))])
+		assert_eq(d.size(), 0, "%s pass %d (screen %d, spot %d): %s"
+				% [c["run"], c["pass"], c["screen"], c["spot"], ", ".join(d.slice(0, 8))])

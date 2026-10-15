@@ -5,7 +5,7 @@ extends SceneTree
 ##
 ##   godot --path game -s res://test/rink3d/crowd_shots.gd -- OUT_DIR [STADIUM]
 
-const VIEW := preload("res://src/rink3d/rink_view_3d.tscn")
+const ShotRig := preload("res://test/support/shot_rig.gd")
 ## The follow camera looking at these ice points (rink px).
 const FOLLOW := {
 	"follow_far": Vector2(0, -250),
@@ -23,7 +23,7 @@ const SHOTS := {
 	"left_stands": [Vector3(-260, -120, 60), 18.0, 90.0, 380.0, 60.0],
 	"near_stands_from_ice": [Vector3(0, 440, 60), 10.0, 180.0, 400.0, 60.0],
 	"corner_far_left": [Vector3(-200, -360, 60), 20.0, 45.0, 360.0, 60.0],
-	"ref_pen": [Vector3(235, 0, 25), 15.0, -90.0, 200.0, 55.0],
+	"satan": [Vector3(235, 0, 25), 15.0, -90.0, 200.0, 55.0],
 }
 
 
@@ -37,40 +37,16 @@ func _run() -> void:
 	var out_dir: String = args[0]
 	var stadium := int(args[1]) if args.size() > 1 else 0
 	DirAccess.make_dir_recursive_absolute(out_dir)
-	var vp := SubViewport.new()
-	vp.size = Vector2i(960, 672)
-	vp.own_world_3d = true
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	root.add_child(vp)
-	var view: MwRinkView3D = VIEW.instantiate()
-	view.palette = RomPalette.make(4, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), stadium, stadium)
-	vp.add_child(view)
+	var rig := ShotRig.new()
+	rig.make(root, Vector2i(960, 672), stadium)
 	await process_frame
-	var cam := view.camera
 	for name: String in FOLLOW:
-		var look: Vector2 = FOLLOW[name]
-		cam.mode = MwRinkCamera3D.Mode.FOLLOW
-		var shown := MwRink3D.map_point(look.x, look.y, 0) - Vector2(MwRink3D.SCREEN) / 2.0
-		cam.follow(shown)
-		await _save(vp, out_dir, name)
+		rig.follow(FOLLOW[name])
+		await rig.save(out_dir.path_join(name + ".png"))
+		print(name)
 	for name: String in SHOTS:
-		var s: Array = SHOTS[name]
-		var look: Vector3 = s[0]
-		var p := deg_to_rad(s[1])
-		var y := deg_to_rad(s[2])
-		var back := Vector3(sin(y) * cos(p), sin(p), cos(y) * cos(p))
-		cam.projection = Camera3D.PROJECTION_PERSPECTIVE
-		cam.fov = s[4]
-		cam.near = 0.05
-		cam.far = 400.0
-		cam.transform = Transform3D(Basis.from_euler(Vector3(-p, y, 0)),
-				MwRink3D.world(look.x, look.y, look.z) + back * (float(s[3]) * MwRink3D.METRES_PER_PX))
-		await _save(vp, out_dir, name)
+		var shot: Array = SHOTS[name]
+		rig.orbit(shot[0], shot[1], shot[2], shot[3], shot[4])
+		await rig.save(out_dir.path_join(name + ".png"))
+		print(name)
 	quit()
-
-
-func _save(vp: SubViewport, out_dir: String, name: String) -> void:
-	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
-	vp.get_texture().get_image().save_png(out_dir.path_join(name + ".png"))
-	print(name)

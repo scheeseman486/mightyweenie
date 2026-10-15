@@ -10,24 +10,67 @@
 #     pads skating, passing, shooting, checking; START through the screens
 #     between plays): every pass's record (screen, pass, tick, random
 #     streams, a hash of the simulation state) must be the same in every run.
+#   tools/bin/frame-rate-check stream [TICKS=20000 | RECORDING] [CAP ...]
+#     plan 40 (T7, step 2): one game recorded once, headless - the offline
+#     proof's recording (test/screens/net_determinism.gd: three bots on the
+#     pads, the rink in 3D), or RECORDING (a .mwnet) - played at every cap as
+#     the game plays it (the Router service on the physics ticks, the screens
+#     drawn, the rink in 3D): every hash (the rink each pass, the session each
+#     screen) must be the recording's, by the offline proof's own comparer
+#     (MwNetRecording.first_difference). The sound card is the dummy.
 # Caps: display (vsync), uncapped, 30, 60, jitter (uncapped with random
-# 0-50 ms stalls). Records: out/plan3d/frame_rate/<mode>_<cap>.jsonl.
+# 0-50 ms stalls). Records: out/plan3d/frame_rate/<mode>_<cap>.jsonl (stream:
+# stream.mwnet and stream_<cap>.json).
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
-mw_require "$MW_TOOLS/godot/godot" godot
+godot="$(mw_godot)" || exit 1
 mode="${1:-demo}"; shift || true
 case "$mode" in
   demo) what="${1:-demo_s3}"; runner=res://test/rink3d/demo_rate_run.gd ;;
   game) what="${1:-18000}"; runner=res://test/rink3d/frame_rate_run.gd ;;
-  *) echo "frame-rate-check: demo or game" >&2; exit 2 ;;
+  stream) what="${1:-20000}"; runner=res://test/rink3d/stream_rate_run.gd ;;
+  *) echo "frame-rate-check: demo, game or stream" >&2; exit 2 ;;
 esac
 shift || true
 caps=("$@"); [[ ${#caps[@]} -gt 0 ]] || caps=(display uncapped 30 60 jitter)
 out="$MW_ROOT/out/plan3d/frame_rate"
 mkdir -p "$out"
+if [[ "$mode" == stream ]]; then
+  rec="$what"
+  if [[ ! -f "$rec" ]]; then
+    rec="$out/stream.mwnet"
+    "$(dirname "${BASH_SOURCE[0]}")/godot-headless" -s res://test/screens/net_determinism.gd -- \
+      --record "$rec" --ticks "$what" --humans "1+2.3" --view 7 2>&1 | grep '^recorded' \
+      || { echo "frame-rate-check: the recording failed" >&2; exit 1; }
+  fi
+  pids=()
+  for c in "${caps[@]}"; do
+    rm -f "$out/stream_$c.json"
+    "$godot" --path "$MW_ROOT/game" --resolution 640x448 --audio-driver Dummy \
+      -s "$runner" -- "$rec" "$c" "$out/stream_$c.json" > "$out/stream_$c.log" 2>&1 &
+    pids+=($!)
+  done
+  for p in "${pids[@]}"; do wait "$p"; done
+  python3 - "$out" "${caps[@]}" <<'PY'
+import json, sys
+out, caps = sys.argv[1], sys.argv[2:]
+ok = True
+for c in caps:
+    try:
+        r = json.load(open(f"{out}/stream_{c}.json"))
+    except (OSError, ValueError):
+        print(f"{c:9s} did not finish"); ok = False; continue
+    print(f"{c:9s} {r['ticks']} ticks in {r['seconds']:.0f} s, {r['frames']} frames = {r['fps']:.0f} fps "
+          f"(longest frame {r['longest_frame_ms']} ms); {r['hashes']} hashes: {r['result']}")
+    ok = ok and r["result"] == "equal"
+print("the recording's hashes at every frame rate" if ok else "DIFFERENT")
+sys.exit(0 if ok else 1)
+PY
+  exit $?
+fi
 pids=()
 for c in "${caps[@]}"; do
   rm -f "$out/${mode}_$c.jsonl"
-  "$MW_TOOLS/godot/godot" --path "$MW_ROOT/game" --resolution 640x448 \
+  "$godot" --path "$MW_ROOT/game" --resolution 640x448 \
     -s "$runner" -- "$out/${mode}_$c.jsonl" "$c" "$what" > "$out/${mode}_$c.log" 2>&1 &
   pids+=($!)
 done

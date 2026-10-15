@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# The game's fingerprint (plan 45: game/test/perf/fingerprint.gd): three played matches' every pass -
+# rink hash and events (play), the 3D drawer's draw pass (draw), the match models' snapshots (models).
+#   tools/bin/fingerprint LABEL [play,draw,models]     -> out/fingerprint/LABEL/*.txt
+#   tools/bin/fingerprint --compare BASE LABEL          -> SAME / DIFFERENT per kind (exit 1 if any differs)
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+out="$MW_ROOT/out/fingerprint"
+if [[ "${1:-}" == --compare ]]; then
+  status=0
+  for f in "$out/$2"/*.txt; do
+    k="$(basename "$f" .txt)"
+    if cmp -s "$f" "$out/$3/$k.txt"; then echo "fingerprint $k: SAME"; else
+      echo "fingerprint $k: DIFFERENT"; diff "$f" "$out/$3/$k.txt" | head -4; status=1; fi
+  done
+  exit $status
+fi
+[[ -n "${1:-}" ]] || { echo "usage: fingerprint LABEL [kinds] | --compare BASE LABEL" >&2; exit 2; }
+mkdir -p "$out/$1"
+"$(dirname "${BASH_SOURCE[0]}")/godot-headless" -s res://test/perf/fingerprint.gd -- "$out/$1" "${2:-play,draw,models}" 2>&1 \
+  | grep -E "fingerprint|SCRIPT ERROR|Parse Error|ERROR"

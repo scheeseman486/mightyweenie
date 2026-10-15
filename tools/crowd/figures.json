@@ -6,7 +6,7 @@
   "patches [x, y, radius] add dark areas) or by a lasso polygon. match: share of the shown",
   "figure pixels an instance must have the same (default 0.85). recolours: colour swaps",
   "its instances may use besides crowd_lib.RECOLOURS. line / background / at: a figure on",
-  "another palette line, drawn once (the referee in the right pen).",
+  "another palette line, drawn once (Satan in the right pen).",
   "tools/crowd/crowd_build.py turns these into game/assets/crowd/crowd.json.",
   "from / swap: a view the picture never shows, made from another figure's template with",
   "colours swapped and the marks. add / remove / infill: the owner's marks from the review sheet",
@@ -160,7 +160,7 @@
    "remove": [[21, 645, 1], [16, 646, 1], [22, 646, 1], [23, 647, 1]]
   },
   {
-   "name": "pen_ref",
+   "name": "satan",
    "view": "front",
    "box": [470, 402, 42, 66],
    "line": 0,
@@ -285,8 +285,8 @@
    "back": "back_hunch"
   },
   {
-   "name": "ref",
-   "front": "pen_ref",
+   "name": "satan",
+   "front": "satan",
    "back": null,
    "note": "stands in the right pen"
   }

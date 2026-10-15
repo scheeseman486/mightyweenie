@@ -257,6 +257,7 @@ var resyncs := 0
 
 func _initialize() -> void:
 	MwScreenDraw.cut_rows = false          # the original's pixels, stray ones included
+	MwSettings.team_name_colours = false   # the original's colours (owner's team colours off)
 	var args := OS.get_cmdline_user_args()
 	var pos: Array[String] = []
 	var i := 0
@@ -628,7 +629,7 @@ func _finish() -> void:
 ## set-up's first) - its
 ## CPU-bound passes (~3-4 ticks) often end their wait between two frames'
 ## ends - else its loop's wait (`$1098E`).
-static func loop_rule(scr: int, sim: MwScreenSim, r: Rec, k: int) -> Dictionary:
+static func loop_rule(scr: int, sim: MwScreenSim, recording: Rec, k: int) -> Dictionary:
 	match scr:
 		12, 13, 14, 15, 16, 17, 19:
 			return {"stamp": 0xFFFFF4, "setup": 1}
@@ -644,7 +645,7 @@ static func loop_rule(scr: int, sim: MwScreenSim, r: Rec, k: int) -> Dictionary:
 			return {"dma": 0xCC02}
 		10:
 			# pad modes 0 / 2: the idle page (team B) stamps its +$80 each pass
-			var mode := r.u8(k, MwRinkRam.PAD_MODE)
+			var mode := recording.u8(k, MwRinkRam.PAD_MODE)
 			if mode == 0 or mode == 2:
 				return {"stamp": 0xFFC75C, "setup": 1, "mid_pass": true}
 			return {"dma": 0x1098E}

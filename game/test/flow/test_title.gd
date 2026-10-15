@@ -195,21 +195,22 @@ func test_sparkles_follow_the_original_rules() -> void:
 		router.step()
 	var spawned := 0
 	for i in 2000:
-		var before := title.sparkles.map(func(s: RomSprite) -> bool: return s.visible)
+		var before := title.sparkles.map(func(sparkle: RomSprite) -> bool: return sparkle.visible)
 		router.step()
 		for k in 3:
-			var s: RomSprite = title.sparkles[k]
-			if s.visible and not before[k]:
+			var sprite: RomSprite = title.sparkles[k]
+			if sprite.visible and not before[k]:
 				spawned += 1
-				var p := Vector2i(s.position)
-				assert_between(p.y, 24, 104)
-				assert_between(p.x, 24, 296)
-				assert_true(p.y <= 27 or p.x < 76 or p.x > 209, "outside the logo's middle: %s" % p)
+				var sparkle_at := Vector2i(sprite.position)
+				assert_between(sparkle_at.y, 24, 104)
+				assert_between(sparkle_at.x, 24, 296)
+				assert_true(sparkle_at.y <= 27 or sparkle_at.x < 76 or sparkle_at.x > 209,
+						"outside the logo's middle: %s" % sparkle_at)
 	assert_between(spawned, 20, 200, "about 1 in 64 per idle sparkle and pass")
 	var rng := MlhRng.new(99)
 	for i in 500:
-		var p := MwTitleScreen.sparkle_position(rng)
-		assert_true(p.y <= 27 or p.x < 76 or p.x > 209)
+		var point := MwTitleScreen.sparkle_position(rng)
+		assert_true(point.y <= 27 or point.x < 76 or point.x > 209)
 
 
 func test_credit_pages_from_the_rom() -> void:
@@ -227,10 +228,10 @@ func test_credit_pages_from_the_rom() -> void:
 	assert_eq(head.cell.y, 7)
 	assert_eq(head.start_cell().x, (40 - head.width) / 2, "centred")
 	for i in range(1, lines.size()):
-		var l: RomText = lines[i]
-		assert_eq(l.font, "font_022ee0")
-		assert_eq(l.cell.y, 11 + 3 * (i - 1))
-		assert_eq(l.string_address, strings[i])
+		var text: RomText = lines[i]
+		assert_eq(text.font, "font_022ee0")
+		assert_eq(text.cell.y, 11 + 3 * (i - 1))
+		assert_eq(text.string_address, strings[i])
 	while title.page < MwTitleScreen.PAGE_COUNT - 1:
 		router.step()
 	var sprites := title.page_root.get_children().filter(func(n: Node) -> bool: return n is RomSprite)
@@ -259,8 +260,8 @@ func test_starfield_scrolls_one_step_per_tick() -> void:
 	assert_eq(RomStarfield.asr8(-257), -2)
 	assert_eq(RomStarfield.asr8(511), 1)
 	var plane: RomTileMapLayer = sf.get_node("Plane")
-	var s := sf.scroll()
-	assert_eq(plane.position, Vector2(posmod(s.x, 256) - 256, -posmod(s.y, 256)))
+	var star_scroll := sf.scroll()
+	assert_eq(plane.position, Vector2(posmod(star_scroll.x, 256) - 256, -posmod(star_scroll.y, 256)))
 	var rng := MlhRng.new(7)
 	var expect := ((MlhRng.new(7).next_state() & 0xE) >> 1)
 	sf.start(rng)

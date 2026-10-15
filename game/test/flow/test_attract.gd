@@ -34,27 +34,27 @@ func _router(script_text: String) -> Array:
 func test_session_attract_setup() -> void:
 	if not need_rom():
 		return
-	var s := MwSession.new(12345, 1)
-	var boot := s.setup.copy()
+	var session := MwSession.new(12345, 1)
+	var boot := session.setup.copy()
 	assert_true(boot.equals(MwMatchSetup.from_rom(rom, MwMatchSetup.BOOT_DEFAULTS)))
 	assert_eq([boot.team_a, boot.team_b, boot.period_minutes, boot.stadium], [22, 5, 5, 22])
-	s.begin_attract()
-	assert_true(s.attract)
-	assert_eq(s.setup.pads, MwMatchSetup.PADS_DEMO)
-	assert_eq(s.setup.period_minutes, 3)
-	assert_ne(s.setup.team_a, s.setup.team_b)
-	assert_eq(s.setup.stadium, s.setup.team_a)
-	assert_between(s.setup.death_index, 0, 4)
+	session.begin_attract()
+	assert_true(session.attract)
+	assert_eq(session.setup.pads, MwMatchSetup.PADS_DEMO)
+	assert_eq(session.setup.period_minutes, 3)
+	assert_ne(session.setup.team_a, session.setup.team_b)
+	assert_eq(session.setup.stadium, session.setup.team_a)
+	assert_between(session.setup.death_index, 0, 4)
 	# the same picks as the original's code on the same random stream
-	var r := MlhRng.new(12345)
-	var a := r.range_value(0, 22)
-	var b := r.range_value(0, 22)
+	var rng := MlhRng.new(12345)
+	var a := rng.range_value(0, 22)
+	var b := rng.range_value(0, 22)
 	while b == a:
-		b = r.range_value(0, 22)
-	assert_eq([s.setup.team_a, s.setup.team_b, s.setup.death_index], [a, b, r.range_value(0, 4)])
-	s.end_attract()
-	assert_false(s.attract)
-	assert_true(s.setup.equals(boot), "restored")
+		b = rng.range_value(0, 22)
+	assert_eq([session.setup.team_a, session.setup.team_b, session.setup.death_index], [a, b, rng.range_value(0, 4)])
+	session.end_attract()
+	assert_false(session.attract)
+	assert_true(session.setup.equals(boot), "restored")
 
 
 func test_idle_menu_runs_the_demo_and_input_ends_it() -> void:
@@ -101,4 +101,44 @@ func test_demo_ends_by_itself() -> void:
 		router.step()
 		n += 1
 	assert_eq(router.history, [1, 3, 4, 1])
+	assert_false(router.session.attract)
+
+
+## Plan 35: the idle timeout is a match rule - off online, where the menus
+## wait for their players.
+func test_no_idle_demo_with_the_timeout_off() -> void:
+	var was := MwAttract.idle_attract
+	MwAttract.idle_attract = false
+	var r := _router("@screen 1 +5000 END")
+	var router: MwRouter = r[0]
+	for i in MwAttract.IDLE_TICKS * 2:
+		router.step()
+	MwAttract.idle_attract = was
+	assert_eq(router.history, [1], "still on the menu")
+	assert_false(router.session.attract)
+
+
+## The attract demo is the original's CPU v CPU, not a spectated match
+## (MwSession.spectated: the port's exhibition): any press - Start too -
+## ends it as before, never pausing it into the spectators' menu.
+func test_the_demo_is_no_spectated_match() -> void:
+	if not need_rom():
+		return
+	var r := _router("@screen 4 +300 P3 START\n@screen 1 #2 +10 END")
+	var router: MwRouter = r[0]
+	var player: MwScriptPlayer = r[1]
+	var spectated := false
+	var paused := false
+	var n := 0
+	while not player.ended() and n < 3000:
+		router.step()
+		n += 1
+		var rk := router.current() as MwRink
+		if rk != null and rk.state != null:
+			spectated = spectated or rk.state.spectated or router.session.spectated()
+			paused = paused or (rk.phases != null and rk.phases.paused)
+	assert_true(player.ended())
+	assert_eq(router.history, [1, 3, 4, 1], "Start ended the demo")
+	assert_false(spectated, "the demo is not a spectated match")
+	assert_false(paused, "nothing paused it")
 	assert_false(router.session.attract)

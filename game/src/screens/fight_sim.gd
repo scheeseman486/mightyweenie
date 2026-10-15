@@ -73,10 +73,10 @@ const KO_FX := 0x22894               ## ... of a knocked-down one
 const DOWN_FX := 0x20BD2             ## ... of one down on the ice
 const CARD_MAPS := 0x1D236           ## 7 x (map.l, copies.w, rows.w, VRAM step.w)
 const CARD_LABELS := 0x1D27C         ## 4 x (x, y, string.l), then 4 joke rows of 2
-const NAME_FONT := 0x22BEC
+const NAME_FONT := MwFonts.HEADING
 const TEXT_FONT := 0x22D66
-const CARD_FONT := 0x1F958
-const TIMER_FONT := 0x447F4
+const CARD_FONT := MwFonts.DARK
+const TIMER_FONT := MwFonts.LIGHT
 const DRAW_TEXT := 0x50CAB
 const KO_TEXT := 0x50CB1
 const WINS_TEXT := 0x50CBB
@@ -105,7 +105,7 @@ const CARD_LOCK := 0x168             ## the pads count once fewer ticks than thi
 const BELL := 0x18
 const KO_SOUND := 9
 const BLOCK_SOUND := 0x16
-const CARD_SOUND := 0x10
+const CARD_SOUND := MwSoundIds.CROWD
 
 ## Fighter states (+$3C).
 const STAND := 0
@@ -218,38 +218,47 @@ class Fighter:
 		return 0xFFFF0000 | (address & 0xFFFF)
 
 	## Its fields against the original's object.
-	func compare(d: MwScoreboardSim.Diff, what: String) -> void:
+	func compare(diff: MwScoreboardSim.Diff, what: String) -> void:
 		var a := address
 		for k in 3:
-			d.long("%s pos %d" % [what, k], a + 8 * k, motion.pos[k])
-			d.word("%s vel %d" % [what, k], a + 8 * k + 4, motion.vel[k])
-			d.word("%s acc %d" % [what, k], a + 8 * k + 6, motion.acc[k])
-		d.anim(what + " anim", a + 0x18, anim, 0)
-		d.long(what + " table", a + 0x24, table)
-		d.long(what + " player", a + 0x28, MwScoreboardSim.player_long(player))
-		d.long(what + " record", a + 0x2C, record)
-		d.word(what + " health", a + 0x30, health)
-		d.word(what + " rating", a + 0x32, rating)
-		d.word(what + " damage", a + 0x34, damage)
-		d.word(what + " speed", a + 0x36, speed)
-		d.word(what + " attr", a + 0x38, attr)
-		d.word(what + " pad", a + 0x3A, pad)
-		d.word(what + " state", a + 0x3C, state)
-		d.word(what + " memory", a + 0x3E, memory)
-		d.word(what + " thrown", a + 0x40, thrown)
-		d.word(what + " landed", a + 0x42, landed)
+			diff.long("%s pos %d" % [what, k], a + 8 * k, motion.pos[k])
+			diff.word("%s vel %d" % [what, k], a + 8 * k + 4, motion.vel[k])
+			diff.word("%s acc %d" % [what, k], a + 8 * k + 6, motion.acc[k])
+		diff.anim(what + " anim", a + 0x18, anim, 0)
+		diff.long(what + " table", a + 0x24, table)
+		diff.long(what + " player", a + 0x28, MwScoreboardSim.player_long(player))
+		diff.long(what + " record", a + 0x2C, record)
+		diff.word(what + " health", a + 0x30, health)
+		diff.word(what + " rating", a + 0x32, rating)
+		diff.word(what + " damage", a + 0x34, damage)
+		diff.word(what + " speed", a + 0x36, speed)
+		diff.word(what + " attr", a + 0x38, attr)
+		diff.word(what + " pad", a + 0x3A, pad)
+		diff.word(what + " state", a + 0x3C, state)
+		diff.word(what + " memory", a + 0x3E, memory)
+		diff.word(what + " thrown", a + 0x40, thrown)
+		diff.word(what + " landed", a + 0x42, landed)
 		if known.has("fx_y"):
-			d.word(what + " fx y", a + 0x44, fx_y)
-		d.word(what + " stun", a + 0x46, stun)
+			diff.word(what + " fx y", a + 0x44, fx_y)
+		diff.word(what + " stun", a + 0x46, stun)
 		if known.has("last"):
-			d.word(what + " last position", a + 0x48, last_position)
+			diff.word(what + " last position", a + 0x48, last_position)
 		if known.has("fx"):
-			d.anim(what + " fx", a + 0x4A, fx, 0)
-		elif (d.m.u8(a + 0x50) & 0x80) != (fx.flags & 0x80):
-			d.out.append([what + " fx shown", "%02X" % (fx.flags & 0x80), "%02X" % (d.m.u8(a + 0x50) & 0x80)])
-		d.long(what + " stamp", a + 0x56, stamp)
+			diff.anim(what + " fx", a + 0x4A, fx, 0)
+		elif (diff.m.u8(a + 0x50) & 0x80) != (fx.flags & 0x80):
+			diff.out.append([what + " fx shown", "%02X" % (fx.flags & 0x80), "%02X" % (diff.m.u8(a + 0x50) & 0x80)])
+		diff.long(what + " stamp", a + 0x56, stamp)
 
 
+## Plan 45: the rink sim disposed as this sim goes (its cycles would keep the
+## match's state; MwScreenSim.dispose).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and rink != null:
+		rink.dispose()
+
+
+## True: the fight is a port (a stub keeps [MwScreenSim]'s step); the screen checks ask by
+## name.
 func ported() -> bool:
 	return true
 
@@ -259,8 +268,8 @@ func ported() -> bool:
 ## `$D868` up to its loop: the backdrop (`$9034`, the side view on), the
 ## fight bank, the stamp, fight time 0, no friction, the fighters (team A's
 ## then team B's, `$DC38`), the panel closed, the walk-in.
-func enter(st: MwRinkState, screen_id: int, from_screen: int) -> void:
-	super.enter(st, screen_id, from_screen)
+func enter(rink_state: MwRinkState, screen_id: int, from_screen: int) -> void:
+	super.enter(rink_state, screen_id, from_screen)
 	begin_pass()
 	rink = MwRinkSim.new(rom, s)
 	rink.live = live()
@@ -301,7 +310,12 @@ func _now() -> int:
 ## `$1D146`: attr, x, walk-in velocity) at (x, 224, 8000); health, the
 ## counts and the stun cleared; the rating (FIGHTING with the skulls,
 ## `$3BDE`) and what it sets; the species' animations (species 2: colour 10
-## of the fighter's palette line `$444`); standing (`$DE24`).
+## of the fighter's palette line `$444`); standing (`$DE24`). Plan 34, an
+## extended set-up: the pad of the player driving him, else - a team with
+## players gets the fight, as the original gives it a team with a pad - the
+## team's lowest-numbered player's. With captains or a player away
+## (MwRinkControl.fight_pad): the driver when in, else the captain, else the
+## lowest-numbered player still in; nobody in: the CPU.
 func _fighter_init(f: Fighter, team: MwRinkState.Team) -> void:
 	var p: MwRinkState.Player = null
 	for i in 5:
@@ -314,9 +328,16 @@ func _fighter_init(f: Fighter, team: MwRinkState.Team) -> void:
 		if q.present:
 			p = q
 	f.pad = -1
-	if team.flags4 & 4:
+	if s.extended:
+		if p.flags & MwRinkState.Player.HUMAN and p.pad >= 0:
+			f.pad = p.pad * 2
+		elif not team.port_pads.is_empty():
+			f.pad = team.port_pads[0] * 2
+	elif team.flags4 & 4:
 		var k := 1 if p.flags & MwRinkState.Player.SECOND_PAD else 0
 		f.pad = (int(team.pads[k]) & 0xFF) * 2
+	if s.control != null:
+		f.pad = s.control.fight_pad(s.teams.find(team), p, f.pad)
 	var side: int = SIDES[1 if team.flags4 & 1 else 0]
 	f.health = HEALTH
 	f.thrown = 0
@@ -387,7 +408,7 @@ func _pad_word(f: Fighter, other: Fighter) -> int:
 	if f.pad < 0:
 		return _ai(f, other)
 	var i := f.pad >> 1
-	if i >= 4:
+	if i >= s.pads_held.size():
 		push_warning("MwFightSim: pad offset %d" % f.pad)
 		return 0
 	return ((s.pads_held[i] & 0xFF) << 8) | (s.pads_new[i] & 0xFF)
@@ -414,19 +435,19 @@ func _walk_in(e: int) -> void:
 ## counts the ticks since the stamp, and at 1200 the bell and the decision
 ## by punches landed (equal: a draw).
 func _fight(e: int) -> void:
-	var a := fighters[0]
-	var b := fighters[1]
-	_fighter_step(a, b, e)
-	_fighter_step(b, a, e)
-	if b.state == OUT:
-		_end(a, 2)
+	var fighter_a := fighters[0]
+	var fighter := fighters[1]
+	_fighter_step(fighter_a, fighter, e)
+	_fighter_step(fighter, fighter_a, e)
+	if fighter.state == OUT:
+		_end(fighter_a, 2)
 		return
-	if b.state >= KNOCKED:
+	if fighter.state >= KNOCKED:
 		return
-	if a.state == OUT:
-		_end(b, 2)
+	if fighter_a.state == OUT:
+		_end(fighter, 2)
 		return
-	if a.state >= KNOCKED:
+	if fighter_a.state >= KNOCKED:
 		return
 	if _start_pressed():
 		panel.move(1)
@@ -438,10 +459,10 @@ func _fight(e: int) -> void:
 	if fight_time < FIGHT_TICKS:
 		return
 	sound(BELL)
-	if a.landed > b.landed:
-		_end(a, 1)
-	elif a.landed < b.landed:
-		_end(b, 1)
+	if fighter_a.landed > fighter.landed:
+		_end(fighter_a, 1)
+	elif fighter_a.landed < fighter.landed:
+		_end(fighter, 1)
 	else:
 		_end(null, 0)
 
@@ -473,7 +494,7 @@ func _start_pressed() -> bool:
 		if f.pad < 0:
 			continue
 		var i := f.pad >> 1
-		if i < 4 and s.pads_new[i] & 0x80:
+		if i < s.pads_new.size() and s.pads_new[i] & 0x80:
 			return true
 	return false
 
@@ -852,10 +873,10 @@ func _result_text() -> void:
 ## B's camera, no projection); its second animation while shown at (x, y -
 ## +$44).
 func _fighter_draw(f: Fighter) -> void:
-	var p := f.motion.pixels()
-	sprite_ops.append(MwScoreboardSim.anim_op(f.anim, p.x, p.y, p.z, f.attr))
+	var point := f.motion.pixels()
+	sprite_ops.append(MwScoreboardSim.anim_op(f.anim, point.x, point.y, point.z, f.attr))
 	if f.fx.playing():
-		sprite_ops.append(MwScoreboardSim.anim_op(f.fx, p.x, p.y - f.fx_y, p.z, f.attr))
+		sprite_ops.append(MwScoreboardSim.anim_op(f.fx, point.x, point.y - f.fx_y, point.z, f.attr))
 
 
 # --- the card ----------------------------------------------------------------------------------
@@ -991,34 +1012,37 @@ func _after_fight() -> void:
 
 # --- comparisons ---------------------------------------------------------------------------------
 
+## [method MwScreenSim.compare] for the fight: its locals, both fighters and the RAM it
+## changes (the teams, the goal kind, the scorer, the phase, the set-up's) against
+## [param ram] and [param stack].
 func compare(ram: PackedByteArray, stack: PackedByteArray) -> Array:
-	var d := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
+	var diff := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
 	var a6 := LOCALS
-	d.long("snapshot -4", a6 - 4, snapshot)
-	d.word("state -6", a6 - 6, state)
+	diff.long("snapshot -4", a6 - 4, snapshot)
+	diff.word("state -6", a6 - 6, state)
 	if _known.has("stamp"):
-		d.long("stamp -$A", a6 - 0xA, stamp)
-	d.word("fight time -$C", a6 - 0xC, fight_time)
-	d.word("panel dir", a6 - 0x12, panel.dir)
-	d.word("panel remainder", a6 - 0x10, panel.remainder)
-	d.word("panel size", a6 - 0xE, panel.size)
+		diff.long("stamp -$A", a6 - 0xA, stamp)
+	diff.word("fight time -$C", a6 - 0xC, fight_time)
+	diff.word("panel dir", a6 - 0x12, panel.dir)
+	diff.word("panel remainder", a6 - 0x10, panel.remainder)
+	diff.word("panel size", a6 - 0xE, panel.size)
 	if _known.has("result"):
-		d.word("result -$F0", a6 - 0xF0, result)
-		d.long("winner -$F4", a6 - 0xF4, winner.long() if winner != null else 0)
-		d.long("winner team -$F8", a6 - 0xF8, winner_team)
+		diff.word("result -$F0", a6 - 0xF0, result)
+		diff.long("winner -$F4", a6 - 0xF4, winner.long() if winner != null else 0)
+		diff.long("winner team -$F8", a6 - 0xF8, winner_team)
 	if _known.has("crowd"):
-		d.word("crowd -$FA", a6 - 0xFA, crowd)
+		diff.word("crowd -$FA", a6 - 0xFA, crowd)
 	if _known.has("sound"):
-		d.flag("sound $C476", CARD_SOUND_AT, card_sound != 0)
+		diff.flag("sound $C476", CARD_SOUND_AT, card_sound != 0)
 	if _known.has("card_stamp"):
-		d.long("card stamp", CARD_STAMP_AT, card_stamp)
-	fighters[0].compare(d, "A")
-	fighters[1].compare(d, "B")
+		diff.long("card stamp", CARD_STAMP_AT, card_stamp)
+	fighters[0].compare(diff, "A")
+	fighters[1].compare(diff, "B")
 	var ours := MwRinkRam.encode(s, ram)
 	# the teams (the calls, fights won), the result, what the set-up leaves
-	d.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
-	d.ram_range(ours, MwRinkRam.GOAL_KIND, MwRinkRam.GOAL_KIND + 2)
-	d.ram_range(ours, MwRinkRam.SCORER, MwRinkRam.SCORER + 4)
-	d.ram_range(ours, MwRinkRam.PHASE, MwRinkRam.PHASE + 2)
-	MwScoreboardSim.compare_setup(d, ours)
-	return d.out
+	diff.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
+	diff.ram_range(ours, MwRinkRam.GOAL_KIND, MwRinkRam.GOAL_KIND + 2)
+	diff.ram_range(ours, MwRinkRam.SCORER, MwRinkRam.SCORER + 4)
+	diff.ram_range(ours, MwRinkRam.PHASE, MwRinkRam.PHASE + 2)
+	MwScoreboardSim.compare_setup(diff, ours)
+	return diff.out

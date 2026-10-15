@@ -52,14 +52,22 @@ var crowd := CROWD
 var rink: MwRinkSim
 
 
+## Plan 45: the rink sim disposed as this sim goes (its cycles would keep the
+## match's state; MwScreenSim.dispose).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and rink != null:
+		rink.dispose()
+
+
+## Check hook: this screen's passes are ported (the screen checks run them; stubs lack it).
 func ported() -> bool:
 	return true
 
 
 ## `$13A72` up to its loop: the backdrop (`$9034`, the side view on), the
 ## playing_team team and the other, the crowd at 1000, the stamps.
-func enter(st: MwRinkState, screen_id: int, from_screen: int) -> void:
-	super.enter(st, screen_id, from_screen)
+func enter(state: MwRinkState, screen_id: int, from_screen: int) -> void:
+	super.enter(state, screen_id, from_screen)
 	begin_pass()
 	rink = MwRinkSim.new(rom, s)
 	rink.live = live()                     # the players' and the referee's sounds (plan 12)
@@ -119,12 +127,12 @@ func step(elapsed: int, _held: Array, _new: Array) -> int:
 ## (`$213DC` set, not playing_team); else his motion (the players' parameters)
 ## and animation.
 func _referee_update(e: int) -> void:
-	var r := s.referee
-	if not r.anim.playing() and s.ref_flag != 0:
-		r.anim = MwAnimState.from_record(rom, REF_STANDS)
+	var actor := s.referee
+	if not actor.anim.playing() and s.ref_flag != 0:
+		actor.anim = MwAnimState.from_record(rom, REF_STANDS)
 		return
-	r.motion.step(s.player_params, e)
-	r.anim.advance(e)
+	actor.motion.step(s.player_params, e)
+	actor.anim.advance(e)
 
 
 ## `$EFB4`: the referee through the side view with his attr (+$25).
@@ -172,17 +180,20 @@ func _player_draw(p: MwRinkState.Player, team_attr: int) -> void:
 
 # --- comparisons ---------------------------------------------------------------------------------
 
+## The fields this screen models that differ from the original's [param ram] and [param stack]
+## after the same pass (["what", ours, theirs]): the handler's locals, both teams, the referee
+## and what the set-up `$9034` leaves.
 func compare(ram: PackedByteArray, stack: PackedByteArray) -> Array:
-	var d := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
+	var diff := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
 	var a6 := LOCALS
-	d.long("snapshot -4", a6 - 4, snapshot)
-	d.long("stamp -8", a6 - 8, stamp)
-	d.word("playing_team -$A", a6 - 0xA, MwScoreboardSim.TEAM_WORDS[s.teams.find(playing_team)])
-	d.word("other -$C", a6 - 0xC, MwScoreboardSim.TEAM_WORDS[s.teams.find(other)])
-	d.word("crowd -$E", a6 - 0xE, crowd)
+	diff.long("snapshot -4", a6 - 4, snapshot)
+	diff.long("stamp -8", a6 - 8, stamp)
+	diff.word("playing_team -$A", a6 - 0xA, MwScoreboardSim.TEAM_WORDS[s.teams.find(playing_team)])
+	diff.word("other -$C", a6 - 0xC, MwScoreboardSim.TEAM_WORDS[s.teams.find(other)])
+	diff.word("crowd -$E", a6 - 0xE, crowd)
 	var ours := MwRinkRam.encode(s, ram)
 	# both teams (players, the box display's entries, the stats, +5), the referee
-	d.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
-	d.ram_range(ours, MwRinkRam.REF, MwRinkRam.REF + 0x26)
-	MwScoreboardSim.compare_setup(d, ours)
-	return d.out
+	diff.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
+	diff.ram_range(ours, MwRinkRam.REF, MwRinkRam.REF + 0x26)
+	MwScoreboardSim.compare_setup(diff, ours)
+	return diff.out

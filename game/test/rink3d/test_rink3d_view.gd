@@ -7,10 +7,10 @@ const VIEW := preload("res://src/rink3d/rink_view_3d.tscn")
 
 
 func test_world_and_rink_round_trip() -> void:
-	var p := Vector3(-120, 345, 17)
-	var w := MwRink3D.world(p.x, p.y, p.z)
+	var point := Vector3(-120, 345, 17)
+	var w := MwRink3D.world(point.x, point.y, point.z)
 	assert_almost_eq(w, Vector3(-6.0, 0.85, 17.25), Vector3.ONE * 1e-5)
-	assert_almost_eq(MwRink3D.rink(w), p, Vector3.ONE * 1e-4)
+	assert_almost_eq(MwRink3D.rink(w), point, Vector3.ONE * 1e-4)
 	assert_eq(MwRink3D.map_point(0, 0, 0), Vector2(256, 461))
 	assert_eq(MwRink3D.map_point(-58, -105, 10), Vector2(198, 346))
 
@@ -32,7 +32,8 @@ func test_calibration_camera_is_the_originals_projection() -> void:
 	var shown := Vector2i(96, 293)
 	cam.follow(Vector2(shown))
 	var ws := cam.world_scale()
-	for p in [Vector3(0, 0, 0), Vector3(-185, -372, 0), Vector3(185, 300, 48), Vector3(-60, 120, 33), Vector3(40, -350, 112)]:
+	for p in [Vector3(0, 0, 0), Vector3(-185, -372, 0), Vector3(185, 300, 48), Vector3(-60, 120, 33),
+			Vector3(40, -350, 112)]:
 		var screen := cam.unproject_position(MwRink3D.world(p.x, p.y, p.z) * ws)
 		var want := MwRink3D.map_point(p.x, p.y, p.z) - Vector2(shown)
 		assert_almost_eq(screen, want, Vector2.ONE * 0.05, "rink point %s" % p)
@@ -70,7 +71,8 @@ func test_frames_compose_like_the_rom_frames() -> void:
 	for c in cases:
 		var f := sp.frame_texture(rom, c[0], c[1])
 		var ref := MwGfx.frame_image(rom, MwGfx.frame_pieces(rom, c[0]), (c[1] >> 3) & 3)
-		assert_eq([f["w"], f["h"], -int(f["x0"]), -int(f["y0"])], [ref["w"], ref["h"], ref["ox"], ref["oy"]], "frame %X attr %X box" % c)
+		assert_eq([f["w"], f["h"], -int(f["x0"]), -int(f["y0"])], [ref["w"], ref["h"], ref["ox"], ref["oy"]],
+				"frame %X attr %X box" % c)
 		var got: PackedByteArray = (f["tex"] as ImageTexture).get_image().get_data()
 		var want: PackedByteArray = ref["px"]
 		var same := got.size() == want.size()
@@ -87,6 +89,7 @@ func test_far_lamp_frames_hang_from_their_pin() -> void:
 		return
 	var sp := MwSprites3D.new()
 	add_child_autofree(sp)
+	sp.reflections = false          # (the reflections' quads: test_reflections)
 	var pin := MwRinkDraw3D.FAR_PIN_Z
 	var stand := {"frame": MwRinkDraw.STAND_FRAME, "attr": 0, "depth": 88, "place": MwRinkDraw3D.UPRIGHT,
 			"at": Vector3(0, -371, 49), "offset": Vector2i.ZERO, "order": 0, "pin": pin}
@@ -122,13 +125,13 @@ func test_model_gets_rom_materials() -> void:
 	view.palette = RomPalette.make(4, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), 3, 9)
 	vp.add_child(view)
 	var meshes := view.model.meshes()
-	assert_eq(meshes.keys().size(), 9, "floor, wall, near_wall, glass, signs, signs_glass, fence, bench, bench_glass")
+	assert_eq(meshes.keys().size(), 8, "floor, wall, near_wall, glass, signs, signs_glass, fence, bench")
 	var sizes := {"floor": Vector2i(512, 904), "signs": Vector2i(320, 72), "fence": Vector2i(320, 64)}
-	for name in meshes:
-		var m := (meshes[name] as MeshInstance3D).material_override as ShaderMaterial
-		assert_not_null(m, name)
+	for mesh_name in meshes:
+		var m := (meshes[mesh_name] as MeshInstance3D).material_override as ShaderMaterial
+		assert_not_null(m, mesh_name)
 		var pic := m.get_shader_parameter("picture") as Texture2D
-		assert_not_null(pic, name + " picture")
-		assert_not_null(m.get_shader_parameter("palette"), name + " palette")
-		if sizes.has(name):
-			assert_eq(Vector2i(pic.get_size()), sizes[name], name)
+		assert_not_null(pic, mesh_name + " picture")
+		assert_not_null(m.get_shader_parameter("palette"), mesh_name + " palette")
+		if sizes.has(mesh_name):
+			assert_eq(Vector2i(pic.get_size()), sizes[mesh_name], mesh_name)

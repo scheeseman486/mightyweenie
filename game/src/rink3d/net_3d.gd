@@ -17,6 +17,11 @@ extends Node3D
 ## colour where the drawing hides the ground (the sides, behind the back
 ## bar; owner). [code]hidden[/code]: faces never drawn (rink3d_net_hidden),
 ## the feet of the Battle Net's spikes on the netting.
+##
+## Plan 37: the net is reflected in the ice ([member reflection],
+## MwSettings.reflections) - a mirrored copy of its model under it, its frame
+## and netting drawn as rink3d_reflect_mesh does (the ground shadow lies on
+## the ice: not reflected).
 
 ## The models by net style (MwRinkState.NET_ANIMS: 0 Demon Net, 1 standard,
 ## 2 Battle Net); the Demon Net keeps its drawings.
@@ -54,6 +59,13 @@ var palette: RomPalette:
 
 var _materials: Array[ShaderMaterial] = []
 var _model: Node3D
+var _mirror: Node3D
+## Whether its reflection in the ice shows (plan 37).
+var reflection := true:
+	set(v):
+		reflection = v
+		if _mirror:
+			_mirror.visible = v
 
 
 func _ready() -> void:
@@ -63,23 +75,65 @@ func _ready() -> void:
 	if MwRom.available():
 		decal = ImageTexture.create_from_image(ground_decal(MwRom.data(), style))
 	for mi: MeshInstance3D in _model.find_children("*", "MeshInstance3D", true, false):
-		for s in mi.mesh.get_surface_count():
-			var src := mi.mesh.surface_get_material(s)
+		for surface in mi.mesh.get_surface_count():
+			var src := mi.mesh.surface_get_material(surface)
 			var m := material_for(src.resource_name if src else "", decal, style)
 			if m:
-				mi.set_surface_override_material(s, m)
+				mi.set_surface_override_material(surface, m)
 				_materials.append(m)
+	_mirror = MODELS[style].instantiate()
+	_mirror.name = "Reflection"
+	_mirror.transform = MwRinkModel.MIRROR
+	add_child(_mirror)
+	for mi: MeshInstance3D in _mirror.find_children("*", "MeshInstance3D", true, false):
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for surface in mi.mesh.get_surface_count():
+			var src := mi.mesh.surface_get_material(surface)
+			var m := reflect_material_for(src.resource_name if src else "")
+			if m:
+				mi.set_surface_override_material(surface, m)
+				_materials.append(m)
+	_mirror.visible = reflection
 	_update_palette()
 
 
-## The material for a model material named [param name] (see above); null
-## for an unknown name.
-static func material_for(name: String, decal: Texture2D = null, style_ := 1) -> ShaderMaterial:
-	if name == "hidden":
+## The material of a model material named [param material_name]'s reflection in the
+## ice (plan 37, see above; null for an unknown name): the frame in its
+## colour, the netting's stipple, nothing for the ground shadow and the
+## hidden faces.
+static func reflect_material_for(material_name: String) -> ShaderMaterial:
+	if material_name == "hidden" or material_name.begins_with("shadow"):
 		var hidden := ShaderMaterial.new()
 		hidden.shader = HIDDEN
 		return hidden
-	var parts := name.split("_")
+	var parts := material_name.split("_")
+	if parts.size() < 3:
+		return null
+	var line := int(parts[1]) * 16
+	var m: ShaderMaterial
+	match parts[0]:
+		"bar", "spike", "outline":
+			m = MwRinkModel.reflect_material(MwRinkModel.REFLECT_MESH, 1)
+			m.set_shader_parameter("index", line + int(parts[2]))
+		"net":
+			if parts.size() < 4:
+				return null
+			m = MwRinkModel.reflect_material(MwRinkModel.REFLECT_MESH_2S, 2)
+			m.set_shader_parameter("outer", line + int(parts[2]))
+			m.set_shader_parameter("inner", line + int(parts[3]))
+		_:
+			return null
+	return m
+
+
+## The material for a model material named [param material_name] (see above); null
+## for an unknown name.
+static func material_for(material_name: String, decal: Texture2D = null, style_ := 1) -> ShaderMaterial:
+	if material_name == "hidden":
+		var hidden := ShaderMaterial.new()
+		hidden.shader = HIDDEN
+		return hidden
+	var parts := material_name.split("_")
 	if parts.size() < 3:
 		return null
 	var line := int(parts[1]) * 16
@@ -108,9 +162,9 @@ static func material_for(name: String, decal: Texture2D = null, style_ := 1) -> 
 ## The style of a net drawn with animation record [param anim] if it has a
 ## model, else -1.
 static func model_style(rom: PackedByteArray, anim: int) -> int:
-	for s: int in MODELS:
-		if anim == MwGfx.u32(rom, MwRinkState.NET_ANIMS + 4 * s):
-			return s
+	for net_style: int in MODELS:
+		if anim == MwGfx.u32(rom, MwRinkState.NET_ANIMS + 4 * net_style):
+			return net_style
 	return -1
 
 

@@ -31,12 +31,15 @@ masks and templates from the ROM.
 from __future__ import annotations
 
 import json
-import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
+
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
+from mw_harness.gfx import Picture, picture_image  # noqa: E402
 
 RINK_PICTURE = 0x24CFC
 WIDTH, HALF = 512, 256
@@ -56,28 +59,10 @@ RECOLOURS = [((18, 29), (19, 30)), ((18, 21), (19, 22))]
 # --- the picture ---------------------------------------------------------
 
 def picture_indices(rom: bytes, address: int = RINK_PICTURE) -> np.ndarray:
-    """The picture as line * 16 + colour (0 where nothing is drawn), H x W."""
-    tiles, base, count, w, h = struct.unpack(">IHHHH", rom[address:address + 12])
-    words = np.frombuffer(rom, ">u2", w * h, address + 12).reshape(h, w).astype(np.int32)
-    out = np.zeros((h * 8, w * 8), np.int16)
-    for ty in range(h):
-        for tx in range(w):
-            word = int(words[ty, tx])
-            t = (word & 0x7FF) - base
-            if t < 0 or t >= count:
-                continue
-            raw = np.frombuffer(rom, np.uint8, 32, tiles + 32 * t)
-            px = np.empty(64, np.int16)
-            px[0::2] = raw >> 4
-            px[1::2] = raw & 15
-            px = px.reshape(8, 8)
-            if word & 0x800:
-                px = px[:, ::-1]
-            if word & 0x1000:
-                px = px[::-1, :]
-            line = (word >> 13) & 3
-            out[ty * 8:ty * 8 + 8, tx * 8:tx * 8 + 8] = np.where(px == 0, 0, px + line * 16)
-    return out
+    """The picture as line * 16 + colour (0 where nothing is drawn), H x W:
+    the harness's decoder (plan 40: this was a copy of it)."""
+    w, h, img = picture_image(rom, Picture.parse(rom, address))
+    return np.frombuffer(img, np.uint8).reshape(h, w).astype(np.int16)
 
 
 def crowd_area(pic: np.ndarray) -> np.ndarray:
@@ -315,7 +300,7 @@ class Figure:
     lasso: list = field(default_factory=list)   # [x, y] polygon
     match: float = 0.85
     recolours: list = field(default_factory=list)  # [[[from, to], ...], ...]
-    line: int = 1                               # palette line (the pen's referee: 0)
+    line: int = 1                               # palette line (Satan: 0)
     background: list = field(default_factory=list)  # line-0 figures: colours not theirs
     at: list = field(default_factory=list)      # fixed instances [x, y] (not matched)
     # the owner's marks on the review sheet, as runs [x, y, length] along rows:

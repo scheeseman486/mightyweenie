@@ -16,7 +16,7 @@ extends RefCounted
 ## older name [method armed_force] is kept for the poot.
 
 const SOUND_HORN := 2
-const SOUND_POOT := 0x2E
+const SOUND_POOT := MwSoundIds.REFUSED
 
 var sim: MwRinkSim
 
@@ -137,22 +137,24 @@ func _used(team: MwRinkState.Team, play: int) -> void:
 ## the carrier lets go (`$CE4`), team +5 bit 1, phase 11 with `$FFBD90` =
 ## the player.
 func _waste_goalie(p: MwRinkState.Player, team: MwRinkState.Team, other: MwRinkState.Team) -> bool:
-	var g := other.goalie()
-	if not g.present:
+	var goalie := other.goalie()
+	if not goalie.present:
 		return false
-	var h := sim.human.pickup_switch(g, other)
-	if h != null:
-		g.flags &= ~MwRinkState.Player.SECOND_PAD
-		g.flags |= MwRinkState.Player.HUMAN
-		g.flags2 &= ~8
-		h.flags &= ~MwRinkState.Player.HUMAN
-		if h.flags & MwRinkState.Player.SECOND_PAD:
-			g.flags |= MwRinkState.Player.SECOND_PAD
-		var blast := h.flags2 & 8
-		h.flags2 &= ~8
+	var player := sim.human.pickup_switch(goalie, other, true)    # plan 34: owners too (the goalie's can reclaim him)
+	if player != null:
+		goalie.flags &= ~MwRinkState.Player.SECOND_PAD
+		goalie.flags |= MwRinkState.Player.HUMAN
+		goalie.flags2 &= ~8
+		player.flags &= ~MwRinkState.Player.HUMAN
+		if player.flags & MwRinkState.Player.SECOND_PAD:
+			goalie.flags |= MwRinkState.Player.SECOND_PAD
+		if sim.s.extended:
+			goalie.pad = player.pad                       # plan 34: the driver's match pad goes along
+		var blast := player.flags2 & 8
+		player.flags2 &= ~8
 		if blast:
-			g.flags2 |= 8
-			g.charges = h.charges
+			goalie.flags2 |= 8
+			goalie.charges = player.charges
 	team.flags5 |= 2
 	sim.puck.drop(p)
 	sim.s.phase = 0xB
@@ -222,15 +224,15 @@ func _poot(p: MwRinkState.Player) -> bool:
 		team.flags4 &= ~0x80
 	var z := false
 	for i in 5:
-		var o := other.players[i]
+		var player := other.players[i]
 		z = false
-		if not o.present:
+		if not player.present:
 			continue
-		var d := p.opp_dist[o.index]
+		var d := p.opp_dist[player.index]
 		if d > 0x3C:
 			continue
-		sim.players._launch(o, p.opp_angle[o.index], 0x300 - 3 * d)
-		var h := other.health[o.slot]
+		sim.players._launch(player, p.opp_angle[player.index], 0x300 - 3 * d)
+		var h := other.health[player.slot]
 		var raw := MwRinkSim.asr(h - 0x100000000 if h >= 0x80000000 else h, 1)   # $BB4, asr.l #1
-		z = sim.players.damage(o, raw) == 0
+		z = sim.players.damage(player, raw) == 0
 	return z

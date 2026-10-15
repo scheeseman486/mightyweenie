@@ -5,6 +5,7 @@
   "suffix": ".gd",
   "log_level": 1,
   "should_exit": true,
+  "pre_run_script": "res://test/pre_run.gd",
   "junit_xml_file": "res://reports/gut_junit.xml",
   "junit_xml_timestamp": false
 }

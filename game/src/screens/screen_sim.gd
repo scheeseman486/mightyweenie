@@ -59,6 +59,18 @@ func _init(rom_: PackedByteArray) -> void:
 	rom = rom_
 
 
+## Plan 45: the rink sim this screen's sim made, if any ([code]rink[/code] in
+## the screens that run the rink's code), let go of ([method
+## MwRinkSim.dispose]: its cycles would keep the match's state); the sim isn't
+## stepped after it. Those screens' sims also do it as they go (their own
+## [code]_notification[/code]: in a RefCounted's PREDELETE only its own
+## members can be reached, not [code]self[/code]'s methods).
+func dispose() -> void:
+	var rink_sim: Variant = get("rink")
+	if rink_sim is MwRinkSim:
+		(rink_sim as MwRinkSim).dispose()
+
+
 ## The screen's set-up (the dispatcher called it with [param from_screen] in
 ## D7). Virtual.
 func enter(state: MwRinkState, screen_id: int, from_screen: int) -> void:
@@ -68,7 +80,8 @@ func enter(state: MwRinkState, screen_id: int, from_screen: int) -> void:
 
 
 ## One pass of [param elapsed] ticks; [param held] / [param new]: the 4
-## pads' bytes as read in this pass. Returns the next screen or -1. Virtual.
+## pads' bytes as read in this pass (an extended set-up's 12: plan 34).
+## Returns the next screen or -1. Virtual.
 func step(_elapsed: int, _held: Array, _new: Array) -> int:
 	return -1
 
@@ -114,10 +127,11 @@ func rng_range(lo: int, hi: int) -> int:
 
 
 ## The OR of the 4 pads' words (held byte << 8 | newly pressed byte), as
-## the screens that take any pad test it.
+## the screens that take any pad test it (plan 34, an extended set-up: its
+## twelve match pads').
 static func pads_word(held: Array, new: Array) -> int:
 	var w := 0
-	for p in 4:
+	for p in mini(held.size(), new.size()):
 		w |= ((int(held[p]) & 0xFF) << 8) | (int(new[p]) & 0xFF)
 	return w
 
@@ -127,16 +141,27 @@ static func pads_word(held: Array, new: Array) -> int:
 ## the checks the hooks' or our own. The event ["sound", id, handle]. (Made
 ## at once even after [method fade_out]: the handle is needed now.)
 func sound(id: int) -> int:
-	var h: int
-	if live():
-		h = handle_of(MwSound.play(id & 0xFFFF))
-	else:
-		_serial = (_serial + 1) & 0x7FFFFFFF
-		h = _serial | 0x40000000
-		if hooks.has_method("voice_handle"):
-			h = int(hooks.call("voice_handle", self, id))
+	var h := handle_of(MwSound.play(id & 0xFFFF)) if live() else checks_handle(id)
 	events.append(["sound", id & 0xFFFF, h])
 	return h
+
+
+## Plan 40 (D6): the handle of sound [param id] started in the checks (no
+## driver): the hooks' (`voice_handle`, the recording's), else the next of
+## our own ([method next_handle]).
+func checks_handle(id: int) -> int:
+	var h := next_handle()
+	if hooks != null and hooks.has_method("voice_handle"):
+		h = int(hooks.call("voice_handle", self, id))
+	return h
+
+
+## The screens' own stand-in handle: a serial with bit 30 set (a positive
+## long, never a sequence's) - the sounds', the scoreboards' music, the
+## stats screen's music bookkeeping.
+func next_handle() -> int:
+	_serial = (_serial + 1) & 0x3FFFFFFF
+	return _serial | 0x40000000
 
 
 ## `$13D9C`: is the sound with [param handle] still playing? (Live play
@@ -179,9 +204,10 @@ func voice_stop(handle: int) -> void:
 
 
 ## `crowd_level` `$13E52` at [param level] (0-1000); the event ["crowd", level].
-func crowd_level(level: int) -> void:
+## Port only: [param fade_in] > 0 starts it from silence (MwSound.crowd_level).
+func crowd_level(level: int, fade_in := 0) -> void:
 	events.append(["crowd", level])
-	sound_call(func() -> void: MwSound.crowd_level(level))
+	sound_call(func() -> void: MwSound.crowd_level(level, fade_in))
 
 
 ## `crowd_off` `$13EFC`; the event ["crowd_off"].

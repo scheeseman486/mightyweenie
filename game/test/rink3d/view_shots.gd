@@ -3,18 +3,20 @@ extends SceneTree
 ## (MwRinkViews) on passes of a recorded match, each view's camera run over
 ## the 45 passes before the shot as in play (its smoothing settled), one
 ## contact sheet per pass: calibration (= the 2D), ortho, TV, dolly,
-## birds-eye, birds-eye across, first person, cinematic, follow; and each
-## view alone.
+## birds-eye, birds-eye across, first person, cinematic, follow, 3D
+## EXTENDED (plan 34); and each view alone.
 ##
 ##   godot --path game -s res://test/rink3d/view_shots.gd -- OUT_DIR REC.json PASS[,PASS...] [MODES]
 ##
-## MODES: comma-separated MwRinkCamera3D.Mode names (default: the eight above).
+## MODES: comma-separated MwRinkCamera3D.Mode names (default: the ten above).
 
 const VIEW := preload("res://src/rink3d/rink_view_3d.tscn")
 const W := 640
 const H := 448
 const LEAD := 45
-const DEFAULT_MODES := ["CALIBRATION", "ORTHO", "TV", "DOLLY", "BIRDS_EYE", "BIRDS_EYE_ACROSS", "FIRST_PERSON", "CINEMATIC", "FOLLOW"]
+const DEFAULT_MODES := ["CALIBRATION", "ORTHO", "TV", "DOLLY", "BIRDS_EYE", "BIRDS_EYE_ACROSS", "FIRST_PERSON",
+		"CINEMATIC", "FOLLOW",
+		"EXTENDED"]
 
 
 func _initialize() -> void:
@@ -37,7 +39,8 @@ func _run() -> void:
 	root.add_child(vp)
 	var view: MwRinkView3D = VIEW.instantiate()
 	var first: Dictionary = passes[0]["state"]
-	var pal := RomPalette.make(4, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), int(first.get("team_a", 0)), int(first.get("stadium", 0)))
+	var pal := RomPalette.make(4, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), int(first.get("team_a", 0)),
+			int(first.get("stadium", 0)))
 	pal.team_b = int(first.get("team_b", 1))
 	view.palette = pal
 	vp.add_child(view)
@@ -62,10 +65,10 @@ func _run() -> void:
 
 
 func _present(view: MwRinkView3D, rom: PackedByteArray, passes: Array, k: int, continuous: bool) -> void:
-	var p: Dictionary = passes[k]
-	var state := MwRinkState.from_dict(rom, p["state"])
+	var pass_record: Dictionary = passes[k]
+	var state := MwRinkState.from_dict(rom, pass_record["state"])
 	var drawer := MwRinkDraw3D.new(rom)
-	drawer.build(state, p.get("phase_adds", []))
+	drawer.build(state, pass_record.get("phase_adds", []))
 	var tiles := {}
 	for slot in 4:
 		var pv: Array = state.plates[slot]

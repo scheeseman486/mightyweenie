@@ -74,12 +74,12 @@ static func text_indices(paths: Array) -> Array:
 ## up to its last non-zero byte: what follows a quote's 0 is an older
 ## quote's tail) moved to case[key + "_text"] as ROM pieces, the values
 ## zeroed.
-static func values_out(rom: PackedByteArray, case: Dictionary, key: String, idx: Array) -> void:
+static func values_out(rom: PackedByteArray, case: Dictionary, key: String, text_index: Array) -> void:
 	var vals: Array = case[key]
 	var b := PackedByteArray()
 	var last := -1
-	for j in idx.size():
-		var v := int(vals[idx[j]]) if vals[idx[j]] != null else 0
+	for j in text_index.size():
+		var v := int(vals[text_index[j]]) if vals[text_index[j]] != null else 0
 		b.append(v)
 		if v != 0:
 			last = j
@@ -87,27 +87,27 @@ static func values_out(rom: PackedByteArray, case: Dictionary, key: String, idx:
 		return
 	b = b.slice(0, last + 1)
 	case[key + "_text"] = segments(rom, b)
-	for i in idx:
+	for i in text_index:
 		vals[i] = 0
 
 
 ## A fixture case read: its [param key] values' text put back from the ROM.
-static func values_in(rom: PackedByteArray, case: Dictionary, key: String, idx: Array) -> void:
+static func values_in(rom: PackedByteArray, case: Dictionary, key: String, text_index: Array) -> void:
 	if not case.has(key + "_text"):
 		return
 	var b := expand(rom, case[key + "_text"])
 	var vals: Array = case[key]
-	for j in idx.size():
-		vals[idx[j]] = int(b[j]) if j < b.size() else 0
+	for j in text_index.size():
+		vals[text_index[j]] = int(b[j]) if j < b.size() else 0
 
 
 ## The same for a list of changes [[path index, value], ...]: the text
 ## indices' values moved to case[key + "_text"] (the whole buffer, 0s
 ## included up to the last change).
-static func changes_out(rom: PackedByteArray, case: Dictionary, key: String, idx: Array) -> void:
+static func changes_out(rom: PackedByteArray, case: Dictionary, key: String, text_index: Array) -> void:
 	var at := {}
-	for j in idx.size():
-		at[int(idx[j])] = j
+	for j in text_index.size():
+		at[int(text_index[j])] = j
 	var keep := []
 	var text := {}
 	for c in case[key]:
@@ -129,7 +129,7 @@ static func changes_out(rom: PackedByteArray, case: Dictionary, key: String, idx
 	case[key + "_text"] = {"pieces": segments(rom, b), "set": mask}
 
 
-static func changes_in(rom: PackedByteArray, case: Dictionary, key: String, idx: Array) -> void:
+static func changes_in(rom: PackedByteArray, case: Dictionary, key: String, text_index: Array) -> void:
 	if not case.has(key + "_text"):
 		return
 	var t: Dictionary = case[key + "_text"]
@@ -138,4 +138,4 @@ static func changes_in(rom: PackedByteArray, case: Dictionary, key: String, idx:
 	var list: Array = case[key]
 	for j in mask.size():
 		if int(mask[j]) != 0:
-			list.append([idx[j], int(b[j])])
+			list.append([text_index[j], int(b[j])])

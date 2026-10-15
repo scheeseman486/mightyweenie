@@ -5,8 +5,12 @@ extends RefCounted
 ## the fight trigger, bumps; only from team A's side), the puck (`$6FD6`),
 ## rink objects (`$726E`), the net frame (`$74E2`), in-ice hazards
 ## (`$7684`), the boards and rounded corners (`$8066`). Off-screen players
-## only meet the boards. Also the momentum exchange `$15470` and the check /
-## slash hit (`$6B5A`).
+## only meet the boards - in an EXTENDED match (plan 44,
+## [member MwRinkState.extended_play]) a player a human drives counts as on
+## the screen wherever he is ([method counts_on_screen]), and a CPU's player
+## off it still meets the opponents humans drive (the CPU's players
+## otherwise as the original's). Also the momentum exchange `$15470` and
+## the check / slash hit (`$6B5A`: never the screen's).
 
 const RINK_OBJECTS := 0x1C6EE        ## handlers by kind (only the table's shape is used)
 const NET_SIZES := 0x1C74A           ## by net style: half width, back y
@@ -18,6 +22,9 @@ const CORNER_BOTTOM := 0x1C81E       ## x limits from y 324
 const CORNER_TOP := 0x1C77E          ## x limits from y 298
 const BOARD_X := 0xB9                ## 185
 const BOARD_Y := 0x174               ## 372
+const CORNER_TOP_FROM := 0x12A       ## |y| from which the far corner's table applies (298)
+const CORNER_BOTTOM_FROM := 0x144    ## y from which the near corner's applies (324)
+const CORNER_MIN_X := 0x6C           ## the corners' narrowest x limit (108)
 
 var sim: MwRinkSim
 var rom: PackedByteArray
@@ -54,10 +61,23 @@ func radius(p: MwRinkState.Player, team: MwRinkState.Team = null) -> int:
 	return mini(r, 0x12)
 
 
-## `$5C3C`: [param o] is on screen (its map point minus the camera within
+## `$5C3C`: [param actor] is on screen (its map point minus the camera within
 ## 320 x 240; [method MwRinkSim.on_screen]).
-func on_screen(o: MwRinkState.Actor) -> bool:
-	return MwRinkSim.on_screen(s, o)
+func on_screen(actor: MwRinkState.Actor) -> bool:
+	return MwRinkSim.on_screen(s, actor)
+
+
+## Whether `$6D02` meets the rink for [param p]: on the original's screen,
+## or - plan 44, an EXTENDED match ([member MwRinkState.extended_play]) - a
+## player a human drives, wherever he is (the EXTENDED views keep him in
+## sight). The CPU's players: the original's screen (owner: the CPU left
+## out, keeping the old behaviour), but for the opponents humans drive (the
+## exception: CPU against player combat, [method _player]) - with EXTENDED
+## CPU ([member MwRinkState.extended_cpu]) wherever they are too.
+func counts_on_screen(p: MwRinkState.Player) -> bool:
+	if s.extended_play and (p.flags & MwRinkState.Player.HUMAN or s.extended_cpu):
+		return true
+	return on_screen(p)
 
 
 ## The elapsed ticks on `$86A`'s stack (seen through `$6D02`'s frame).
@@ -67,6 +87,8 @@ func frame_e() -> int:
 
 # --- `$6D02` ------------------------------------------------------------------------------
 
+## `$6D02`: player [param p]'s collisions after his motion step ([param e] elapsed
+## ticks), [member in_frame] set while they run.
 func player(p: MwRinkState.Player, e: int) -> void:
 	in_frame = true
 	_player(p, e)
@@ -82,7 +104,7 @@ func _player(p: MwRinkState.Player, e: int) -> void:
 	_y = MwRinkSim.s16(px.y)
 	_z = MwRinkSim.s16(px.z)
 	var team := sim.team_of(p)
-	if on_screen(p):
+	if counts_on_screen(p):
 		for q in team.players:
 			if q.index > p.index:
 				_mate(p, q)
@@ -94,16 +116,23 @@ func _player(p: MwRinkState.Player, e: int) -> void:
 			_objects(p)
 			_net(p)
 			_hazards(p)
+	elif s.extended_play and p.team == 0:
+		# plan 44: a CPU's player off the screen still meets the opponents
+		# humans drive, wherever they are (owner: CPUs and players still hit
+		# each other outside the view)
+		for q in s.teams[1].players:
+			if q.flags & MwRinkState.Player.HUMAN:
+				_opponent(p, q)
 	_boards(p)
 
 
 ## The overlap test (`$6EBC`) on a start-of-pass distance [param d]: inside
 ## both radii + 4.
 func _overlap(d: int, q: MwRinkState.Player) -> bool:
-	var d1 := MwRinkSim.s16(d - _r)
+	var d1 := ((d - _r + 0x8000) & 0xFFFF) - 0x8000             # (s16 inline: plan 42)
 	if d1 < 0:
 		return true
-	return MwRinkSim.s16(d1 - radius(q, sim.team_of(_p)) - 4) < 0
+	return ((d1 - radius(q, sim.team_of(_p)) - 4 + 0x8000) & 0xFFFF) - 0x8000 < 0
 
 
 func _mate(p: MwRinkState.Player, q: MwRinkState.Player) -> void:
@@ -171,24 +200,24 @@ func _bump(p: MwRinkState.Player, q: MwRinkState.Player) -> void:
 ## `$6F22`: off the spike (`$5DCE` frees the spike in the same quadrant).
 func _free(p: MwRinkState.Player) -> void:
 	var px := p.motion.pixels()
-	for o in s.objects:
-		if o.kind == MwRinkState.KIND_SPIKES:
-			var op := o.motion.pixels()
+	for rink_object in s.objects:
+		if rink_object.kind == MwRinkState.KIND_SPIKES:
+			var op := rink_object.motion.pixels()
 			if MwRinkSim.s16(op.x ^ px.x) >= 0 and MwRinkSim.s16(op.y ^ px.y) >= 0:
-				o.t24 &= 0x00FF
+				rink_object.t24 &= 0x00FF
 				break
 	sim.players.enter(p, 0)
 
 
-## `$15470`: momentum exchange between [param a] and [param b] (masses
+## `$15470`: momentum exchange between [param actor] and [param other_actor] (masses
 ## [param ma], [param mb]; restitution word [param rest]): the relative
 ## velocity's normal component (doubled, scaled by 1/2 + rest/65536) split
 ## by the masses. Positions are not separated; separating objects are left.
-func collide(a: MwRinkState.Actor, b: MwRinkState.Actor, ma: int, mb: int, rest: int) -> void:
-	var th := MwTrig.angle_of(rom, MwRinkSim.s16(MwRinkSim.asr(b.motion.pos[0] - a.motion.pos[0], 8)),
-			MwRinkSim.s16(MwRinkSim.asr(b.motion.pos[1] - a.motion.pos[1], 8)))
-	var rvx := MwRinkSim.s16(a.motion.vel[0] - b.motion.vel[0])
-	var rvy := MwRinkSim.s16(a.motion.vel[1] - b.motion.vel[1])
+func collide(actor: MwRinkState.Actor, other_actor: MwRinkState.Actor, ma: int, mb: int, rest: int) -> void:
+	var th := MwTrig.angle_of(rom, MwRinkSim.s16(MwRinkSim.asr(other_actor.motion.pos[0] - actor.motion.pos[0], 8)),
+			MwRinkSim.s16(MwRinkSim.asr(other_actor.motion.pos[1] - actor.motion.pos[1], 8)))
+	var rvx := MwRinkSim.s16(actor.motion.vel[0] - other_actor.motion.vel[0])
+	var rvy := MwRinkSim.s16(actor.motion.vel[1] - other_actor.motion.vel[1])
 	var d := (MwTrig.angle_of(rom, rvx, rvy) - th) & 0xFF
 	if d >= 0x40 and d < 0xC0:
 		return
@@ -201,15 +230,15 @@ func collide(a: MwRinkState.Actor, b: MwRinkState.Actor, ma: int, mb: int, rest:
 		if mb != 0:
 			d1 = (((d1 & 0xFFFF) * mb) / (ma + mb)) & 0xFFFF
 		var v := sim.polar(th, d1)
-		a.motion.vel[0] = MwRinkSim.s16(a.motion.vel[0] - v.x)
-		a.motion.vel[1] = MwRinkSim.s16(a.motion.vel[1] - v.y)
+		actor.motion.vel[0] = MwRinkSim.s16(actor.motion.vel[0] - v.x)
+		actor.motion.vel[1] = MwRinkSim.s16(actor.motion.vel[1] - v.y)
 	if mb != 0:
 		var d1 := j
 		if ma != 0:
 			d1 = (((d1 & 0xFFFF) * ma) / (ma + mb)) & 0xFFFF
 		var v := sim.polar(th, d1)
-		b.motion.vel[0] = MwRinkSim.s16(b.motion.vel[0] + v.x)
-		b.motion.vel[1] = MwRinkSim.s16(b.motion.vel[1] + v.y)
+		other_actor.motion.vel[0] = MwRinkSim.s16(other_actor.motion.vel[0] + v.x)
+		other_actor.motion.vel[1] = MwRinkSim.s16(other_actor.motion.vel[1] + v.y)
 
 
 # --- `$6FD6`: the puck ------------------------------------------------------------------------
@@ -278,7 +307,8 @@ func _body(p: MwRinkState.Player) -> void:
 		var owner := 1 if pk.flags & MwRinkState.Puck.BY_TEAM_B else 0
 		if owner != p.team:
 			pk.receiver = null
-			pk.flags &= ~(MwRinkState.Puck.EXPLODING | MwRinkState.Puck.PASS | MwRinkState.Puck.SHOT | MwRinkState.Puck.CARRIED)
+			pk.flags &= ~(MwRinkState.Puck.EXPLODING | MwRinkState.Puck.PASS | MwRinkState.Puck.SHOT
+					| MwRinkState.Puck.CARRIED)
 			pk.motion.vel[0] = 0
 			pk.motion.vel[1] = 0
 			sim.players.enter(p, 0x12)
@@ -303,26 +333,28 @@ func _body(p: MwRinkState.Player) -> void:
 func _objects(p: MwRinkState.Player) -> void:
 	if s.phase == 1 or s.phase == 9:
 		return
-	for o in s.objects:
-		if o.kind == 0:
+	for rink_object in s.objects:
+		if rink_object.kind == 0:
 			continue
-		var op := o.motion.pixels()
-		var ox := MwRinkSim.s16(op.x)
-		var oy := MwRinkSim.s16(op.y)
-		var oz := MwRinkSim.s16(op.z)
-		var d := MwRinkSim.s16((MwTrig.distance(MwRinkSim.s16(ox - _x), MwRinkSim.s16(oy - _y)) & 0xFFFF) - _r)
-		if o.kind == MwRinkState.KIND_CORPSE:
-			d = MwRinkSim.s16(d + 2)
-		if o.kind == MwRinkState.KIND_EXPLOSION:
-			d = MwRinkSim.s16(d - 0xA)
-		d = MwRinkSim.s16(d - 0xA)
+		# (plan 42: the words inline - ((v + $8000) & $FFFF) - $8000 is MwRinkSim.s16(v))
+		var op := rink_object.motion.pos
+		var ox := ((op[0] >> 8) + 0x8000 & 0xFFFF) - 0x8000
+		var oy := ((op[1] >> 8) + 0x8000 & 0xFFFF) - 0x8000
+		var oz := ((op[2] >> 8) + 0x8000 & 0xFFFF) - 0x8000
+		var d := ((MwRinkSim.dist16(((ox - _x + 0x8000) & 0xFFFF) - 0x8000, ((oy - _y + 0x8000) & 0xFFFF) - 0x8000)
+				- _r + 0x8000) & 0xFFFF) - 0x8000
+		if rink_object.kind == MwRinkState.KIND_CORPSE:
+			d = ((d + 2 + 0x8000) & 0xFFFF) - 0x8000
+		if rink_object.kind == MwRinkState.KIND_EXPLOSION:
+			d = ((d - 0xA + 0x8000) & 0xFFFF) - 0x8000
+		d = ((d - 0xA + 0x8000) & 0xFFFF) - 0x8000
 		if d >= 0:
 			continue
-		_object(p, o, ox, oy, oz)
+		_object(p, rink_object, ox, oy, oz)
 
 
-func _object(p: MwRinkState.Player, o: MwRinkState.RinkObject, ox: int, oy: int, oz: int) -> void:
-	match o.kind:
+func _object(p: MwRinkState.Player, rink_object: MwRinkState.RinkObject, ox: int, oy: int, oz: int) -> void:
+	match rink_object.kind:
 		1, 11:
 			# shark / corpse: trips a skater on the ice
 			if _z < 8 and p.position != 5 and p.state == 0:
@@ -342,45 +374,45 @@ func _object(p: MwRinkState.Player, o: MwRinkState.RinkObject, ox: int, oy: int,
 			if _z < 0x1E:
 				_burn(p)
 		6:
-			_spikes(p, o)
+			_spikes(p, rink_object)
 		7, 12, 13, 14:
 			if not _reach(oz):
 				return
-			collide(o, p, 1, 0xA, 0)
-			sim.positional(0, o)                  # `$7418`, A5 the object
+			collide(rink_object, p, 1, 0xA, 0)
+			sim.positional(0, rink_object)                  # `$7418`, A5 the object
 		15:
 			if not _reach(oz):
 				return
 			s.bribe = MwRinkRam.TEAMS[p.team] & 0xFFFF
-			_picked(o)
+			_picked(rink_object)
 		16:
 			if not _reach(oz):
 				return
 			# `$742C`: $80 into the high word, the old health's high word into the low one
 			var team := sim.team_of(p)
 			team.health[p.slot] = 0x800000 | ((team.health[p.slot] >> 16) & 0xFFFF)
-			_picked(o)
+			_picked(rink_object)
 		17, 18:
 			if not _reach(oz):
 				return
-			if o.kind == 17:
+			if rink_object.kind == 17:
 				p.flags = (p.flags & ~MwRinkState.Player.BLACK_BONE) | MwRinkState.Player.WHITE_BONE
 				sim.tick_at(4)
 			else:
 				p.flags = (p.flags & ~MwRinkState.Player.WHITE_BONE) | MwRinkState.Player.BLACK_BONE
 				sim.tick_at(5)
 			p.bone_tick = s.tick
-			_picked(o)
+			_picked(rink_object)
 		19, 20, 21, 22, 23:
 			if not _reach(oz):
 				return
 			if p.flags & MwRinkState.Player.ENFORCER:
 				return
-			p.weapon = o.kind - 19
+			p.weapon = rink_object.kind - 19
 			if p.weapon == 3:
 				p.charges = 5
-			sim.positional(0x27, o)               # `$74D4`
-			o.kind = 0
+			sim.positional(0x27, rink_object)               # `$74D4`
+			rink_object.kind = 0
 
 
 ## `$744C`: a pick-up needs the object 0-39 px above the player's feet.
@@ -389,9 +421,9 @@ func _reach(oz: int) -> bool:
 	return d >= 0 and d < 0x28
 
 
-func _picked(o: MwRinkState.RinkObject) -> void:
-	sim.positional(0, o)                          # `$7418`
-	o.kind = 0
+func _picked(rink_object: MwRinkState.RinkObject) -> void:
+	sim.positional(0, rink_object)                          # `$7418`
+	rink_object.kind = 0
 
 
 ## `$7362`: fire / explosion damage, (4 + DI) * e << 12 per pass.
@@ -403,18 +435,18 @@ func _burn(p: MwRinkState.Player) -> void:
 
 
 ## `$7382`: impaled on a free spike at speed, while the team has 3+ skaters.
-func _spikes(p: MwRinkState.Player, o: MwRinkState.RinkObject) -> void:
+func _spikes(p: MwRinkState.Player, rink_object: MwRinkState.RinkObject) -> void:
 	if _skaters(sim.team_of(p)) < 3:
 		return
-	if (o.t24 >> 8) & 0xFF != 0:
+	if (rink_object.t24 >> 8) & 0xFF != 0:
 		return
 	if MwSimPlayers.own_motion(p).x & 0xFFFF <= 0x100:
 		return
 	if p.state == 0x11:
 		return
 	sim.players.enter(p, 0x11)
-	o.t24 = (o.t24 & 0xFF) | ((((o.t24 >> 8) + 1) & 0xFF) << 8)
-	var op := o.motion.pixels()
+	rink_object.t24 = (rink_object.t24 & 0xFF) | ((((rink_object.t24 >> 8) + 1) & 0xFF) << 8)
+	var op := rink_object.motion.pixels()
 	p.motion.init(op.x, op.y, op.z)
 	var a := 0 if MwRinkSim.s16(op.x) < 0 else 0x80
 	p.angle = a
@@ -495,8 +527,8 @@ func _battle_net(p: MwRinkState.Player) -> void:
 func _hazards(p: MwRinkState.Player) -> void:
 	if p.motion.pos[2] != 0:
 		return
-	for h in s.hazards:
-		if h.kind == 0:
+	for hazard in s.hazards:
+		if hazard.kind == 0:
 			continue
 		if p.flags & MwRinkState.Player.HUMAN:
 			# 8 ticks ahead, the D-pad released: jump it
@@ -504,7 +536,7 @@ func _hazards(p: MwRinkState.Player) -> void:
 			var sy := _y
 			_x = MwRinkSim.s16(MwRinkSim.asr(p.motion.pos[0] + p.motion.vel[0] * 8, 8))
 			_y = MwRinkSim.s16(MwRinkSim.asr(p.motion.pos[1] + p.motion.vel[1] * 8, 8))
-			var ahead := _inside(h) != 0
+			var ahead := _inside(hazard) != 0
 			var jump := ahead and (sim.human.pad_word(p) & 0xF00) == 0
 			if jump:
 				sim.players.enter(p, 0xC)
@@ -512,17 +544,17 @@ func _hazards(p: MwRinkState.Player) -> void:
 			_y = sy
 			if jump:
 				continue
-		var k := _inside(h)
+		var k := _inside(hazard)
 		if k == 0:
 			continue
 		match k:
 			1:
-				h.kind = 2
-				_fall(p, h)
+				hazard.kind = 2
+				_fall(p, hazard)
 			2, 3:
 				var v := sim.velocity(p)
 				if v.x & 0xFFFF >= 0x100:
-					_fall(p, h)
+					_fall(p, hazard)
 				else:
 					_bounce(p, v)
 			4:
@@ -532,27 +564,27 @@ func _hazards(p: MwRinkState.Player) -> void:
 					sim.positional(0x2B, p)       # `$7800`
 					s.camera.shake = 0x1E
 					s.camera.amp = 8
-					h.kind = 2
+					hazard.kind = 2
 				else:
 					_bounce(p, v)
 
 
-## `$7752`: the frame's point inside hazard [param h]'s box grown by the
+## `$7752`: the frame's point inside hazard [param hazard]'s box grown by the
 ## radius (half sizes from `$1C88E` minus 15): its kind, else 0.
-func _inside(h: MwRinkState.Hazard) -> int:
-	var w := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (h.kind - 1) + 4) - 0xF)
-	var hh := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (h.kind - 1) + 6) - 0xF)
-	if MwRinkSim.s16(absi(MwRinkSim.s16(h.x - _x)) - _r - w) >= 0:
+func _inside(hazard: MwRinkState.Hazard) -> int:
+	var w := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (hazard.kind - 1) + 4) - 0xF)
+	var hh := MwRinkSim.s16(MwGfx.u16(rom, HAZARD_SIZES + 8 * (hazard.kind - 1) + 6) - 0xF)
+	if MwRinkSim.s16(absi(MwRinkSim.s16(hazard.x - _x)) - _r - w) >= 0:
 		return 0
-	if MwRinkSim.s16(absi(MwRinkSim.s16(h.y - _y)) - _r - hh) >= 0:
+	if MwRinkSim.s16(absi(MwRinkSim.s16(hazard.y - _y)) - _r - hh) >= 0:
 		return 0
-	return h.kind
+	return hazard.kind
 
 
 ## `$77AC`: into the hole at its centre (state 19).
-func _fall(p: MwRinkState.Player, h: MwRinkState.Hazard) -> void:
+func _fall(p: MwRinkState.Player, hazard: MwRinkState.Hazard) -> void:
 	if p.state != 0x13:
-		p.motion.init(h.x, h.y, 0)
+		p.motion.init(hazard.x, hazard.y, 0)
 		sim.players.enter(p, 0x13)
 
 
@@ -572,10 +604,11 @@ func _boards(p: MwRinkState.Player) -> void:
 		return
 	var snd := 0
 	var d3 := _r - 3
-	var px := p.motion.pixels()
-	var x := MwRinkSim.s16(absi(MwRinkSim.s16(px.x)) + d3)
-	var y := MwRinkSim.s16(absi(MwRinkSim.s16(px.y)) + d3)
-	x = MwRinkSim.s16(x - BOARD_X)
+	var pos := p.motion.pos
+	# (plan 42: the words inline - ((v + $8000) & $FFFF) - $8000 is MwRinkSim.s16(v))
+	var x := ((absi((((pos[0] >> 8) + 0x8000) & 0xFFFF) - 0x8000) + d3 + 0x8000) & 0xFFFF) - 0x8000
+	var y := ((absi((((pos[1] >> 8) + 0x8000) & 0xFFFF) - 0x8000) + d3 + 0x8000) & 0xFFFF) - 0x8000
+	x = ((x - BOARD_X + 0x8000) & 0xFFFF) - 0x8000
 	if x >= 0:
 		x += 1
 		if p.motion.pos[0] >= 0:
@@ -584,7 +617,7 @@ func _boards(p: MwRinkState.Player) -> void:
 		if absi(p.motion.vel[0]) >= 0xC0:
 			snd = 0x23
 		p.motion.vel[0] = 0
-	y = MwRinkSim.s16(y - BOARD_Y)
+	y = ((y - BOARD_Y + 0x8000) & 0xFFFF) - 0x8000
 	if y >= 0:
 		y += 1
 		if p.motion.pos[1] >= 0:
@@ -601,22 +634,23 @@ func _boards(p: MwRinkState.Player) -> void:
 ## `$8066`: the rounded corners (and the straight boards' ends) as a wall
 ## point 32 px out along the table's normal, met with `$15470` (velocity
 ## only). [param d3] = the object's margin.
-func corner(o: MwRinkState.Actor, d3: int, rest: int) -> void:
-	var px := o.motion.pixels()
-	var x := MwRinkSim.s16(absi(MwRinkSim.s16(px.x)) + d3)
-	var y0 := MwRinkSim.s16(px.y)
+func corner(actor: MwRinkState.Actor, d3: int, rest: int) -> void:
+	var pos := actor.motion.pos
+	# (plan 42: the words inline - ((v + $8000) & $FFFF) - $8000 is MwRinkSim.s16(v))
+	var x := ((absi((((pos[0] >> 8) + 0x8000) & 0xFFFF) - 0x8000) + d3 + 0x8000) & 0xFFFF) - 0x8000
+	var y0 := (((pos[1] >> 8) + 0x8000) & 0xFFFF) - 0x8000
 	var y: int
 	var lo: int
 	var tab: int
 	if y0 >= 0:
-		y = MwRinkSim.s16(y0 + d3)
-		lo = 0x144
+		y = ((y0 + d3 + 0x8000) & 0xFFFF) - 0x8000
+		lo = CORNER_BOTTOM_FROM
 		tab = CORNER_BOTTOM
 	else:
-		y = MwRinkSim.s16(-y0 + d3)
-		lo = 0x12A
+		y = ((-y0 + d3 + 0x8000) & 0xFFFF) - 0x8000
+		lo = CORNER_TOP_FROM
 		tab = CORNER_TOP
-	if x < 0x6C:
+	if x < CORNER_MIN_X:
 		if y < BOARD_Y:
 			return
 		y += 1
@@ -635,19 +669,19 @@ func corner(o: MwRinkState.Actor, d3: int, rest: int) -> void:
 		var v := sim.polar(a, 0x20)
 		x = MwRinkSim.s16(x + v.x)
 		y = MwRinkSim.s16(y + v.y)
-	if o == s.puck and MwRinkSim.s16(o.motion.pos[2] >> 16) >= 0x2000:
+	if actor == s.puck and MwRinkSim.s16(actor.motion.pos[2] >> 16) >= 0x2000:
 		s.subphase = 0
 		s.phase = 0xE
 		return
 	x = MwRinkSim.s16(x - d3)
 	y = MwRinkSim.s16(y - d3)
-	if o.motion.pos[0] < 0:
+	if actor.motion.pos[0] < 0:
 		x = -x
-	if o.motion.pos[1] < 0:
+	if actor.motion.pos[1] < 0:
 		y = -y
 	var wall := MwRinkState.Actor.new()
 	wall.motion.init(x, y, 0)
-	collide(o, wall, 1, 0, rest)
+	collide(actor, wall, 1, 0, rest)
 
 
 # --- `$6B5A`: a check / slash lands -----------------------------------------------------------------
@@ -658,10 +692,10 @@ func corner(o: MwRinkState.Actor, d3: int, rest: int) -> void:
 ## else x3/8); still standing -> knocked down (state 14, white bone: 15)
 ## and a penalty roll. Then the next substate.
 func check_hit(p: MwRinkState.Player) -> void:
-	var v := p.victim as MwRinkState.Player
-	if v != null and v.state < 0xF and MwSimPlayers.to_opponent(p, v).x <= 0x28:
+	var victim := p.victim as MwRinkState.Player
+	if victim != null and victim.state < 0xF and MwSimPlayers.to_opponent(p, victim).x <= 0x28:
 		var team := sim.team_of(p)
-		var d := (sim.avg(team, rom[p.record + 0xD] & 0xF) + rom[p.record + 6] - rom[v.record + 6]) & 0xFF
+		var d := (sim.avg(team, rom[p.record + 0xD] & 0xF) + rom[p.record + 6] - rom[victim.record + 6]) & 0xFF
 		d = MwRinkSim.s8(d)
 		if d >= 0:
 			d = d * MwGfx.u16(rom, MwSimPlayers.CHECK_DAMAGE + 2 * s.death_index) << 2
@@ -674,17 +708,17 @@ func check_hit(p: MwRinkState.Player) -> void:
 				team.add_stat(0x490 if d >= 0x3D70A else 0x492, 1)
 			else:
 				d = (((d >> 1) + d) & 0xFFFFFFFF) >> 2
-			sim.players.damage(v, d)
-			if v.state == 0:
-				v.attacker = p.index
-				sim.players.enter(v, 0xF if p.flags & MwRinkState.Player.WHITE_BONE else 0xE)
+			sim.players.damage(victim, d)
+			if victim.state == 0:
+				victim.attacker = p.index
+				sim.players.enter(victim, 0xF if p.flags & MwRinkState.Player.WHITE_BONE else 0xE)
 				var r := sim.rng_next() & 0xFFFF
 				var code := -3
 				var limit := 0xFFF
-				if v.position == 5:
+				if victim.position == 5:
 					code = -2
 					limit = 0x1999
-				elif v.state == 0xA:
+				elif victim.state == 0xA:
 					code = -6
 					limit = 0x1FFF
 				if r <= limit:

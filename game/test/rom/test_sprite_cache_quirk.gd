@@ -33,8 +33,8 @@ func test_the_broken_pieces_keep_the_slots_tiles_then_others() -> void:
 	for q in MwSpriteCacheQuirk.PIECES:
 		var size: int = q.y
 		var n := (((size >> 2) & 3) + 1) * ((size & 3) + 1)
-		var e: Array = MwSpriteCacheQuirk.PIECES[q]
-		assert_eq(int(e[0]) + (e[1] as Array).size(), n, "every tile of $%04X's piece accounted for" % q.x)
+		var tiles: Array = MwSpriteCacheQuirk.PIECES[q]
+		assert_eq(int(tiles[0]) + (tiles[1] as Array).size(), n, "every tile of $%04X's piece accounted for" % q.x)
 
 
 ## The table's pieces are what the ROM's animations draw: the smaller piece
@@ -91,8 +91,8 @@ func _frames(anim: int) -> Array:
 	var end := anim + (w >> 2)
 	var v := anim + 8
 	while v < end:
-		var lst := anim + (MwGfx.u16(rom, v) >> 2)
+		var list_at := anim + (MwGfx.u16(rom, v) >> 2)
 		for i in count:
-			out.append(frames + MwGfx.u16(rom, lst + 2 * i))
+			out.append(frames + MwGfx.u16(rom, list_at + 2 * i))
 		v += 2
 	return out

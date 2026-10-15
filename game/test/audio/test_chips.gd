@@ -130,10 +130,10 @@ static func _square(n: int) -> PackedByteArray:
 
 
 static func _peak(frames: PackedVector2Array) -> float:
-	var p := 0.0
+	var peak := 0.0
 	for f in frames:
-		p = maxf(p, absf(f.x))
-	return p
+		peak = maxf(peak, absf(f.x))
+	return peak
 
 
 func test_pcm_channel_plays_and_ends() -> void:

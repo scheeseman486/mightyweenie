@@ -27,19 +27,61 @@ var death_index := 0       ## $FFB0E7
 const FIELDS := ["team_a", "team_b", "pads", "play_mode", "period_index", "period_minutes",
 		"stadium", "penalties", "reserves", "death_index"]
 
+## Plan 34 (the port's, not one of the 10 bytes; plan 40, S13: filled at
+## the rink's entry from the players, MwSelection.for_the_rink): an extended set-up's
+## players - each team's match pads in number order (player n is pad n - 1:
+## [method MwHumans.match_pads]), set with [member pads] by the controller
+## selection ([method MwHumans.apply_to]). Empty for the set-ups the
+## original could have had, whose players are the pad mode [member pads];
+## in an extended one [member pads] is the nearest original mode.
+var extended: Array = []
+## Plan 34 (the port's; plan 40, S13: filled at the rink's entry,
+## MwSelection.for_the_rink): the line-ups chosen before the match (character
+## selection, the line-up panels; [method MwSelection.finish]) - per team
+## six roster slots by position, or empty for the original's starters -
+## made at the rink's entry ([method MwLineup.apply]). Empty: the match is
+## the original's.
+var lineups: Array = []
+## Plan 44 (the port's; filled at a new match's rink entry from
+## MwSettings.extended_play): an EXTENDED match - the players humans drive
+## count as on the original's screen wherever they are
+## (MwRinkState.extended_play). False: the original's.
+var extended_play := false
+## Plan 44 (the port's; with [member extended_play]): EXTENDED PENALTIES -
+## the referee stops play for an offender anywhere on the rink
+## (MwRinkState.extended_penalties). False: the original's.
+var extended_penalties := false
+## Plan 44 (the port's; with [member extended_play]): EXTENDED CPU - the
+## CPU's players count as on the original's screen wherever they are too
+## (MwRinkState.extended_cpu). False: the original's.
+var extended_cpu := false
+
+
+## Plan 44: an EXTENDED match's rules (MwSettings.extended_play, its
+## EXTENDED PENALTIES and EXTENDED CPU) into this setup - a new match's rink entry and its
+## rehearsal (MwRink, MwMatchRehearsal).
+func take_extended_rules() -> void:
+	extended_play = MwSettings.extended_play()
+	extended_penalties = extended_play and MwSettings.extended_penalties
+	extended_cpu = extended_play and MwSettings.extended_cpu
+
 
 ## The 10 setup bytes at [param address] in the ROM.
 static func from_rom(rom: PackedByteArray, address: int) -> MwMatchSetup:
 	return from_bytes(rom.slice(address, address + FIELDS.size()))
 
 
+## A set-up from the 10 bytes [param b], in [constant FIELDS]' order (the
+## original's); the port's fields at their defaults.
 static func from_bytes(b: PackedByteArray) -> MwMatchSetup:
-	var s := MwMatchSetup.new()
+	var su := MwMatchSetup.new()
 	for i in FIELDS.size():
-		s.set(FIELDS[i], b[i])
-	return s
+		su.set(FIELDS[i], b[i])
+	return su
 
 
+## The 10 set-up bytes in the original's order ([constant FIELDS]); the port's
+## fields are not in them.
 func to_bytes() -> PackedByteArray:
 	var b := PackedByteArray()
 	for f in FIELDS:
@@ -47,9 +89,19 @@ func to_bytes() -> PackedByteArray:
 	return b
 
 
+## A copy: the 10 bytes and the port's fields (the extended players and the
+## line-ups deep-copied).
 func copy() -> MwMatchSetup:
-	return from_bytes(to_bytes())
+	var su := from_bytes(to_bytes())
+	su.extended = extended.duplicate(true)
+	su.lineups = lineups.duplicate(true)
+	su.extended_play = extended_play
+	su.extended_penalties = extended_penalties
+	su.extended_cpu = extended_cpu
+	return su
 
 
+## Whether [param other] holds the same 10 bytes (the port's fields are not
+## compared; null: false).
 func equals(other: MwMatchSetup) -> bool:
 	return other != null and to_bytes() == other.to_bytes()

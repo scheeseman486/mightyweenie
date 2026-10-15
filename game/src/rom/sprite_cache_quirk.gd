@@ -34,7 +34,8 @@ extends RefCounted
 const PIECES := {
 	Vector2i(0xDF29, 0xD): [4, [0xDBA3, 0xDBA4, 0xDBA5, 0xDBA6]],
 	Vector2i(0x89AF, 0xC): [1, [0, 0x8927, 0x8928]],
-	Vector2i(0x9EDD, 0xE): [1, [0x9F0E, 0x9F0F, 0x9EAD, 0x9EAE, 0x9EAF, 0x9EB0, 0x9EB1, 0x9EB2, 0x9EB3, 0x9EB4, 0x9EB5]],
+	Vector2i(0x9EDD, 0xE): [1, [0x9F0E, 0x9F0F, 0x9EAD, 0x9EAE, 0x9EAF, 0x9EB0, 0x9EB1, 0x9EB2, 0x9EB3, 0x9EB4,
+	0x9EB5]],
 }
 
 
@@ -42,11 +43,11 @@ const PIECES := {
 ## starting at ROM tile [param first] with size byte [param size] shows: its
 ## own (first + n) unless the cache bug replaces it; 0 for none.
 static func tile(first: int, size: int, n: int) -> int:
-	var q: Variant = PIECES.get(Vector2i(first, size & 0xF))
-	if q == null:
+	var quirk: Variant = PIECES.get(Vector2i(first, size & 0xF))
+	if quirk == null:
 		return first + n
-	var cached: int = q[0]
+	var cached: int = quirk[0]
 	if n < cached:
 		return first + n
-	var extra: Array = q[1]
+	var extra: Array = quirk[1]
 	return int(extra[n - cached]) if n - cached < extra.size() else 0

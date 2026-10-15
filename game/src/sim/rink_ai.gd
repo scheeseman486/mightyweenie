@@ -272,12 +272,12 @@ func _lane(tx: int, ty: int, opps: MwRinkState.Team) -> Vector4i:
 	var ad := _dist_angle(MwRinkSim.s16(tx - at.x), MwRinkSim.s16(ty - at.y))
 	var n := 0
 	var g := 0
-	for o in opps.players:
-		if o.present and o.puck_dist <= ad.x:
-			var d := MwRinkSim.s16(((o.puck_angle ^ 0x80) & 0xFF) - ad.y)
+	for player in opps.players:
+		if player.present and player.puck_dist <= ad.x:
+			var d := MwRinkSim.s16(((player.puck_angle ^ 0x80) & 0xFF) - ad.y)
 			if absi(d) < 0x10:
 				n += 1
-				if o.position == 5:
+				if player.position == 5:
 					g = 1
 	return Vector4i(ad.y, ad.x, n, g)
 
@@ -336,12 +336,12 @@ func _special_roll() -> void:
 ## uses (zero in every recording) for slots 0-1, then the info plates'
 ## tiles (`$FFBE80`: plate 0 bytes $29, $9F, plate 1 bytes $15, $8B).
 func _gate_byte() -> int:
-	var b := s.teams[1]
+	var second_team := s.teams[1]
 	if me.team == 0:
 		if me.index == 0:
-			var pad: int = b.pads[1]
+			var pad: int = second_team.pads[1]
 			return pad & 0xFF
-		return b.players[me.index - 1].substate
+		return second_team.players[me.index - 1].substate
 	var a := 0xBDBD + 0x76 * me.index - 0xBE80
 	if a < 0:
 		return 0
@@ -413,16 +413,16 @@ func _goon() -> void:
 		if not (rel < 0x40 or rel >= 0x80):
 			continue
 		var score := (sim.rng_range(0, 10) & 0xFFFF) * ((10 - weight) & 0xFFFF) & 0xFFFF   # $446C
-		var o := other.players[k]
-		if not o.present:
+		var player := other.players[k]
+		if not player.present:
 			continue
 		# quirk 4: move.b into a register holding k * $76 keeps its high byte
-		var d1 := ((k * 0x76) & 0xFF00) | (rom[o.record + 8] & 0xF)
+		var d1 := ((k * 0x76) & 0xFF00) | (rom[player.record + 8] & 0xF)
 		score = (score + d1 * weight) & 0xFFFF
 		if score <= best:
 			continue
 		best = score
-		victim = o
+		victim = player
 	if victim != null:
 		me.victim = victim
 		me.flags2 |= 4
@@ -437,18 +437,18 @@ func _hunt() -> void:
 	if _zone() <= 1:
 		_unhunt()
 		return
-	var v := me.victim as MwRinkState.Player
-	if v == null or not v.present:
+	var player := me.victim as MwRinkState.Player
+	if player == null or not player.present:
 		_unhunt()
 		return
-	_target_at(_px(v))
-	var d := me.opp_dist[v.index]
+	_target_at(_px(player))
+	var d := me.opp_dist[player.index]
 	if d > 0xC8 or me.weapon < 0:
 		_unhunt()
 		return
 	if d > MwGfx.u16(rom, MwSimPlayers.WEAPON_REACH + 2 * me.weapon):
 		return
-	var rel := (me.opp_angle[v.index] - me.angle) & 0xFF
+	var rel := (me.opp_angle[player.index] - me.angle) & 0xFF
 	if rel < 0x40 or rel >= 0x80:
 		sim.players.enter(me, 4)
 
@@ -467,14 +467,14 @@ func _unhunt() -> void:
 ## with the puck in the own end, halfway to 189.
 func _centre() -> void:
 	if _own_puck():
-		var z := _zone()
+		var zone := _zone()
 		var c := MwRinkSim.s16(me.ai_zone)
-		if c >= 0 and c == z:
+		if c >= 0 and c == zone:
 			if (sim.rng_next() & 0xFFFF) >= 0x600:                     # $AA9A
 				_target(me.ai_x, me.ai_y)
 				return
-		me.ai_zone = z & 0xFFFF
-		var b := CENTRE_BOXES + 8 * z
+		me.ai_zone = zone & 0xFFFF
+		var b := CENTRE_BOXES + 8 * zone
 		var y := sim.rng_range(MwGfx.s16(rom, b + 4), MwGfx.s16(rom, b + 6))   # $AABE
 		var x := sim.rng_range(MwGfx.s16(rom, b), MwGfx.s16(rom, b + 2))       # $AACA
 		me.ai_x = x
@@ -483,11 +483,11 @@ func _centre() -> void:
 		return
 	var z := _zone()
 	var d1 := 0xA2
-	var pk := _px(s.puck)
+	var puck_at := _px(s.puck)
 	if z <= 1:
-		d1 = MwRinkSim.asr(MwRinkSim.s16(_m(pk.y) + 0xBD), 1)
+		d1 = MwRinkSim.asr(MwRinkSim.s16(_m(puck_at.y) + 0xBD), 1)
 	me.ai_zone = 0xFFFF
-	_target(MwRinkSim.asr(pk.x, 1), _m(d1))
+	_target(MwRinkSim.asr(puck_at.x, 1), _m(d1))
 
 
 ## `$3ED0`: the wings (roles 1 LW, 2 RW; everyone in phase 14). With the
@@ -498,26 +498,26 @@ func _centre() -> void:
 ## line in the own end.
 func _wing() -> void:
 	if _own_puck():
-		var z := _zone(6)
+		var zone := _zone(6)
 		var c := MwRinkSim.s16(me.ai_zone)
-		if c >= 0 and c == z:
+		if c >= 0 and c == zone:
 			if (sim.rng_next() & 0xFFFF) >= 0x600:                     # $3F06
 				_target(me.ai_x, me.ai_y)
 				return
-		me.ai_zone = z & 0xFFFF
-		var b := WING_BOXES + 8 * z
-		var y := sim.rng_range(MwGfx.s16(rom, b + 4), MwGfx.s16(rom, b + 6))   # $3F2A
-		var x := sim.rng_range(MwGfx.s16(rom, b), MwGfx.s16(rom, b + 2))       # $3F36
+		me.ai_zone = zone & 0xFFFF
+		var b := WING_BOXES + 8 * zone
+		var drawn_y := sim.rng_range(MwGfx.s16(rom, b + 4), MwGfx.s16(rom, b + 6))   # $3F2A
+		var drawn_x := sim.rng_range(MwGfx.s16(rom, b), MwGfx.s16(rom, b + 2))       # $3F36
 		if me.role == 1:
-			x = MwRinkSim.s16(-x)
-		me.ai_x = _m(x)
-		me.ai_y = _m(y)
+			drawn_x = MwRinkSim.s16(-drawn_x)
+		me.ai_x = _m(drawn_x)
+		me.ai_y = _m(drawn_y)
 		_target(me.ai_x, me.ai_y)
 		return
-	var pk := _px(s.puck)
-	var x := pk.x
-	var y := pk.y
-	var d := _m(pk.x)
+	var puck_at := _px(s.puck)
+	var x := puck_at.x
+	var y := puck_at.y
+	var d := _m(puck_at.x)
 	if me.role == 1:
 		d = MwRinkSim.s16(-d)
 	if d < 0:
@@ -538,41 +538,41 @@ func _defence() -> void:
 	var own := _own_puck()
 	var z := _zone() if own else 0
 	if own and z < 3:
-		var c := s.puck.carrier
-		if c.position == 5:
+		var carrier := s.puck.carrier
+		if carrier.position == 5:
 			if MwRinkSim.s16(me.ai_zone) >= 0:
 				if (sim.rng_next() & 0xFFFF) >= 0x600:                 # $156A
 					_target(me.ai_x, me.ai_y)
 					return
-			var i := MwRinkSim.s8((rom[c.record + 7] >> 4) ^ ((me.role - 3) & 0xFF))
+			var i := MwRinkSim.s8((rom[carrier.record + 7] >> 4) ^ ((me.role - 3) & 0xFF))
 			var b := D_GOALIE_BOXES + 8 * i
-			var y := sim.rng_range(MwGfx.s16(rom, b + 4), MwGfx.s16(rom, b + 6))   # $159A
-			var x := sim.rng_range(MwGfx.s16(rom, b), MwGfx.s16(rom, b + 2))       # $15A6
+			var drawn_y := sim.rng_range(MwGfx.s16(rom, b + 4), MwGfx.s16(rom, b + 6))   # $159A
+			var drawn_x := sim.rng_range(MwGfx.s16(rom, b), MwGfx.s16(rom, b + 2))       # $15A6
 			if me.role == 3:
-				x = MwRinkSim.s16(-x)
-			me.ai_x = _m(x)
-			me.ai_y = _m(y)
+				drawn_x = MwRinkSim.s16(-drawn_x)
+			me.ai_x = _m(drawn_x)
+			me.ai_y = _m(drawn_y)
 			me.ai_zone = 0
 			_target(me.ai_x, me.ai_y)
 			return
 		s.puck.owner_log |= 0xFFFF         # puck +$2C.w (sic)
-		var pk := _px(s.puck)
-		var x := pk.x
-		var d := _m(pk.x)
+		var puck_at := _px(s.puck)
+		var across_x := puck_at.x
+		var side_x := _m(puck_at.x)
 		if me.role == 3:
-			d = MwRinkSim.s16(-d)
-		if d < 0:
-			x = MwRinkSim.asr(MwRinkSim.s16(-x), 1)
+			side_x = MwRinkSim.s16(-side_x)
+		if side_x < 0:
+			across_x = MwRinkSim.asr(MwRinkSim.s16(-across_x), 1)
 		z = _zone()
 		var y := sim.rng_range(MwGfx.s16(rom, D_RANGES + 4 * z), MwGfx.s16(rom, D_RANGES + 4 * z + 2))   # $1610
-		_target(x, _m(y))
+		_target(across_x, _m(y))
 		return
 	me.ai_zone = 0xFFFF
 	var d3 := -0x174
-	for o in other.players:
-		if o.present:
-			var y := _px(o).y
-			var vy := MwRinkSim.s16(o.motion.vel[1])
+	for player in other.players:
+		if player.present:
+			var y := _px(player).y
+			var vy := MwRinkSim.s16(player.motion.vel[1])
 			if MwRinkSim.s16(d4 ^ vy) >= 0:    # skating towards our goal: + vy / 2 (1/256 px units)
 				y = MwRinkSim.s16(y + MwRinkSim.asr(vy, 1))
 			y = _m(y)
@@ -604,9 +604,9 @@ func _check() -> bool:
 
 
 ## `$453E` (phases 11, 12): a punch (state 3, 36 px) or a weapon swing
-## (state 4, `$1C15A` reach) at [param o] at angle [param a], distance
+## (state 4, `$1C15A` reach) at [param actor] at angle [param a], distance
 ## [param d] when within reach and in the cone (rel < $40 or >= $80).
-func _attack(o: MwRinkState.Actor, a: int, d: int) -> void:
+func _attack(actor: MwRinkState.Actor, a: int, d: int) -> void:
 	var st := 4
 	var reach := 0x24
 	if me.weapon < 0:
@@ -617,7 +617,7 @@ func _attack(o: MwRinkState.Actor, a: int, d: int) -> void:
 		return
 	var rel := (a - me.angle) & 0xFF
 	if rel < 0x40 or rel >= 0x80:
-		me.victim = o
+		me.victim = actor
 		sim.players.enter(me, st)
 
 
@@ -660,9 +660,9 @@ func _coast() -> void:
 func _fight() -> void:
 	var f := Vector2i.ZERO
 	var found := false
-	for o in other.players:
-		if o.present and o.flags & MwRinkState.Player.FIGHTING:
-			f = _px(o)
+	for player in other.players:
+		if player.present and player.flags & MwRinkState.Player.FIGHTING:
+			f = _px(player)
 			found = true
 			break
 	if not found:
@@ -680,10 +680,11 @@ func _fight() -> void:
 ## What `$3D3C` reads as the position of the player slot after the last
 ## (team +$330): x from +$330..$333, y from +$338..$33B (+$338, +$339 and the
 ## high word of the first arrow's animation address).
-static func _slot6(t: MwRinkState.Team) -> Vector2i:
-	var x := (t.x330[0] << 24) | (t.x330[1] << 16) | (t.x330[2] << 8) | t.x330[3]
-	var y := (t.x330[8] << 24) | (t.x330[9] << 16) | ((t.arrows[0].address >> 16) & 0xFFFF)
-	return Vector2i(MwRinkSim.s16(MwRinkSim.asr(_s32(x), 8)), MwRinkSim.s16(MwRinkSim.asr(_s32(y), 8)))
+static func _slot6(opponents: MwRinkState.Team) -> Vector2i:
+	var x := (opponents.x330[0] << 24) | (opponents.x330[1] << 16) | (opponents.x330[2] << 8) | opponents.x330[3]
+	var y := (opponents.x330[8] << 24) | (opponents.x330[9] << 16) | ((opponents.arrows[0].address >> 16) & 0xFFFF)
+	return Vector2i(MwRinkSim.s16(MwRinkSim.asr(MwRinkSim.s32(x), 8)),
+			MwRinkSim.s16(MwRinkSim.asr(MwRinkSim.s32(y), 8)))
 
 
 ## `$3E22` (phase 11, Waste the Goalie): the side playing it (team +5
@@ -700,12 +701,12 @@ func _waste_goalie() -> void:
 	if not on:
 		_coast()
 		return
-	var g := other.players[5]
-	if not g.present:
+	var player := other.players[5]
+	if not player.present:
 		_coast()
 		return
-	_target_at(_px(g))
-	_attack(g, me.opp_angle[g.index], me.opp_dist[g.index])
+	_target_at(_px(player))
+	_attack(player, me.opp_angle[player.index], me.opp_dist[player.index])
 
 
 ## `$3DE4` (phase 12, Waste the Ref): the side playing it (team +5 bit 0)
@@ -742,14 +743,14 @@ func avoid() -> void:
 	_ta = t.y
 	_lim = mini(t.x, 0x64)
 	var hit := false
-	for h in s.hazards:
-		if h.kind == 0:
+	for hazard in s.hazards:
+		if hazard.kind == 0:
 			continue
-		var b := HAZARD_BOXES + 8 * (h.kind - 1)
+		var b := HAZARD_BOXES + 8 * (hazard.kind - 1)
 		var w := MwGfx.s16(rom, b + 4)
 		var hh := MwGfx.s16(rom, b + 6)
-		var hx := MwRinkSim.s16(h.x)
-		var hy := MwRinkSim.s16(h.y)
+		var hx := MwRinkSim.s16(hazard.x)
+		var hy := MwRinkSim.s16(hazard.y)
 		if _on_path_at(hx - w, hy) or _on_path_at(hx, hy - hh) or _on_path_at(hx, hy + hh) or _on_path_at(hx + w, hy):
 			var dc := MwTrig.distance(MwRinkSim.s16(hx - _x), MwRinkSim.s16(hy - _y))
 			if MwRinkSim.s16(MwTrig.distance(w, hh) + 0x18) < MwRinkSim.s16(dc):
@@ -759,8 +760,8 @@ func avoid() -> void:
 				return
 			break
 	if not hit and s.puck.flags & CARRIED and s.puck.carrier == me:
-		for o in other.players:
-			if _on_path(me.opp_angle[o.index], me.opp_dist[o.index]):
+		for player in other.players:
+			if _on_path(me.opp_angle[player.index], me.opp_dist[player.index]):
 				hit = true
 				break
 	if not hit:
@@ -769,9 +770,9 @@ func avoid() -> void:
 				hit = true
 				break
 	if not hit:
-		for o in s.objects:
-			if o.kind != 0 and (o.kind < 0xF or o.kind == 0x12):
-				var op := _px(o)
+		for rink_object in s.objects:
+			if rink_object.kind != 0 and (rink_object.kind < 0xF or rink_object.kind == 0x12):
+				var op := _px(rink_object)
 				if _on_path_at(op.x, op.y):
 					hit = true
 					break
@@ -822,9 +823,9 @@ func _zone(shift := -1) -> int:
 	var pk := s.puck
 	var d1 := 0
 	if shift >= 0:
-		var v: MwRinkState.Actor = pk.carrier if pk.flags & CARRIED else pk
-		d1 = _s32(MwRinkSim.s16(v.motion.vel[1]) << shift)
-	var y := MwRinkSim.asr(_s32(d1 + pk.motion.pos[1]), 8)
+		var actor: MwRinkState.Actor = pk.carrier if pk.flags & CARRIED else pk
+		d1 = MwRinkSim.s32(MwRinkSim.s16(actor.motion.vel[1]) << shift)
+	var y := MwRinkSim.asr(MwRinkSim.s32(d1 + pk.motion.pos[1]), 8)
 	var w := MwRinkSim.s16(y) if y < 0 else MwRinkSim.s16(-y)     # -|y| as a word
 	var d0 := 0
 	if w <= -0x6C:
@@ -852,8 +853,10 @@ func _target_at(t: Vector2i) -> void:
 
 
 ## px(o): an object's position in pixels (x.l, y.l asr 8 as words).
-static func _px(o: MwRinkState.Actor) -> Vector2i:
-	return Vector2i(MwRinkSim.s16(MwRinkSim.asr(o.motion.pos[0], 8)), MwRinkSim.s16(MwRinkSim.asr(o.motion.pos[1], 8)))
+static func _px(actor: MwRinkState.Actor) -> Vector2i:
+	var pos := actor.motion.pos
+	# (plan 42: inline)
+	return Vector2i((((pos[0] >> 8) + 0x8000) & 0xFFFF) - 0x8000, (((pos[1] >> 8) + 0x8000) & 0xFFFF) - 0x8000)
 
 
 ## `$1427C` with `$14290`'s word angle: (distance, angle 0..$100).
@@ -876,6 +879,3 @@ static func _divs(a: int, b: int) -> int:
 
 
 ## A 32-bit register value, signed.
-static func _s32(v: int) -> int:
-	v &= 0xFFFFFFFF
-	return v - 0x100000000 if v >= 0x80000000 else v

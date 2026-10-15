@@ -42,19 +42,19 @@ func test_mix_and_the_four_channel_carry_bug() -> void:
 
 
 func test_without_rom_the_list_is_empty() -> void:
-	var s := MwSoundSamples.new(PackedByteArray())
-	assert_eq(s.count(), 0)
-	assert_eq(s.find(0x38, 0x8000), -1)
+	var samples := MwSoundSamples.new(PackedByteArray())
+	assert_eq(samples.count(), 0)
+	assert_eq(samples.find(0x38, 0x8000), -1)
 
 
 func test_descriptors_and_end_markers() -> void:
 	if not need_rom():
 		return
-	var s := _samples()
-	assert_gt(s.count(), 0)
+	var samples := _samples()
+	assert_gt(samples.count(), 0)
 	var kinds := {}
-	for i in s.count():
-		var d := s.desc(i)
+	for i in samples.count():
+		var d := samples.desc(i)
 		kinds[d.codec] = true
 		assert_true(d.kind == 0 or d.kind == 3, "sample %d: kind 0 or 3" % i)
 		assert_eq(rom[d.copies[0]], d.codec, "sample %d: the header's codec byte" % i)
@@ -73,7 +73,7 @@ func test_descriptors_and_end_markers() -> void:
 			assert_eq(c & 0x7FFF, d.copies[0] & 0x7FFF, "sample %d: copies at the same offset in their banks" % i)
 			assert_eq(rom.slice(c, c + d.length + 2), rom.slice(d.copies[0], d.copies[0] + d.length + 2),
 					"sample %d: identical copies" % i)
-			assert_eq(s.find(c >> 15, (c & 0x7FFF) | 0x8000), i, "sample %d: found from any copy's trigger" % i)
+			assert_eq(samples.find(c >> 15, (c & 0x7FFF) | 0x8000), i, "sample %d: found from any copy's trigger" % i)
 		if d.loop and d.codec == MwSoundSamples.CODEC_RAW:
 			assert_true(d.loops(), "sample %d: loop start inside the data" % i)
 	assert_eq(kinds.keys().size(), 2, "raw and DPCM samples, no type 1")
@@ -82,25 +82,25 @@ func test_descriptors_and_end_markers() -> void:
 func test_sound_ids_map_to_their_samples() -> void:
 	if not need_rom():
 		return
-	var s := _samples()
-	var ids := s.sound_id_map()
+	var samples := _samples()
+	var ids := samples.sound_id_map()
 	assert_gt(ids.size(), 0)
 	for sid: int in ids:
-		var i := s.by_instrument(ids[sid])
+		var i := samples.by_instrument(ids[sid])
 		if i < 0:
 			continue
-		assert_true(s.desc(i).sound_ids.has(sid), "id $%02X listed by its sample" % sid)
+		assert_true(samples.desc(i).sound_ids.has(sid), "id $%02X listed by its sample" % sid)
 
 
 func test_decode_raw_and_dpcm() -> void:
 	if not need_rom():
 		return
-	var s := _samples()
-	var deltas := s.dpcm_deltas()
+	var samples := _samples()
+	var deltas := samples.dpcm_deltas()
 	assert_eq(deltas.size(), 16)
-	for i in s.count():
-		var d := s.desc(i)
-		var v := s.decode(i)
+	for i in samples.count():
+		var d := samples.desc(i)
+		var v := samples.decode(i)
 		assert_eq(v.size(), d.output_samples(), "sample %d: one value per DAC write" % i)
 		if d.codec == MwSoundSamples.CODEC_RAW:
 			assert_eq(v, rom.slice(d.data, d.data + d.length), "sample %d: raw = the data" % i)
@@ -115,16 +115,17 @@ func test_decode_raw_and_dpcm() -> void:
 func test_streams() -> void:
 	if not need_rom():
 		return
-	var s := _samples()
-	for i in s.count():
-		var d := s.desc(i)
-		var w := s.stream(i)
-		assert_same(s.stream(i), w, "cached")
+	var samples := _samples()
+	for i in samples.count():
+		var d := samples.desc(i)
+		var w := samples.stream(i)
+		assert_same(samples.stream(i), w, "cached")
 		assert_eq(w.format, AudioStreamWAV.FORMAT_16_BITS)
 		assert_false(w.stereo)
-		assert_eq(w.mix_rate, MwSoundSamples.DPCM_MIX_RATE if d.codec == MwSoundSamples.CODEC_DPCM else MwSoundSamples.RAW_MIX_RATE)
+		assert_eq(w.mix_rate, MwSoundSamples.DPCM_MIX_RATE if d.codec == MwSoundSamples.CODEC_DPCM
+				else MwSoundSamples.RAW_MIX_RATE)
 		assert_eq(w.data.size(), 2 * d.output_samples(), "sample %d: 16 bits per value" % i)
-		var v := s.decode(i)
+		var v := samples.decode(i)
 		for j in [0, v.size() / 2, v.size() - 1]:
 			assert_eq(w.data.decode_s16(2 * j), (v[j] - 0x80) << 8, "sample %d value %d: (s - $80) << 8" % [i, j])
 		if d.loops():
@@ -137,15 +138,15 @@ func test_streams() -> void:
 func test_ad_hoc_headers() -> void:
 	if not need_rom():
 		return
-	var s := _samples()
-	var n := s.count()
-	var d := s.desc(0)
-	assert_eq(s.add_header(d.copies[0]), 0, "a known header")
-	assert_eq(s.count(), n)
+	var samples := _samples()
+	var n := samples.count()
+	var d := samples.desc(0)
+	assert_eq(samples.add_header(d.copies[0]), 0, "a known header")
+	assert_eq(samples.count(), n)
 	var h := d.data + 1          # inside the first sample: a header the 68000 never sends
-	var i := s.add_header(h)
+	var i := samples.add_header(h)
 	assert_eq(i, n)
-	assert_eq(s.find_header(h), i)
-	var e := s.desc(i)
-	assert_eq(e.instrument, -1)
-	assert_eq(rom[e.data + e.length], 0, "runs to the next 0")
+	assert_eq(samples.find_header(h), i)
+	var desc := samples.desc(i)
+	assert_eq(desc.instrument, -1)
+	assert_eq(rom[desc.data + desc.length], 0, "runs to the next 0")

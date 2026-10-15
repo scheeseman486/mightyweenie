@@ -59,10 +59,11 @@ func _init(state: MwRinkState, rom_: PackedByteArray = PackedByteArray()) -> voi
 ## The controlling pad (`$9DD0`): the first of pads 1-4 whose newly pressed
 ## byte has A (from the rink: [param from_screen] < 12) or C (from a
 ## scoreboard); pad 1 when none. [param pads_new]: the 4 bytes as the last
-## read left them (the pause menu's or the scoreboard's).
-static func control_pad(from_screen: int, pads_new: Array) -> int:
+## read left them (the pause menu's or the scoreboard's; plan 34, an
+## extended set-up: its twelve match pads').
+static func control_pad(from_screen: int, pads_new: Variant) -> int:
 	var bit := NEW_A if (from_screen & 0xFFFF) < 12 else NEW_C
-	for p in 4:
+	for p in mini(pads_new.size(), MwVerbs.PLAYERS):
 		if int(pads_new[p]) & bit:
 			return p
 	return 0
@@ -88,7 +89,7 @@ func start(control: int) -> void:
 ## (normally 1). The tests in this order: new A, held A, held B, new C,
 ## new Start, the play flag. True when Start leaves ([method leave] done).
 func step(elapsed: int, held: int, new: int) -> bool:
-	var n := ring.frames
+	var n := frame_count()
 	if new & NEW_A:
 		wait = 1                                        # `$9EE0`: the first step at once
 	if new & NEW_A or held & HELD_A:
@@ -175,35 +176,76 @@ func _back() -> void:
 ## held): here the loop stops when the ring is empty.
 func draw_frame() -> void:
 	var at := ring.read
-	ring.take_word()                                   # the header
-	var hi := ring.take_word()
-	var lo := ring.take_word()
+	_decode(ring.take_word, func() -> bool: return ring.read != frame_end and ring.used > 0)
+	ring.take_word()                                   # the trailer
+	shown["at"] = at
+	_port_side()
+	drawn += 1
+
+
+## Plan 34, an extended set-up: the frame's port side-record
+## (MwRinkUpdate.port_side) - every player's marker, plate and arrow as
+## drawn ([member shown]'s "marks", [x, y, depth, attr, frame]) and the
+## plates' values then, written into the state as the ring's markers write
+## theirs.
+func _port_side() -> void:
+	if not s.extended:
+		return
+	var side := frame_3d()
+	shown["marks"] = side.get("marks", [])
+	var plates: Array = side.get("plates", [])
+	for i in mini(plates.size(), s.plates.size()):
+		s.plates[i] = (plates[i] as Array).duplicate()
+
+
+## The frames there are to play (the ring's).
+func frame_count() -> int:
+	return ring.frames
+
+
+## The 3D view's frame (MwReplay3D) of the frame on screen ({} none);
+## without the arena's paint unless the replays show it
+## (MwSplatterReplay.shown: REPLAY BLOOD).
+func frame_3d() -> Dictionary:
+	var f := MwReplay3D.at(ring, int(shown.get("at", -1)))
+	if f.has("splat") and not MwSplatterReplay.shown():
+		f = f.duplicate()                       # (the ring's own is kept as recorded)
+		f.erase("splat")
+	return f
+
+
+## A frame's words from its header up to its trailer, [param next] giving
+## the next word and [param more] whether a sprite record follows: the
+## camera point, the hazards, the markers, the sprite records (see
+## [method draw_frame]) - into [member shown] (but its "at").
+func _decode(next: Callable, more: Callable) -> void:
+	next.call()                                        # the header
+	var hi: int = next.call()
+	var lo: int = next.call()
 	var cam := Vector2i(MwRinkSim.s16(hi), MwRinkSim.s16(lo))
 	_plane_b(cam)
 	var hazards := []
 	for i in 2:
-		var w := ring.take_word()
+		var w: int = next.call()
 		for b in [(w >> 8) & 0xFF, w & 0xFF]:
 			hazards.append([b & 7, b & 0xF8])
-	for t in s.teams:
-		_marker(t.markers[0])
-		if t.flags4 & 4:
-			_marker(t.markers[1])
+	for team in s.teams:
+		_marker(team.markers[0], next)
+		if team.flags4 & 4:
+			_marker(team.markers[1], next)
 	var sprites := []
 	var guard := 0
-	while ring.read != frame_end and ring.used > 0 and guard < 4096:
+	while more.call() and guard < 4096:
 		guard += 1
-		var l0 := (ring.take_word() << 16) | ring.take_word()
-		var l1 := (ring.take_word() << 16) | ring.take_word()
+		var l0: int = (int(next.call()) << 16) | int(next.call())
+		var l1: int = (int(next.call()) << 16) | int(next.call())
 		var x := ((l0 >> 24) & 0xFF) | (((l1 >> 6) & 1) << 8)
 		var y := (((l0 >> 16) & 0xFF) << 1) | ((l1 >> 7) & 1)
 		var bank := (l1 >> 8) & 0xFF
 		var frame := (((0xFF00 | bank) if bank & 0x80 else bank) << 16) | ((l1 >> 16) & 0xFFFF)
 		# (minus the pan `$C2D4` / `$C2D6`: always 0)
 		sprites.append([x, y, l0 & 0xFFFF, (l1 & 0x3F) << 2, frame & 0xFFFFFF])
-	ring.take_word()                                   # the trailer
-	shown = {"camera": cam, "hazards": hazards, "sprites": sprites, "at": at}
-	drawn += 1
+	shown = {"camera": cam, "hazards": hazards, "sprites": sprites}
 
 
 ## `$14CEE` / `$14CDE` on plane B (the incremental and the whole-plane
@@ -218,18 +260,18 @@ func _plane_b(cam: Vector2i) -> void:
 
 ## `$6298`: a marker's x, y, number, position and health from its words,
 ## then its plate (the health bar only with Reserves).
-func _marker(m: MwRinkState.Marker) -> void:
-	m.x = MwRinkSim.s16(ring.take_word())
-	m.y = MwRinkSim.s16(ring.take_word())
-	var w := ring.take_word()
-	m.number = (w >> 9) & 0x7F
-	m.position = (w >> 6) & 7
-	m.health = w & 0x3F
-	var plate: Array = s.plates[m.plate & 3]
+func _marker(marker: MwRinkState.Marker, next: Callable) -> void:
+	marker.x = MwRinkSim.s16(next.call())
+	marker.y = MwRinkSim.s16(next.call())
+	var w: int = next.call()
+	marker.number = (w >> 9) & 0x7F
+	marker.position = (w >> 6) & 7
+	marker.health = w & 0x3F
+	var plate: Array = s.plates[marker.plate if s.extended else marker.plate & 3]     # (plan 34: fourteen)
 	if s.reserves:
-		plate[2] = m.health
-	plate[0] = m.number
-	plate[1] = m.position
+		plate[2] = marker.health
+	plate[0] = marker.number
+	plate[1] = marker.position
 
 
 func _word_at(at: int) -> int:

@@ -8,7 +8,7 @@ extends RefCounted
 ## power play the frame is the 9x8 one at (2, 19), with "[]" at (4, 21) and
 ## the power-play clock at (4, 22). The values come from the rules (plan 09).
 
-const FONT := 0x447F4
+const FONT := MwFonts.LIGHT
 const MAP := 0x49136                 ## 9x5
 const MAP_POWERPLAY := 0x49194       ## 9x8
 const SUFFIXES := 0x1BFDC            ## "00stndrd"
@@ -25,8 +25,8 @@ const BLANK := 0x8000
 ## `$27D8`: seconds -> "MM:SS" (minutes as two digits).
 static func time_text(seconds: int) -> PackedByteArray:
 	var m := seconds / 60
-	var s := seconds % 60
-	return PackedByteArray([0x30 + m / 10, 0x30 + m % 10, 0x3A, 0x30 + s / 10, 0x30 + s % 10])
+	var remainder := seconds % 60
+	return PackedByteArray([0x30 + m / 10, 0x30 + m % 10, 0x3A, 0x30 + remainder / 10, 0x30 + remainder % 10])
 
 
 ## `$2748`: period 1-3 -> "1st".."3rd", 4+ -> "OT1".. (capped at "OT9").

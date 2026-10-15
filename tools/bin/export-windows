@@ -2,6 +2,8 @@
 # Windows x86_64 build of a commit (default: main), with the "Windows Desktop"
 # preset (game/export_presets.cfg): one .exe with the game packed in, no ROM.
 #   tools/bin/export-windows [REF] [--debug]
+# MW_BUILD_LABEL names the build in its README.txt (default: the commit),
+# e.g. a release: MW_BUILD_LABEL="v0.1 (<public commit>)".
 # Exports a clean copy of the commit's game/ folder (git archive: nothing
 # local, no ROM) to out/builds/windows/ and zips it as
 # out/builds/mightyweenie-windows-<commit>.zip. The player puts their ROM next
@@ -17,12 +19,12 @@ for a in "$@"; do
   esac
 done
 commit=$(git -C "$MW_ROOT" rev-parse --short "$ref^{commit}")
-tpl="$MW_TOOLS/godot/editor_data/export_templates/$GODOT_VERSION.stable"
+godot="$(mw_godot)" || exit 1
+tpl="$(dirname "$godot")/editor_data/export_templates/$GODOT_VERSION.stable"
 [[ -f "$tpl/windows_${mode}_x86_64.exe" ]] || "$MW_TOOLS/setup/fetch_tools.sh" templates
 # The headless copy is self-contained (editor_data next to it): point its
 # templates at the ones fetched for tools/godot.
-"$(dirname "${BASH_SOURCE[0]}")/godot-headless" --version >/dev/null
-bin="$MW_CACHE/godot-headless-$GODOT_VERSION/godot"
+bin="$(mw_godot_headless)" || exit 1
 mkdir -p "$(dirname "$bin")/editor_data/export_templates"
 ln -sfn "$tpl" "$(dirname "$bin")/editor_data/export_templates/$GODOT_VERSION.stable"
 
@@ -44,7 +46,7 @@ cp "$dll" "$src/game/addons/mw_audio/bin/"
 "$bin" --headless --path "$src/game" "--export-$mode" "Windows Desktop" "$out/mightyweenie.exe" \
   > "$MW_ROOT/out/builds/export.log" 2>&1 || { tail -20 "$MW_ROOT/out/builds/export.log"; exit 1; }
 [[ -s "$out/mightyweenie.exe" ]] || { echo "export failed: out/builds/export.log"; exit 1; }
-sed "s/@COMMIT@/$commit ($mode)/" "$MW_TOOLS/build/windows-readme.txt" > "$out/README.txt"
+sed "s/@COMMIT@/${MW_BUILD_LABEL:-$commit} ($mode)/" "$MW_TOOLS/build/windows-readme.txt" > "$out/README.txt"
 cp "$src/game/addons/mw_audio/THIRD_PARTY_NOTICES.txt" "$out/"
 # The project's licence (BSD-3-Clause: binaries carry the notice).
 if [[ -f "$MW_ROOT/LICENSE" ]]; then cp "$MW_ROOT/LICENSE" "$out/LICENSE.txt"; fi

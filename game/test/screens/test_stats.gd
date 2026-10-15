@@ -90,11 +90,11 @@ func test_setup() -> void:
 	var name_b := MwGfx.rom_string(rom, MwGfx.u32(rom, s.teams[1].record + 4))
 	assert_eq(int(w[2][2]) + MwGfx.text_width(rom, MwStatsSim.NAME_FONT, name_b), 38, "team B right-aligned")
 	# plane A: cleared, 13 rows of (team A value, team B value, label)
-	var p := _texts(st.plane_a_ops)
-	assert_eq(p.size(), 13 * 3)
+	var plane_a_texts := _texts(st.plane_a_ops)
+	assert_eq(plane_a_texts.size(), 13 * 3)
 	for i in 13:
-		assert_eq(int(p[3 * i][3]), 2 * i, "row %d two rows apart" % i)
-		assert_eq(p[3 * i + 2][5], MwGfx.u32(rom, MwStatsSim.ROWS + 6 * i), "row %d's label" % i)
+		assert_eq(int(plane_a_texts[3 * i][3]), 2 * i, "row %d two rows apart" % i)
+		assert_eq(plane_a_texts[3 * i + 2][5], MwGfx.u32(rom, MwStatsSim.ROWS + 6 * i), "row %d's label" % i)
 	# sprites: only the down arrow at the first row, then both logos
 	assert_eq(st.sprite_ops[0][1], MwStatsSim.ARROW)
 	assert_eq(st.sprite_ops[0][4], MwGfx.u16(rom, MwStatsSim.ARROW_DOWN + 6))
@@ -118,8 +118,8 @@ func test_values() -> void:
 	tb.add_stat(0x490, 1000)              # hard checks: 1000 has no fourth digit
 	tb.add_stat(0x496, 5)                 # passing 5/0: no percentage
 	var st := _enter()
-	var p := _texts(st.plane_a_ops)
-	var row := func(i: int, t: int) -> String: return _ascii(p[3 * i + t][5])
+	var plane_a_texts := _texts(st.plane_a_ops)
+	var row := func(i: int, t: int) -> String: return _ascii(plane_a_texts[3 * i + t][5])
 	assert_eq(row.call(0, 0), "7")
 	assert_eq(row.call(0, 1), "0")
 	assert_eq(row.call(1, 0), "105")
@@ -129,7 +129,7 @@ func test_values() -> void:
 	assert_eq(row.call(8, 1), "5/0")
 	assert_eq(row.call(6, 1), ":00", "1000: the hundreds' digit is 10 (':')")
 	assert_eq(row.call(12, 0), "", "the last row has no values")
-	var label_x := int(p[3 * 1 + 2][2])
+	var label_x := int(plane_a_texts[3 * 1 + 2][2])
 	var w := MwGfx.text_width(rom, MwStatsSim.BOX_FONT, MwGfx.rom_string(rom, MwGfx.u32(rom, MwStatsSim.ROWS + 6)))
 	assert_eq(label_x, (40 - w) >> 1, "labels centred")
 
@@ -183,7 +183,8 @@ func test_starfield() -> void:
 	_tap(st, C)
 	assert_ne(st.aux.state, aux, "C re-aims it")
 	assert_eq(_events(st, "sound")[0][1], MwStatsSim.BUTTON)
-	assert_eq(s.scroll_b, Vector2i(MwRinkSim.asr(st.star.pos[0], 8), MwRinkSim.asr(st.star.pos[1], 8)), "plane B's scroll")
+	assert_eq(s.scroll_b, Vector2i(MwRinkSim.asr(st.star.pos[0], 8), MwRinkSim.asr(st.star.pos[1], 8)),
+			"plane B's scroll")
 	assert_eq(s.rng.state, main_rng, "the main stream untouched")
 
 
@@ -202,8 +203,8 @@ func test_player_stats() -> void:
 	assert_eq(st.window_rows, 0, "plane A shows")
 	assert_eq(st.row, 9 + 5 * 3)
 	assert_eq(st.saved_font, MwStatsSim.BOX_FONT)
-	var p := _texts(st.plane_a_ops)
-	var rows := p.filter(func(o: Array) -> bool: return int(o[2]) == 1 and int(o[3]) >= 9)
+	var plane_a_texts := _texts(st.plane_a_ops)
+	var rows := plane_a_texts.filter(func(o: Array) -> bool: return int(o[2]) == 1 and int(o[3]) >= 9)
 	assert_eq(rows.size(), 5, "5 jersey numbers")
 	assert_eq(_ascii(rows[0][5]).length(), 2, "two digits")
 	assert_eq(st.sprite_ops.size() > 2, true, "the logo and two arrows")
@@ -243,15 +244,15 @@ func test_player_stats() -> void:
 func test_player_values() -> void:
 	if not need_rom():
 		return
-	var t := s.teams[0]
+	var team := s.teams[0]
 	var slot := 2                           # line 1's third slot
-	t.add_stat(0x3A2 + 8 * slot + 4, 3)     # G
-	t.add_stat(0x3A2 + 8 * slot + 6, 12)    # PTS
-	t.add_stat(0x3A2 + 8 * slot + 2, 7)     # SOG
-	t.add_stat(0x3A2 + 8 * slot, 25)        # PIM
+	team.add_stat(0x3A2 + 8 * slot + 4, 3)     # G
+	team.add_stat(0x3A2 + 8 * slot + 6, 12)    # PTS
+	team.add_stat(0x3A2 + 8 * slot + 2, 7)     # SOG
+	team.add_stat(0x3A2 + 8 * slot, 25)        # PIM
 	var goalie := 5                         # line 1's goalie
-	t.add_stat(0x3A2 + 8 * goalie + 4, 9)   # goals against
-	t.add_stat(0x3A2 + 8 * goalie + 2, 4)   # shots: fewer than goals, SAV 0
+	team.add_stat(0x3A2 + 8 * goalie + 4, 9)   # goals against
+	team.add_stat(0x3A2 + 8 * goalie + 2, 4)   # shots: fewer than goals, SAV 0
 	var st := _enter()
 	_tap(st, A)
 	var y := 9 + 3 * slot + 1

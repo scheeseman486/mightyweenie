@@ -24,11 +24,11 @@ func _scene(exits: Array, from: int, state: MwRinkState) -> MwBetweenPlays:
 
 
 static func _frame(actions: Array) -> MwInputFrame:
-	var f := MwInputFrame.new()
+	var input := MwInputFrame.new()
 	for a in actions:
-		f.held[a] = true
-		f.pressed[a] = true
-	return f
+		input.held[a] = true
+		input.pressed[a] = true
+	return input
 
 
 static func _shown(node: MwBetweenPlays) -> int:
@@ -75,7 +75,7 @@ func test_one_pad_team_with_the_idle_page() -> void:
 	assert_eq(sim.sprite_ops.filter(func(x: Array) -> bool: return x[0] == "anim").size(), 6)
 	node._screen_pass(2, _frame(["p1_ui_down"]))
 	assert_eq(sim.pages[0].cursor, 3)
-	node._screen_pass(2, _frame(["p1_ui_option_b"]))
+	node._screen_pass(2, _frame(["p1_ui_choose_play"]))
 	assert_eq(node.state.teams[0].special, 10, "B: the highlighted play armed")
 	assert_true(exits.is_empty())
 	node._screen_pass(2, MwInputFrame.new())
@@ -99,17 +99,17 @@ func test_two_pads_with_reserves() -> void:
 	assert_true(rows.front() < 13 and rows.back() >= 13 + 5, "both pages' positions")
 	# page A: the left wing's substitution list
 	node._screen_pass(2, _frame(["p1_ui_down"]))
-	node._screen_pass(2, _frame(["p1_ui_option_a"]))
+	node._screen_pass(2, _frame(["p1_ui_nasty_play"]))
 	assert_eq(sim.pages[0].handler, MwSpecialPlaysSim.SUBST_PASS)
 	node._screen_pass(2, MwInputFrame.new())
 	assert_true(sim.sprite_ops.any(func(x: Array) -> bool: return x[0] == "portrait"), "the coach")
 	assert_true(_shown(node) > 0)
 	node._screen_pass(2, _frame(["p1_ui_down"]))
-	node._screen_pass(2, _frame(["p1_ui_option_a"]))
+	node._screen_pass(2, _frame(["p1_ui_nasty_play"]))
 	assert_eq(s.teams[0].players[1].record, MwGfx.u32(rom, s.teams[0].record + 0x18 + 4 * 7), "a line change")
 	# both pages done: a faceoff after the timeout
-	node._screen_pass(2, _frame(["p1_ui_accept"]))
-	node._screen_pass(2, _frame(["p1_ui_accept", "p2_ui_accept"]))
+	node._screen_pass(2, _frame(["p1_ui_plays_done"]))
+	node._screen_pass(2, _frame(["p1_ui_plays_done", "p2_ui_back"]))
 	assert_eq([sim.pages[0].done, sim.pages[1].done], [1, 1])
 	node._screen_pass(2, MwInputFrame.new())
 	assert_eq(exits, [5])

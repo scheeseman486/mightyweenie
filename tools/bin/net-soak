@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# Plan 35's soak on real sockets (docs/net.md "The soak"): a headless host and
+# N headless clients, each its own process running the whole game
+# (game/test/net/online_match.gd: bots on every player, ENet with DTLS),
+# through a UDP chaos proxy (tools/net/chaos_proxy.py: loss, delay, jitter,
+# duplication, reordering, outages, seeded) on 127.0.0.1 or ::1; a whole match
+# from START GAME back to the lobby; then every client's hashes compared with
+# the host's and a report (tools/net/soak_report.py): desyncs, stalls, the
+# clients' buffers, bandwidth (payload, ENet, the DTLS records on the wire),
+# CPU, memory.
+#   tools/bin/net-soak [options]
+#     --clients N       clients, one player each (default 1; the host is P1)
+#     --ip 4|6          127.0.0.1 or ::1 (default 4)
+#     --loss PCT --delay MS --jitter MS --dup PCT --reorder PCT
+#                       the network, both ways (default none)
+#     --outage-every S:MS   nothing passes for MS ms every S seconds
+#     --clean-for S     the network good for the first S seconds (joining over
+#                       a clean link), the conditions after
+#     --uplink KBIT     the host's uplink capped: everything it sends to every
+#                       client together, kilobits a second (IP and UDP headers
+#                       counted; default: no cap)
+#     --downlink KBIT   the host's downlink capped the same way
+#     --queue MS        a capped line's queue (a router's buffer), in ms at its
+#                       rate (default 250); a datagram finding it full is lost
+#     --throttle T      ENet's packet throttle on every machine: game (the
+#                       game's own, MwNetEnet.THROTTLE; default), enet (ENet's
+#                       default) or INTERVAL:ACCELERATION:DECELERATION
+#     --rate N          frames a second (default 60: real time)
+#     --clock S         each period cut to S seconds, a tied overtime decided
+#                       (online_match.gd's test rules; default 4; 0: off)
+#     --wait N          ticks before the bots press on a scoreboard (default
+#                       120; 400: as the in-process tests)
+#     --kill K:S[:D]    client K's process killed S seconds into the match
+#                       and started again D seconds later (default 3): it
+#                       rejoins with its rejoin record and is resynced
+#     --password P      (default pw; "" for none)
+#     --seed N          the proxy's and the bots' seed (default 1)
+#     --port N          the host's port (default from the process id); the
+#                       proxy listens on N+1 ... N+clients, one a client
+#     --name NAME       the run's folder, out/net/soak/NAME-<time>
+#     --limit S         every process gives up after S seconds, reporting what
+#                       it played (default 170)
+#     --mitm            instead: the man-in-the-middle check on 127.0.0.1 and
+#                       ::1 (test/net/mitm_check.gd)
+#     --proxy-test      instead: the chaos proxy's own tests
+#     --windows LIST    these clients ("2", "1,3" or "all") run Windows' Godot
+#                       under wine: MW_GODOT_WINDOWS (e.g. "wine
+#                       /path/Godot_v4.7.1-stable_win64.exe" - not the
+#                       _console wrapper, which never exits under wine; the
+#                       wine environment exported), paths as wine's Z: drive
+# MW_GODOT names another Godot binary (e.g. a sandbox's private copy). Exit
+# status 0 when every machine finished the match in sync.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+clients=1 ip=4 loss=0 delay=0 jitter=0 dup=0 reorder=0 outage="" clean=0 rate=60 clock=4 kill="" password=pw
+seed=1 port=$((43000 + ($$ % 400) * 20)) name="" limit=170 mode=soak wait=120 windows=""
+uplink=0 downlink=0 queue=250 throttle=game
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --clients) clients=$2; shift ;;
+    --ip) ip=$2; shift ;;
+    --loss) loss=$2; shift ;;
+    --delay) delay=$2; shift ;;
+    --jitter) jitter=$2; shift ;;
+    --dup) dup=$2; shift ;;
+    --reorder) reorder=$2; shift ;;
+    --outage-every) outage=$2; shift ;;
+    --clean-for) clean=$2; shift ;;
+    --uplink) uplink=$2; shift ;;
+    --downlink) downlink=$2; shift ;;
+    --queue) queue=$2; shift ;;
+    --throttle) throttle=$2; shift ;;
+    --rate) rate=$2; shift ;;
+    --clock) clock=$2; shift ;;
+    --wait) wait=$2; shift ;;
+    --kill) kill=$2; shift ;;
+    --password) password=$2; shift ;;
+    --seed) seed=$2; shift ;;
+    --port) port=$2; shift ;;
+    --name) name=$2; shift ;;
+    --limit) limit=$2; shift ;;
+    --windows) windows=$2; shift ;;
+    --mitm) mode=mitm ;;
+    --proxy-test) mode=proxy-test ;;
+    *) echo "net-soak: unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+godot=("$here/godot-headless")      # (MW_GODOT honoured there)
+if [[ -n $windows ]]; then
+  [[ -n "${MW_GODOT_WINDOWS:-}" ]] || { echo "net-soak: --windows needs MW_GODOT_WINDOWS" >&2; exit 2; }
+  read -r -a windows_godot <<< "$MW_GODOT_WINDOWS"
+  windows_godot+=(--headless --path "Z:$MW_ROOT/game")
+fi
+is_windows() {  # is_windows K: client K runs under wine
+  [[ $windows == all || ",$windows," == *",$1,"* ]]
+}
+noise='TLS handshake error\|mbedtls error\|_do_handshake\|GDScript backtrace\|^\s*\[[0-9]\] \|^\s*$'
+
+if [[ $mode == proxy-test ]]; then
+  exec python3 "$MW_TOOLS/net/test_chaos_proxy.py"
+fi
+if [[ $mode == mitm ]]; then
+  out="$MW_ROOT/out/net/soak/mitm-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$out"
+  status=0
+  for a in 127.0.0.1 ::1; do
+    timeout "$limit" "${godot[@]}" -s res://test/net/mitm_check.gd -- --address "$a" --dir "$out/$a" \
+      > "$out/mitm-$a.log" 2>&1 || status=1
+    grep '^mitm' "$out/mitm-$a.log"
+  done
+  exit $status
+fi
+
+if [[ $ip == 6 ]]; then addr=::1; bracket="[::1]"; else addr=127.0.0.1; bracket=127.0.0.1; fi
+[[ -n $name ]] || name="c${clients}-ip${ip}-l${loss}-d${delay}"
+run="$MW_ROOT/out/net/soak/$name-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$run"
+# who plays where: odd numbers team A, even team B
+a=() b=()
+for ((n = 1; n <= clients + 1; n++)); do
+  if ((n % 2)); then a+=("$n"); else b+=("$n"); fi
+done
+teams="$(IFS=+; echo "${a[*]}").$(IFS=+; echo "${b[*]}")"
+cat > "$run/soak.json" <<JSON
+{"name": "$name", "clients": $clients, "ip": "$ip", "address": "$addr", "port": $port, "loss": $loss,
+ "delay": $delay, "jitter": $jitter, "dup": $dup, "reorder": $reorder, "outage_every": "$outage",
+ "clean_for": $clean, "uplink_kbit": $uplink, "downlink_kbit": $downlink, "queue_ms": $queue, "throttle": "$throttle",
+ "rate": $rate, "clock": $clock, "wait": $wait, "kill": "$kill", "password": $([[ -n $password ]] && echo true || echo false),
+ "seed": $seed, "teams": "$teams", "windows": "$windows", "nproc": $(nproc 2>/dev/null || echo 0)}
+JSON
+
+listen=()
+for ((k = 1; k <= clients; k++)); do listen+=(--listen "$bracket:$((port + k))"); done
+# (over IPv4 each client reaches the host from an address of its own, 127.0.0.2 ...)
+proxy_opts=(--upstream "$bracket:$port" --loss "$loss" --delay "$delay" --jitter "$jitter" --dup "$dup"
+  --reorder "$reorder" --seed "$seed" --report "$run/proxy.json" --report-every 5 --spread --clean-for "$clean")
+[[ -n $outage ]] && proxy_opts+=(--outage-every "$outage")
+# the host's line: its uplink is the proxy's "down" (to the clients), shared by every session
+[[ $uplink != 0 ]] && proxy_opts+=(--down-rate-kbit "$uplink")
+[[ $downlink != 0 ]] && proxy_opts+=(--up-rate-kbit "$downlink")
+proxy_opts+=(--queue-ms "$queue")
+python3 "$MW_TOOLS/net/chaos_proxy.py" "${listen[@]}" "${proxy_opts[@]}" > "$run/proxy.log" 2>&1 &
+proxy_pid=$!
+common=(--rate "$rate" --clock "$clock" --wait "$wait" --teams "$teams" --password "$password" --seed "$seed"
+  --limit "$limit" --throttle "$throttle")
+timeout "$((limit + 10))" "${godot[@]}" -s res://test/net/online_match.gd -- --role host --clients "$clients" \
+  --port "$port" --dir "$run" "${common[@]}" > "$run/host.log" 2>&1 &
+pids=($!)
+for _ in $(seq 1 100); do grep -q '^host: listening' "$run/host.log" 2>/dev/null && break; sleep 0.2; done
+declare -A client_pid
+start_client() {  # start_client K [extra options] - its log: clientK.log, or clientK-rejoin.log
+  local k=$1 log="$run/client$1.log" cmd=("${godot[@]}") dir="$run"; shift
+  [[ $# -gt 0 ]] && log="$run/client$k-rejoin.log"
+  if is_windows "$k"; then cmd=("${windows_godot[@]}"); dir="Z:$run"; fi
+  timeout "$((limit + 10))" "${cmd[@]}" -s res://test/net/online_match.gd -- --role client --name "$k" \
+    --address "$addr" --port "$((port + k))" "${common[@]}" --dir "$dir" "$@" > "$log" 2>&1 &
+  client_pid[$k]=$!
+}
+for ((k = 1; k <= clients; k++)); do start_client "$k"; done
+for ((k = 1; k <= clients; k++)); do pids+=("${client_pid[$k]}"); done
+if [[ -n $kill ]]; then
+  IFS=: read -r kk ks kd <<< "$kill"
+  kd=${kd:-3}
+  # once its match started: S seconds, then SIGKILL (a crash: no goodbye), D seconds, then again
+  for _ in $(seq 1 $((limit * 5))); do grep -q ": machine [0-9]*, players" "$run/client$kk.log" && break; sleep 0.2; done
+  sleep "$ks"
+  # the process under timeout: kill the game itself
+  pkill -KILL -P "${client_pid[$kk]}" 2>/dev/null; kill -KILL "${client_pid[$kk]}" 2>/dev/null
+  echo "net-soak: client $kk killed at $(date +%T)" >> "$run/events.log"
+  sleep "$kd"
+  start_client "$kk" --rejoin 1
+  echo "net-soak: client $kk started again at $(date +%T)" >> "$run/events.log"
+  pids+=("${client_pid[$kk]}")
+fi
+for p in "${pids[@]}"; do wait "$p" 2>/dev/null; done
+kill -TERM "$proxy_pid" 2>/dev/null; wait "$proxy_pid" 2>/dev/null
+"${godot[@]}" -s res://test/net/online_match.gd -- --role compare --dir "$run" 2>&1 | grep -v "$noise" \
+  > "$run/compare.log"
+python3 "$MW_TOOLS/net/soak_report.py" "$run" | tee "$run/report.txt"
+exit "${PIPESTATUS[0]}"

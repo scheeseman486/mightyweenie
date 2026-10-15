@@ -7,7 +7,8 @@ extends MwScreen
 ## most), B takes the last back, C cancels (back to the main menu), Start
 ## with 13 symbols tries it - the original refuses bad ones with a sound.
 ## Taken: the run continues from it (pop: the playoffs show the bracket).
-## Pad 1 drives it, pad 2 when pad 1 pressed nothing.
+## Pad 1 drives it, pad 2 when pad 1 pressed nothing (plan 34, an extended
+## set-up: then players 3-12, the first who pressed something).
 
 const GRID := 0x1F1C8              ## x, y of each symbol (window = screen pixels)
 const HEADER_ENTER := 0x66C83      ## at (13, 2)
@@ -19,18 +20,18 @@ const BAR_ROWS := [6, 0x15]
 const DECO_MAP := 0x49138          ## 9 cells wide; 7 x 2 of it beside the header
 const DECO_AT := [Vector2i(3, 2), Vector2i(30, 2)]
 const TYPED_AT := Vector2(160, 36)
-const FONT_BIG := 0x246FA
-const FONT_HEADER := 0x22BEC
-const FONT_LIGHT := 0x447F4
+const FONT_BIG := MwFonts.BIG
+const FONT_HEADER := MwFonts.HEADING
+const FONT_LIGHT := MwFonts.LIGHT
 const ATTR_TEXT := 0xE0
 const ATTR_GRID := 0xA0
 const ATTR_CURSOR := 0xC0
 ## `$12170`: colours 2-3 of lines 1 and 2 (code constants), over 32 ticks.
 const COLOURS := [[0x1218A, 18], [0x12196, 19], [0x121A2, 34], [0x121AE, 35]]
-const SOUND_CROWD := 0x10
-const SOUND_KEY := 0x30
-const SOUND_MOVE := 0x25
-const SOUND_REFUSED := 0x2E
+const SOUND_CROWD := MwSoundIds.CROWD
+const SOUND_KEY := MwSoundIds.KEY
+const SOUND_MOVE := MwSoundIds.MOVE
+const SOUND_REFUSED := MwSoundIds.REFUSED
 
 @onready var plane: RomPlane = $Window
 @onready var palette: RomPalette = $Window.palette
@@ -40,7 +41,7 @@ const SOUND_REFUSED := 0x2E
 
 var rom: PackedByteArray
 var playoffs: MwPlayoffs
-var show := false          ## a new password is shown
+var showing := false          ## a new password is shown
 var cursor := 0            ## -$C(a6)
 var buffer := PackedByteArray()   ## `$FFC7B8`
 var _crowd := 0           ## -$14(a6): the crowd sequence's handle
@@ -59,24 +60,17 @@ func _enter_screen(data: Dictionary) -> void:
 		return
 	rom = MwRom.data()
 	playoffs = session.playoffs
-	show = bool(data.get("show", false))
-	var sf: Array = data.get("starfield", [])
-	if sf.size() == 4:
-		starfield.x = int(sf[0])
-		starfield.y = int(sf[1])
-		starfield.vx = int(sf[2])
-		starfield.vy = int(sf[3])
+	showing = bool(data.get("show", false))
+	starfield.restore(data.get("starfield", []))
 	MwSound.music_fade_out(1)                 # `$12176`
 	palette.screen = 11
 	palette.team_a = session.setup.team_a
 	palette.stadium = session.setup.stadium
-	var steps := PackedStringArray(["screen_palette", "black 0"])
-	for c in COLOURS:
-		steps.append("word %x %d" % [c[0], c[1]])
-	palette.steps = steps
-	if show:
+	palette.steps = palette_steps()
+	if showing:
 		var d := playoffs.dead
 		buffer = playoffs.make_password(rom, d[0], d[1], session.setup.pads)
+		session.run_password = buffer.get_string_from_ascii()      # plan 34: listed with saves
 	_draw_page()
 	_draw_sprites()
 
@@ -84,16 +78,41 @@ func _enter_screen(data: Dictionary) -> void:
 ## `$122D6`: the page (the original redraws it every pass).
 func _draw_page() -> void:
 	plane.wipe()
-	var header := HEADER_SHOW if show else HEADER_ENTER
-	MwPlanePainter.text(plane, rom, FONT_HEADER, MwGfx.rom_string(rom, header), 14 if show else 13, 2, ATTR_TEXT)
+	var header := HEADER_SHOW if showing else HEADER_ENTER
+	MwPlanePainter.text(plane, rom, FONT_HEADER, MwGfx.rom_string(rom, header), 14 if showing else 13, 2, ATTR_TEXT)
+	decorations(plane, rom)
+	if not showing:
+		hints(plane, rom)
+	# centred as the original's line, whatever width its glyph has (plan 23)
+	MwPrompts.draw(plane, rom, FONT_LIGHT, MwGfx.rom_string(rom, PRESS_START[0]), PRESS_START[1], PRESS_START[2],
+			ATTR_TEXT,
+			MwVerbs.Context.PASSWORD, false, true)
+
+
+## Plan 40 (M7): the page's colours (`$12176`'s: the screen's, colour 0
+## black, the colour words) - the online keyboard's too.
+static func palette_steps() -> PackedStringArray:
+	var steps := PackedStringArray(["screen_palette", "black 0"])
+	for c in COLOURS:
+		steps.append("word %x %d" % [c[0], c[1]])
+	return steps
+
+
+## The page's decorations and the bars over the grid's rows on
+## [param target_plane] - the online keyboard's too.
+static func decorations(target_plane: RomPlane, rom_bytes: PackedByteArray) -> void:
 	for at in DECO_AT:
-		MwPlanePainter.map_rect(plane, rom, DECO_MAP, 9, 7, 2, at.x, at.y)
+		MwPlanePainter.map_rect(target_plane, rom_bytes, DECO_MAP, 9, 7, 2, at.x, at.y)
 	for row in BAR_ROWS:
-		MwPlanePainter.text(plane, rom, FONT_BIG, MwGfx.rom_string(rom, BAR), 1, row, ATTR_GRID)
-	if not show:
-		for h in HINTS:
-			MwPlanePainter.text(plane, rom, FONT_LIGHT, MwGfx.rom_string(rom, h[0]), h[1], h[2], ATTR_TEXT)
-	MwPlanePainter.text(plane, rom, FONT_LIGHT, MwGfx.rom_string(rom, PRESS_START[0]), PRESS_START[1], PRESS_START[2], ATTR_TEXT)
+		MwPlanePainter.text(target_plane, rom_bytes, FONT_BIG, MwGfx.rom_string(rom_bytes, BAR), 1, row, ATTR_GRID)
+
+
+## The entry's hints (the verbs' glyphs, plan 23) on [param target_plane] - the
+## online keyboard's too.
+static func hints(target_plane: RomPlane, rom_bytes: PackedByteArray) -> void:
+	for h in HINTS:
+		MwPrompts.draw(target_plane, rom_bytes, FONT_LIGHT, MwGfx.rom_string(rom_bytes, h[0]), h[1], h[2], ATTR_TEXT,
+				MwVerbs.Context.PASSWORD)
 
 
 ## The typed symbols (centred) and the grid, the cursor's symbol in line 2.
@@ -107,11 +126,11 @@ func _draw_sprites() -> void:
 		var g := MwGfx.font_glyph(rom, FONT_BIG, rom[MwPlayoffs.ALPHABET + i])
 		if g < 0:
 			continue
-		var p := MwGfx.piece(rom, FONT_BIG + 8 + 6 * g)
-		p["x"] = int(p["x"]) + at.x
-		p["y"] = int(p["y"]) + at.y
-		p["attr"] = int(p["attr"]) ^ ((ATTR_CURSOR if i == cursor else ATTR_GRID) & 0x60)
-		pieces.append(p)
+		var piece := MwGfx.piece(rom, FONT_BIG + 8 + 6 * g)
+		piece["x"] = int(piece["x"]) + at.x
+		piece["y"] = int(piece["y"]) + at.y
+		piece["attr"] = int(piece["attr"]) ^ ((ATTR_CURSOR if i == cursor else ATTR_GRID) & 0x60)
+		pieces.append(piece)
 	grid.set_pieces(pieces)
 
 
@@ -122,20 +141,34 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 		starfield.step()
 	if not MwSound.busy(_crowd):              # `$121F6`
 		_crowd = MwSound.play(SOUND_CROWD)    # `$12202`
-	var pads := 0
-	if input:
-		pads = input.pad_bits(1)
-		if pads == 0:
-			pads = input.pad_bits(2)
-		if input.is_pressed("ui_back") and not show:
-			pads = 0x20                       # Menu Back (plan 21): as C, cancel
+	var pads := _pads(input)
+	if input != null and input.is_pressed("ui_back") and not showing:
+		pads = 0x20                           # Menu Back (plan 21): as C, cancel
 	if _keys(pads):
 		_try()
 
 
+## The pad byte that drives the screen: pad 1's newly pressed buttons, else
+## pad 2's (the original's); plan 34, an extended set-up: then players
+## 3-12's in number order, the first who pressed something
+## ([method MwSession.screen_pads]; team A's captain among them, as the
+## run's other screens answer the captain too).
+func _pads(input: MwInputFrame) -> int:
+	if input == null:
+		return 0
+	var last := session.screen_pads() if session else 4
+	if last <= 4:
+		last = 2
+	for p in range(1, last + 1):
+		var pads := input.pad_bits(p, [MwVerbs.Context.PASSWORD])
+		if pads != 0:
+			return pads
+	return 0
+
+
 ## `$12454`: one pass of the pads; true when Start finishes the entry.
 func _keys(pads: int) -> bool:
-	if show:
+	if showing:
 		return pads & 0x80 != 0
 	var old_cursor := cursor
 	var old_len := buffer.size()
@@ -150,7 +183,8 @@ func _keys(pads: int) -> bool:
 		_done = true
 		_result = -1
 		MwSound.enter_match(0)                # `$122CA` at once (d0: no music plays)
-		exit_to(1)                            # cancelled: the original leaves screen 11
+		# cancelled: the original leaves screen 11 (the port's: back to its continue page)
+		exit_to(MwScreens.CONTINUE if MwFlow.port_playoffs(session) else 1)
 		return false
 	var moved := true
 	if pads & 0x04:
@@ -175,21 +209,27 @@ func _keys(pads: int) -> bool:
 	return false
 
 
-## `$1266C`: the run continues from the password, or it is refused.
+## `$1266C`: the run continues from the password, or it is refused. Port
+## (plan 38): the run's own password, shown after a game, keeps its custom
+## team (the password names its place's original team; owner, 2026-10-15 -
+## the run went on as that original team after its first game); a typed one
+## names the original's teams.
 func _try() -> void:
+	var custom := playoffs.custom
 	if not playoffs.enter_password(rom, buffer):
 		_effect_sound(SOUND_REFUSED)
 		return
+	if showing:
+		playoffs.custom = custom
 	var t := playoffs.teams()
 	session.setup.team_a = t.x
 	session.setup.team_b = t.y
 	playoffs.reseed()
+	if MwFlow.port_playoffs(session) and not showing:
+		session.begin_run()                   # plan 34: a typed password: a run, no game played yet
 	_done = true
-	var st: Dictionary = session.screens.get(11, {})
-	st["starfield"] = [starfield.x, starfield.y, starfield.vx, starfield.vy]
-	session.screens[11] = st
 	_result = 1
-	pop()
+	pop({"starfield": starfield.state()})     # the bracket's stars go on (plan 40: a pop's result)
 
 
 ## `$12AB2`: the last effect stopped, [param id] started.

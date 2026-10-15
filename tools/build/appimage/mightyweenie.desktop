@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=mightyweenie
+Comment=Mutant League Hockey reimplementation (bring your own ROM)
+Exec=mightyweenie.x86_64
+Icon=mightyweenie
+Terminal=false
+Categories=Game;SportsGame;

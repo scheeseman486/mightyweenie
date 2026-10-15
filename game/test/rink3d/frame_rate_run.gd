@@ -19,8 +19,11 @@ extends SceneTree
 ## gets the same input.
 ##
 ## Each pass line: the router's boundary (screen, visit, pass, tick,
-## elapsed), both random streams, and on rink screens a hash of the whole
-## simulation state (MwSimDict). The last line: frames drawn, frame rate.
+## elapsed), both random streams, and on rink screens the hash an online
+## match proves itself with (MwNetHash.rink: the simulation state and the
+## port's layers on it - the control layer, sticks, shot heights, the crowd's
+## noise, the pass pacer; plan 40, T7: it was MwSimDict's alone). The last
+## line: frames drawn, frame rate.
 
 const SEEDS := [0x2545F491, 0x6C8E9CF5]
 
@@ -93,13 +96,7 @@ class PatternInput:
 		var held := {}
 		var masks := pads()
 		for p in masks.size():
-			for button in MwInputScript.PAD_BITS:
-				if masks[p] & MwInputScript.PAD_BITS[button]:
-					for ctx in contexts:
-						for verb in MwVerbs.verbs_of(ctx, button):
-							held[MwVerbs.action(p + 1, verb)] = true
-							if ctx == MwVerbs.Context.MENU:
-								held[MwVerbs.menu_action(p + 1, verb)] = true
+			held.merge(MwVerbs.pad_actions(p + 1, masks[p], contexts))
 		return held
 
 
@@ -147,12 +144,13 @@ func _run() -> void:
 
 
 func _on_pass(b: Dictionary) -> void:
-	var s := _router.session
-	var line := {"screen": b.screen, "visit": b.visit, "pass": b.pass, "tick": int(b.tick) - _tick0, "elapsed": b.elapsed,
-			"rng": s.rng.state, "rng_aux": s.rng_aux.state}
+	var session := _router.session
+	var line := {"screen": b.screen, "visit": b.visit, "pass": b.pass, "tick": int(b.tick) - _tick0,
+			"elapsed": b.elapsed,
+			"rng": session.rng.state, "rng_aux": session.rng_aux.state}
 	var top := _router.current()
 	if top is MwRink and (top as MwRink).state != null:
-		line["state"] = str(MwSimDict.to_dict((top as MwRink).state)).md5_text()
+		line["state"] = MwNetHash.rink((top as MwRink).state)
 	_out.store_line(JSON.stringify(line))
 	if _router.tick - _tick0 >= _ticks:
 		_finish()

@@ -7,11 +7,18 @@ extends MwScreen
 ## run can be re-drawn with A. Before the bracket: the password screen
 ## (pushed: Continue Playoffs, or the new password after a game); a
 ## champion sees the Monster Cup; an eliminated team goes back to the menu.
+##
+## The port's playoffs (plan 34, MwFlow.port_playoffs): after a game the
+## bracket's Start goes back to the game options (SAVE GAME, then the next
+## game), the run as it stood when the bracket opened is kept
+## ([member MwSession.run_checkpoint]) and written to the autosave; a loaded
+## run ([code]loaded[/code] in the entry data) opens its bracket without
+## the password screen; champion and eliminated go to LOCAL PLAY.
 
-const FONT_TITLE := 0x22EE0
-const FONT_LIGHT := 0x447F4
-const FONT_DARK := 0x1F958
-const FONT_BIG := 0x246FA
+const FONT_TITLE := MwFonts.TITLE
+const FONT_LIGHT := MwFonts.LIGHT
+const FONT_DARK := MwFonts.DARK
+const FONT_BIG := MwFonts.BIG
 const ATTR := 0xE0
 ## Map rows of the playoffs picture (`$36CA4`, 28 cells wide), 12 cells each.
 const MAP_STRIDE := 28
@@ -45,6 +52,10 @@ const CUP_ATTR := 0x40
 const THE := 0x66C6B
 const WIN := 0x66C6F
 const CHAMP_Y := 14
+## The champion's "THE <name>": the original's line 2 (the bracket's line);
+## with MwSettings.team_name_colours (owner) team A's line, its own colours.
+const CHAMP_ATTR := 0xC0
+const CHAMP_TEAM_ATTR := 0xA0
 const WIN_AT := Vector2(0x12, 14 + 0x1A)
 
 @onready var plane: RomPlane = $Window
@@ -63,16 +74,21 @@ var view := 0                ## -6(a6): the round the bracket shows
 var redraw := false          ## -8(a6)
 var _held := false           ## the champion's starfield stopped (-$10(a6))
 var _first := true
+var _loaded := false         ## plan 34: a loaded run's bracket, no password screen
+var _autosaved := false
 
 
 func _ready() -> void:
 	fades_in_itself = false
 
 
-func _enter_screen(_data: Dictionary) -> void:
+func _enter_screen(data: Dictionary) -> void:
 	if not MwRom.available() or session == null:
 		return
 	rom = MwRom.data()
+	_loaded = bool(data.get("loaded", false))
+	if MwFlow.port_playoffs(session) and previous == 16:
+		session.run_game_played()
 	setup = session.setup
 	playoffs = session.playoffs
 	starfield.start(session.rng_aux)          # $11CBA: a moving starfield
@@ -103,11 +119,14 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 		if phase == Phase.CHAMPION:
 			pass
 		elif playoffs.flags & MwPlayoffs.ELIMINATED:
-			_leave(1)
+			_leave(MwFlow.end_run(session) if MwFlow.port_playoffs(session) else 1)
 			return
+		elif _loaded:
+			MwSound.music_game()
+			_bracket_start()
 		elif playoffs.flags & MwPlayoffs.NEW == 0:
 			push("password", {"show": playoffs.flags & MwPlayoffs.SHOW_PASSWORD != 0,
-					"starfield": [starfield.x, starfield.y, starfield.vx, starfield.vy]})
+					"starfield": starfield.state()})
 			return
 		else:
 			MwSound.music_game()              # `$11B3C`
@@ -115,10 +134,9 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 	if input != null and input.is_pressed("ui_back") and phase == Phase.BRACKET:
 		_leave(1)                             # Menu Back (plan 21): back to the game setup
 		return
-	var pads := 0
-	if input:
-		for p in range(1, 5):
-			pads |= input.pad_bits(p)
+	var pads := _pads(input)
+	if phase == Phase.CHAMPION and input != null and input.is_pressed("ui_back"):
+		pads |= 0x80                          # Menu Back as Start: leave (plan 22)
 	match phase:
 		Phase.BRACKET:
 			_bracket_pass(pads)
@@ -126,14 +144,27 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 			_champion_pass(elapsed, pads)
 
 
-## Back from the password screen: the bracket of the run it gave.
-func _resume_screen() -> void:
-	var sf: Array = session.screens.get(11, {}).get("starfield", [])
-	if sf.size() == 4:
-		starfield.x = int(sf[0])
-		starfield.y = int(sf[1])
-		starfield.vx = int(sf[2])
-		starfield.vy = int(sf[3])
+## The newly pressed bytes of every pad OR'd (the bracket and the champion
+## read any pad): pads 1-4, or every player's in an extended set-up (plan
+## 34: [method MwSession.screen_pads]) - and team A's captain's, wherever
+## the router put them (between playoff games the run's screens answer
+## the captain as well as P1).
+func _pads(input: MwInputFrame) -> int:
+	var pads := 0
+	if input == null:
+		return pads
+	var n := session.screen_pads() if session else 4
+	pads = input.any_pad_bits(n, [MwVerbs.Context.PLAYOFFS])
+	var captain := MwRinkControl.captain_screen_pad(session.humans, session.pad_map) if session else 0
+	if captain > n:
+		pads |= input.pad_bits(captain, [MwVerbs.Context.PLAYOFFS])
+	return pads
+
+
+## Back from the password screen: the bracket of the run it gave (its
+## stars going on: [param r], the pop's result).
+func _resume_screen(r := {}) -> void:
+	starfield.restore(r.get("starfield", []))
 	plane.wipe()
 	MwSound.music_game()                      # `$11B3C` (after the password's `$13C04`)
 	_bracket_start()
@@ -143,11 +174,16 @@ func _resume_screen() -> void:
 ## (the music, `$11B3C`, is the callers': A's new draw comes back to
 ## `$11B46` without it).
 func _bracket_start() -> void:
+	if MwFlow.port_playoffs(session):
+		session.checkpoint_run()
+		if previous == 16 and not _autosaved:
+			_autosaved = true
+			MwPlayoffSave.save(session, MwPlayoffSave.AUTOSAVE)
 	phase = Phase.BRACKET
 	_palette(true)
-	playoffs.build_bracket(rom, setup.team_a, setup.team_b)
+	playoffs.build_bracket(rom, playoffs.run_place(setup.team_a), setup.team_b)
 	var g := playoffs.game_teams()
-	setup.team_a = g.x
+	setup.team_a = playoffs.shown(g.x)          # plan 38: a custom team in its place's stead
 	setup.team_b = g.y
 	view = playoffs.round
 	redraw = true
@@ -169,7 +205,7 @@ func _bracket_pass(pads: int) -> void:
 		view = (view + 1) & 3
 		redraw = true
 	elif pads & 0x80:
-		_leave(3)
+		_leave(MwFlow.after_bracket(session, previous == 16) if MwFlow.port_playoffs(session) else 3)
 
 
 ## `$11C6A`: fade out, then the matchup (3) or the main menu (1); the
@@ -195,9 +231,11 @@ func _draw_bracket() -> void:
 	_map(CONFERENCE_MAPS[own], 12, 9, SIDE_X[0], 0)
 	_map(CONFERENCE_MAPS[1 - own], 12, 9, SIDE_X[1], 0)
 	_map(LOGO_MAP, 16, 7, 12, 2)               # $11F40
-	for t in [PLAYOFFS, PRESS, START]:
-		var font := FONT_TITLE if t == PLAYOFFS else FONT_LIGHT
-		MwPlanePainter.text(plane, rom, font, MwGfx.rom_string(rom, t[0]), t[1], t[2], ATTR)
+	MwPlanePainter.text(plane, rom, FONT_TITLE, MwGfx.rom_string(rom, PLAYOFFS[0]), PLAYOFFS[1], PLAYOFFS[2], ATTR)
+	MwPlanePainter.text(plane, rom, FONT_LIGHT, MwGfx.rom_string(rom, PRESS[0]), PRESS[1], PRESS[2], ATTR)
+	# "START" under "PRESS": the bound input's glyph, centred under it (plan 23)
+	MwPrompts.draw(plane, rom, FONT_LIGHT, MwGfx.rom_string(rom, START[0]), START[1], START[2], ATTR,
+			MwVerbs.Context.PLAYOFFS, true, true)
 	var list: int = BOX_LISTS[view]
 	var box_map := BOX4_MAP if view == MwPlayoffs.FIRST_ROUND else BOX3_MAP
 	var box_rows := 4 if view == MwPlayoffs.FIRST_ROUND else 3
@@ -228,10 +266,10 @@ func _draw_names() -> void:
 		var row := MwGfx.u16(rom, e)
 		MwPlanePainter.text(plane, rom, font, MwGfx.rom_string(rom, NAME_CLEAR), NAME_X[0], row, ATTR)
 		for side in 2:
-			var t := _bracket_word(lists[side] + 2 * k)
-			var name := MwGfx.rom_string(rom, MwTeams.name(rom, t))
-			var x: int = MwMotion.asr(NAME_WIDTH - MwGfx.text_width(rom, font, name), 1) + NAME_X[side]
-			MwPlanePainter.text(plane, rom, font, name, x, row, ATTR)
+			var t := playoffs.shown(_bracket_word(lists[side] + 2 * k))
+			var team_name := MwGfx.rom_string(rom, MwTeams.name(rom, t))
+			var x: int = MwMotion.asr(NAME_WIDTH - MwGfx.text_width(rom, font, team_name), 1) + NAME_X[side]
+			MwPlanePainter.text(plane, rom, font, team_name, x, row, ATTR)
 			font = FONT_LIGHT
 		k += 1
 		e += 2
@@ -242,8 +280,8 @@ func _bracket_word(offset: int) -> int:
 	@warning_ignore("integer_division")
 	var i := offset / 2
 	var side := 0 if i < 15 else 1
-	var lst: PackedInt32Array = playoffs.sides[side]
-	return lst[i - 15 * side]
+	var side_teams: PackedInt32Array = playoffs.sides[side]
+	return side_teams[i - 15 * side]
 
 
 func _map(map: int, w: int, h: int, x: int, y: int) -> void:
@@ -265,10 +303,11 @@ func _champion() -> void:
 	cup.rebuild()
 	cup.restart()
 	cup.visible = true
-	var name := MwGfx.rom_string(rom, MwTeams.name(rom, setup.team_a))
-	var x := (30 - MwGfx.text_width(rom, FONT_BIG, name)) * 4
-	var a: Array = MwSpriteText.pieces(rom, FONT_BIG, MwGfx.rom_string(rom, THE), 0xC0, x)
-	var b: Array = MwSpriteText.pieces(rom, FONT_BIG, name, 0xC0, int(a[1]) + 8)
+	var team_name := MwGfx.rom_string(rom, MwTeams.name(rom, setup.team_a))
+	var x := (30 - MwGfx.text_width(rom, FONT_BIG, team_name)) * 4
+	var line := CHAMP_TEAM_ATTR if MwSettings.team_name_colours else CHAMP_ATTR
+	var a: Array = MwSpriteText.pieces(rom, FONT_BIG, MwGfx.rom_string(rom, THE), line, x)
+	var b: Array = MwSpriteText.pieces(rom, FONT_BIG, team_name, line, int(a[1]) + 8)
 	var c: Array = MwSpriteText.pieces(rom, FONT_TITLE, MwGfx.rom_string(rom, WIN), ATTR, int(WIN_AT.x))
 	var all: Array = a[0] + b[0]
 	for p in all:
@@ -276,6 +315,10 @@ func _champion() -> void:
 	for p in c[0]:
 		p["y"] = int(p["y"]) + int(WIN_AT.y)
 		all.append(p)
+	# port only (plan 38): a custom champion's name in colours of its own
+	# (its "THE <name>" on a palette of its own; the cup keeps the shared one)
+	if line == CHAMP_TEAM_ATTR and champion_text.palette == palette:
+		champion_text.palette = MwScreenPalettes.names(palette, 1)
 	champion_text.set_pieces(all)
 
 
@@ -291,4 +334,4 @@ func _champion_pass(elapsed: int, pads: int) -> void:
 	if pads & 0x20 and not _held:
 		starfield.redirect(session.rng_aux)
 	if pads & 0x80:
-		_leave(1)
+		_leave(MwFlow.end_run(session) if MwFlow.port_playoffs(session) else 1)

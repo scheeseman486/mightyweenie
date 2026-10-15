@@ -30,6 +30,14 @@ extends TileMapLayer
 ## low-priority sprites; none: every cell here (the original's priority is
 ## then the layer order's).
 @export var high_cells: RomPlane
+## The modulate tints as a screen blend instead of multiplying (the palette
+## shader's screen_tint): black takes the tint's colour, white stays white -
+## dark text coloured on a light bar (the port menu's red ABACABB MODE label
+## while selected).
+@export var screen_tint := false:
+	set(v):
+		screen_tint = v
+		_update_material()
 ## The priority of the cells [method put] writes next ([method put_word]
 ## and [MwPlanePainter]'s glyphs set it).
 var priority := false
@@ -137,3 +145,5 @@ func cell(x: int, y: int) -> Dictionary:
 
 func _update_material() -> void:
 	material = palette.material() if palette and palette.texture() else null
+	if material and screen_tint:
+		(material as ShaderMaterial).set_shader_parameter("screen_tint", true)

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Plan 34: the twelve players' colours (MwPlayerColours) checked - CIEDE2000
+# apart from each other, the CPU's grey, the ice and the crossbones' own
+# colours (game/test/ui/colour_check.gd) - and the contact sheet for picking
+# them: each ice with every player's crossbones, the numbers on the menus'
+# black. Made from the ROM at run time (out/, never committed).
+#   tools/bin/colour-check [SHEET=out/colours/contact_sheet.png]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+sheet="${1:-$MW_ROOT/out/colours/contact_sheet.png}"
+mkdir -p "$(dirname "$sheet")"
+"$(dirname "${BASH_SOURCE[0]}")/godot-headless" -s res://test/ui/colour_check.gd -- --sheet "$sheet" 2>&1 \
+  | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)'
+exit "${PIPESTATUS[0]}"

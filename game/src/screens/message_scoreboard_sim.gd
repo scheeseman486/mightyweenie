@@ -13,9 +13,12 @@ extends MwScreenSim
 ## the pads for 180 ticks and leaves on Start only (5; a forfeit: 15, the
 ## winner in `$FFC640`, or 16 in the playoffs after `$12854`).
 ##
-## Start on the fouled human team's pad ([member pad]) skips the sequence:
-## everyone left goes to the box at once. Returns from 7 / 8 / 10 redo the
-## set-up in menu mode (state -1), the box as it was.
+## Start on the fouled human team's pad ([member pad]; none: pad 1 - plan
+## 34: [method _first_pad]) skips the sequence: everyone left goes to the
+## box at once. Plan 35: when that pad's player's machine goes away while
+## the screen runs, the skip passes on ([method _skip_pad_now]). Returns
+## from 7 / 8 / 10 redo the set-up in menu mode (state -1), the box as it
+## was.
 ##
 ## The state machine ([member state], `$FFFFF2`, table `$1D2DC`): 0 next
 ## called player (`$E9D0`), 1 the panel opening, 2 the info for 180 ticks,
@@ -39,7 +42,7 @@ const BOX_Y := [0x1D30C, 0x1D304]    ## the box entries' y by team (A: -52, -84,
 const PENALTY_NAMES := 0x1CA3A       ## by the code (signed): the penalty's name
 const MINUTES_TEXT := 0x50D1D        ## ":00 PENALTY FOR"
 const NUMBER_FONT := 0x22D66
-const TEXT_FONT := 0x447F4
+const TEXT_FONT := MwFonts.LIGHT
 const REF_STANDS := 0x213DC
 const REF_POINTS := 0x213FC
 const REF_WAVES := 0x2140C
@@ -103,6 +106,15 @@ var _known := {}                     ## locals set in this visit (the others are
 var _walked := {}                    ## players whose slot this visit moved
 
 
+## Plan 45: the rink sim disposed as this sim goes (its cycles would keep the
+## match's state; MwScreenSim.dispose).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and rink != null:
+		rink.dispose()
+
+
+## True: this sim ports the screen (the screen checks tell it from the stubs, which keep
+## [MwScreenSim]'s step; called by name).
 func ported() -> bool:
 	return true
 
@@ -114,8 +126,8 @@ func ported() -> bool:
 ## 7 / 8 / 10 in menu mode with the menu shown; the referee standing; the
 ## skip pad (`$E994` for team A, then team B: a team with a human pad whose
 ## opponent's box stopped play).
-func enter(st: MwRinkState, screen_id: int, from_screen: int) -> void:
-	super.enter(st, screen_id, from_screen)
+func enter(rink_state: MwRinkState, screen_id: int, from_screen: int) -> void:
+	super.enter(rink_state, screen_id, from_screen)
 	begin_pass()
 	rink = MwRinkSim.new(rom, s)
 	rink.live = live()
@@ -142,10 +154,31 @@ func enter(st: MwRinkState, screen_id: int, from_screen: int) -> void:
 		state = MwRinkSim.s16(state - 1)
 		_menu_show()
 	referee = MwAnimState.from_record(rom, REF_STANDS)
-	var d0 := _fouled_pad(team_a3, team_a4, 0)
-	d0 = _fouled_pad(team_a4, team_a3, d0)
-	pad = (d0 * 2) & 0xFFFF
+	pad = _skip_pad()
 	snapshot = MwScoreboardSim.setup_tick(self)
+
+
+## The set-up's skip pad: `$E994` for team A, then team B (the set-up's a3
+## and a4), x 2.
+func _skip_pad() -> int:
+	var d0 := _fouled_pad(s.teams[0], s.teams[1], _first_pad(s), s.control)
+	d0 = _fouled_pad(s.teams[1], s.teams[0], d0, s.control)
+	return (d0 * 2) & 0xFFFF
+
+
+## Plan 35: the skip pad's player whose machine went away while the screen
+## runs (MwRinkControl.set_net: the stream says so at the same tick on
+## every machine) hands the skip on - to the pad the set-up would take now
+## ([method _skip_pad]: the team's new captain or player still in, else the
+## other team's). The referee's message waits for that Start alone, so it
+## never waits for a machine that is gone. Offline, and online with that
+## player here, [member pad] stays as the set-up made it.
+func _skip_pad_now() -> void:
+	if s.control == null:
+		return
+	var seat := s.control.seat_on_pad(pad >> 1)
+	if seat != null and seat.net != 0:
+		pad = _skip_pad()
 
 
 ## What `$1856` (a human player sent to the box hands control on: `$A2A4`
@@ -157,23 +190,58 @@ func enter(st: MwRinkState, screen_id: int, from_screen: int) -> void:
 ## +$3D its byte at `$35` (the flags: not carried). In this ROM: the point
 ## (-77, 0) a neutral-zone "puck" at rest.
 static func frame_view(rom_: PackedByteArray) -> MwHumanControl.A6View:
-	var v := MwHumanControl.A6View.new()
-	v.x = SAVED_A6 - 0x100000000 if SAVED_A6 >= 0x80000000 else SAVED_A6
-	v.vx = DISPATCH_RETURN >> 16
+	var view := MwHumanControl.A6View.new()
+	view.x = SAVED_A6 - 0x100000000 if SAVED_A6 >= 0x80000000 else SAVED_A6
+	view.vx = DISPATCH_RETURN >> 16
 	var y := MwGfx.u32(rom_, 0)
-	v.y = y - 0x100000000 if y >= 0x80000000 else y
-	v.vy = MwGfx.s16(rom_, 4)
-	v.flags = rom_[0x35]
-	return v
+	view.y = y - 0x100000000 if y >= 0x80000000 else y
+	view.vy = MwGfx.s16(rom_, 4)
+	view.flags = rom_[0x35]
+	return view
+
+
+## `$E994`'s d0 coming in: pad 1 (0) - team A's first pad in every pad
+## mode with a human, the skip pad when no fouled team takes it (the
+## referee's message waits for its Start alone). Plan 34, where pad 1 is
+## not that: an extended set-up's team A's lowest-numbered player (else
+## team B's: team B only); with captains or a player gone (left with QUIT
+## GAME, or online their machine away), team A's captain / lowest-numbered
+## player still in, else team B's, and with everyone gone the first player
+## whose machine is here (MwRinkControl.first_seat: every pad counts then).
+static func _first_pad(rink_state: MwRinkState) -> int:
+	if rink_state.control != null and rink_state.control.reshaped():
+		var seat := rink_state.control.first_seat()
+		if seat != null:
+			return seat.pad
+	if rink_state.extended:
+		for team in rink_state.teams:
+			if not team.port_pads.is_empty():
+				return team.port_pads[0]
+	return 0
 
 
 ## `$E994`: [param team]'s first pad when it has a human pad (+4 bit 2) and
-## [param other]'s box stopped play (+$3A1 bit 0), else [param d0].
-static func _fouled_pad(team: MwRinkState.Team, other: MwRinkState.Team, d0: int) -> int:
+## [param other]'s box stopped play (+$3A1 bit 0), else [param d0]. Plan 34,
+## an extended set-up: its lowest-numbered player's match pad. With captains
+## or a player of the team gone ([param control]: left, or their machine
+## away): its captain's, else its lowest-numbered player's still in; nobody
+## in: as a CPU team.
+static func _fouled_pad(team: MwRinkState.Team, other: MwRinkState.Team, d0: int,
+		control: MwRinkControl = null) -> int:
 	if team.flags4 & 4 == 0:
 		return d0
 	if MwRinkPenalties.flags(other) & MwRinkPenalties.STOP == 0:
 		return d0
+	if control != null:
+		var t := 0 if team.flags4 & 1 == 0 else 1
+		var changed := control.captain_mode
+		for seat in control.seats:
+			changed = changed or (seat.team == t and seat.gone())
+		if changed:
+			var lead := control.lead_seat(t)
+			return lead.pad if lead != null else d0
+	if not team.port_pads.is_empty():
+		return team.port_pads[0]
 	return int(team.pads[0]) & 0xFF
 
 
@@ -228,21 +296,23 @@ func step(elapsed: int, held: Array, new: Array) -> int:
 	MwScoreboardSim.read_pads(s, held, new)
 	if state < 0:
 		return _menu_input(new)
+	_skip_pad_now()
 	var i := pad >> 1
-	var b := int(new[i]) & 0xFF if i < 4 else 0
+	var b := int(new[i]) & 0xFF if i < new.size() else 0
 	if b & 0x80 == 0:
 		return -1
 	return _skip()
 
 
 ## `$E8DE`: menu mode - the menu shown first; then newly pressed buttons on
-## any pad: Start 5, A 8, B 10, C 7.
+## any pad: Start 5, A 8, B 10, C 7 (plan 34, an extended set-up: any of
+## its twelve match pads, as [method MwScreenSim.pads_word]).
 func _menu_input(new: Array) -> int:
 	if menu == 0:
 		_menu_show()
 		return -1
 	var w := 0
-	for p in 4:
+	for p in new.size():
 		w |= int(new[p]) & 0xFF
 	var to := -1
 	if w & 0x80:
@@ -357,9 +427,9 @@ func _next_slot(p: MwRinkState.Player) -> int:
 		if team_a3 == s.teams[1]:
 			state = MENU
 			return -1
-		var t := team_a3
+		var team := team_a3
 		team_a3 = team_a4
-		team_a4 = t
+		team_a4 = team
 		side = MwRinkSim.s16(side - 1)
 		return 0
 	return team_a3.players.find(p) + 1
@@ -432,16 +502,16 @@ func _to_box(e: int) -> void:
 		p.motion.init(MwRinkSim.s16(at.x), MwRinkSim.s16(at.y), MwRinkSim.s16(at.z))
 		name = MwGfx.u32(rom, p.original)
 		_known["name"] = true
-		var set := portrait.set_player(rom, p.original, 0)
+		var quote_set := portrait.set_player(rom, p.original, 0)
 		_known["portrait"] = true
 		var winner := MwScoreboardSim.player_long(p) == s.scorer & 0xFFFFFFFF
 		if winner:
-			if set >= 9:
-				set = 0
+			if quote_set >= 9:
+				quote_set = 0
 			var sit := s.goal_kind & 0xFFFF
 			if sit >= 2:
 				sit = 0
-			quote_at = MwScoreboardSim.quote_pick(self, set, 11, sit, team_a3, team_a4, -1)
+			quote_at = MwScoreboardSim.quote_pick(self, quote_set, 11, sit, team_a3, team_a4, -1)
 			_known["quote"] = true
 		portrait.start(rom, 0)
 		portrait_on = 1
@@ -540,7 +610,10 @@ func _walk(e: int, angle: int) -> void:
 ## `$EC76`: the referee's message: no player, no name; the face of no
 ## record (the referee's) pulling a face; a quote of category 13 (0 a new
 ## referee, 1 a forfeit) about `$FFC640`'s team (a3 set to it); the speech
-## box filled; the portrait on (state 9).
+## box filled; the portrait on (state 9). After a manual forfeit (the port's
+## pause menu, [member MwRinkState.forfeit_manual]; plan 26) the quote comes
+## from the port's own set ([constant MwQuotes.MANUAL_FORFEIT]) instead,
+## picked with the same random draw.
 func _referee_message() -> void:
 	current = null
 	name = 0
@@ -549,10 +622,14 @@ func _referee_message() -> void:
 	_known["portrait"] = true
 	portrait.start(rom, 1)
 	if (0xFFFF0000 | MwScoreboardSim.TEAM_WORDS[s.teams.find(team_a3)]) != s.scoring & 0xFFFFFFFF:
-		var t := team_a3
+		var team := team_a3
 		team_a3 = team_a4
-		team_a4 = t
-	quote_at = MwScoreboardSim.quote_pick(self, 0, 13, MwRinkSim.s16(s.phase - 12), team_a3, team_a4, -1)
+		team_a4 = team
+	var situation := MwRinkSim.s16(s.phase - 12)
+	if situation == 1 and s.forfeit_manual:
+		quote_at = MwScoreboardSim.quote_from(self, MwQuotes.MANUAL_FORFEIT, team_a3, team_a4, -1)
+	else:
+		quote_at = MwScoreboardSim.quote_pick(self, 0, 13, situation, team_a3, team_a4, -1)
 	_known["quote"] = true
 	MwScoreboardSim.speech_frame(self, MwScoreboardSim.rect_at(rom, SPEECH_RECT), true)
 	portrait_on = (portrait_on + 1) & 0xFFFF
@@ -579,13 +656,13 @@ static func box_display(sim: MwScreenSim, elapsed: int) -> void:
 			var at := MwRinkPenalties.entry(i)
 			if MwRinkPenalties.byte(team, at + 0x10) == 0 or MwRinkPenalties.byte(team, at + 6) & 0x80 == 0:
 				continue
-			var a := entry_anim(sim.rom, team, i)
-			a.advance(elapsed)
-			set_entry_anim(team, i, a)
+			var anim := entry_anim(sim.rom, team, i)
+			anim.advance(elapsed)
+			set_entry_anim(team, i, anim)
 			var y := MwGfx.s16(sim.rom, int(BOX_Y[t]) + 2 * k)
 			k += 1
-			var p := MwScoreboardSim.project(sim.s, BOX_DOOR, y, 0)
-			sim.sprite_ops.append(MwScoreboardSim.anim_op(a, p.x, p.y, p.z, team.attr))
+			var point := MwScoreboardSim.project(sim.s, BOX_DOOR, y, 0)
+			sim.sprite_ops.append(MwScoreboardSim.anim_op(anim, point.x, point.y, point.z, team.attr))
 
 
 ## Box entry [param i]'s animation copy (+0..+$A) of [param team].
@@ -598,53 +675,56 @@ static func entry_anim(rom_: PackedByteArray, team: MwRinkState.Team, i: int) ->
 
 ## Box entry [param i]'s animation copy written back (+4..+$A: speed,
 ## flags, variant, position, frame; the record stays).
-static func set_entry_anim(team: MwRinkState.Team, i: int, a: MwAnimState) -> void:
+static func set_entry_anim(team: MwRinkState.Team, i: int, anim: MwAnimState) -> void:
 	var at := MwRinkPenalties.entry(i)
-	MwRinkPenalties.set_word(team, at + 4, a.speed)
-	MwRinkPenalties.set_byte(team, at + 6, a.flags)
-	MwRinkPenalties.set_byte(team, at + 7, a.variant)
-	MwRinkPenalties.set_word(team, at + 8, a.position)
-	MwRinkPenalties.set_byte(team, at + 0xA, a.frame)
+	MwRinkPenalties.set_word(team, at + 4, anim.speed)
+	MwRinkPenalties.set_byte(team, at + 6, anim.flags)
+	MwRinkPenalties.set_byte(team, at + 7, anim.variant)
+	MwRinkPenalties.set_word(team, at + 8, anim.position)
+	MwRinkPenalties.set_byte(team, at + 0xA, anim.frame)
 
 
 # --- comparisons ---------------------------------------------------------------------------------
 
+## The fields that differ from the original's [param ram] and [param stack] after the same pass
+## ([method MwScreenSim.compare]): the handler's locals, the teams, the set-up, the speech, the
+## scorer, the scoring and the playoffs.
 func compare(ram: PackedByteArray, stack: PackedByteArray) -> Array:
-	var d := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
+	var diff := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
 	var a6 := LOCALS
-	d.long("snapshot -4", a6 - 4, snapshot)
-	d.word("state -6", a6 - 6, state)
-	d.word("lockout -$5C", a6 - 0x5C, lockout)
-	d.word("panel dir", a6 - 0xC, panel.dir)
-	d.word("panel remainder", a6 - 0xA, panel.remainder)
-	d.word("panel size", a6 - 8, panel.size)
-	d.word("menu -$E", a6 - 0xE, menu)
-	d.handle("music -$56", a6 - 0x56, music >= 0)
-	d.anim("referee", a6 - 0x4E, referee, 0)
-	d.word("pad -$34", a6 - 0x34, pad)
-	d.long("current -$3A", a6 - 0x3A, MwScoreboardSim.player_long(current))
-	d.word("side -$36", a6 - 0x36, side)
-	d.word("portrait on -$32", a6 - 0x32, portrait_on)
+	diff.long("snapshot -4", a6 - 4, snapshot)
+	diff.word("state -6", a6 - 6, state)
+	diff.word("lockout -$5C", a6 - 0x5C, lockout)
+	diff.word("panel dir", a6 - 0xC, panel.dir)
+	diff.word("panel remainder", a6 - 0xA, panel.remainder)
+	diff.word("panel size", a6 - 8, panel.size)
+	diff.word("menu -$E", a6 - 0xE, menu)
+	diff.handle("music -$56", a6 - 0x56, music >= 0)
+	diff.anim("referee", a6 - 0x4E, referee, 0)
+	diff.word("pad -$34", a6 - 0x34, pad)
+	diff.long("current -$3A", a6 - 0x3A, MwScoreboardSim.player_long(current))
+	diff.word("side -$36", a6 - 0x36, side)
+	diff.word("portrait on -$32", a6 - 0x32, portrait_on)
 	if _known.has("stamp"):
-		d.long("stamp -$12", a6 - 0x12, stamp)
+		diff.long("stamp -$12", a6 - 0x12, stamp)
 	if _known.has("entry"):
-		d.word("entry -$3C", a6 - 0x3C, entry)
-		d.long("entry address -$40", a6 - 0x40, entry_at)
+		diff.word("entry -$3C", a6 - 0x3C, entry)
+		diff.long("entry address -$40", a6 - 0x40, entry_at)
 	if _known.has("target"):
-		d.word("target y -$42", a6 - 0x42, target_y)
+		diff.word("target y -$42", a6 - 0x42, target_y)
 	if _known.has("quote"):
-		d.long("quote -$52", a6 - 0x52, quote_at)
+		diff.long("quote -$52", a6 - 0x52, quote_at)
 	if _known.has("name"):
-		d.long("name -$5A", a6 - 0x5A, name)
+		diff.long("name -$5A", a6 - 0x5A, name)
 	if _known.has("portrait"):
-		portrait.compare(d, a6 - 0x30, "portrait")
+		portrait.compare(diff, a6 - 0x30, "portrait")
 	var ours := MwRinkRam.encode(s, ram)
 	# the teams: the walked players' slots, the box entries, the stats
-	d.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
-	MwScoreboardSim.compare_anim_pad(d, _walked.keys())
-	MwScoreboardSim.compare_setup(d, ours)
-	MwScoreboardSim.compare_speech(d, ours)
-	d.ram_range(ours, MwRinkRam.SCORER, MwRinkRam.SCORER + 4)
-	d.ram_range(ours, MwRinkRam.SCORING, MwRinkRam.SCORING + 4)
-	d.ram_range(ours, MwRinkRam.PLAYOFFS, MwRinkRam.PLAYOFFS + 0x15)
-	return d.out
+	diff.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
+	MwScoreboardSim.compare_anim_pad(diff, _walked.keys())
+	MwScoreboardSim.compare_setup(diff, ours)
+	MwScoreboardSim.compare_speech(diff, ours)
+	diff.ram_range(ours, MwRinkRam.SCORER, MwRinkRam.SCORER + 4)
+	diff.ram_range(ours, MwRinkRam.SCORING, MwRinkRam.SCORING + 4)
+	diff.ram_range(ours, MwRinkRam.PLAYOFFS, MwRinkRam.PLAYOFFS + 0x15)
+	return diff.out

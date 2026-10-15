@@ -13,3 +13,43 @@ MW_REC_DRAWS=(match_p1_s6_d pause_p1_s7_d goalie_p1_s12_d attract_d soak_22_v1_d
 MW_REC_SCREENS=(scr_1011_v19 scr_1033_v35 scr_1011_v12 scr_1001_v15 scr_1001_v21 scr_1041_v10 scr_1009_v8 scr_1011_v7
                 scr_1019_v1 scr_1012_v7 scr_1122_v6 scr_1125_v13 scr_1112_v10 scr_1500_v1 scr_1503_v12 scr_1501_v8
                 scr_1309_v1 scr_1317_v1 scr_1334_v1 scr_1347_v1 scr_1529_v1 scr_1315_v1)
+
+# The noise a headless Godot run prints that no check reads.
+MW_NOISE='^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)'
+mw_filter() { grep -v "$MW_NOISE" || true; }
+
+# mw_each_recording SCRIPT NAME... -- ARG...: one headless Godot process per
+# recording running SCRIPT with "NAME ARG..." (the recordings are large),
+# their output in the names' order, filtered; returns 1 if any run failed.
+# MW_JOBS (the wrappers' -j N): that many at once, each one's output held
+# until it is done (the order and the text as one at a time).
+mw_each_recording() {
+  local script="$1"; shift
+  local names=() opts=() past=0 a
+  for a in "$@"; do
+    if (( past )); then opts+=("$a"); elif [[ "$a" == -- ]]; then past=1; else names+=("$a"); fi
+  done
+  local godot par="${MW_JOBS:-1}" status=0 n
+  godot="$(dirname "${BASH_SOURCE[0]}")/godot-headless"
+  if (( par <= 1 )); then
+    for n in "${names[@]}"; do
+      "$godot" -s "$script" -- "$n" "${opts[@]}" 2>&1 | mw_filter
+      (( ${PIPESTATUS[0]} == 0 )) || status=1
+    done
+    return $status
+  fi
+  local tmp i=0 k
+  tmp="$(mktemp -d)"
+  for n in "${names[@]}"; do
+    ( "$godot" -s "$script" -- "$n" "${opts[@]}" > "$tmp/$i.out" 2>&1; echo $? > "$tmp/$i.rc" ) &
+    i=$((i + 1))
+    while (( $(jobs -rp | wc -l) >= par )); do wait -n; done
+  done
+  wait
+  for ((k = 0; k < i; k++)); do
+    mw_filter < "$tmp/$k.out"
+    [[ "$(cat "$tmp/$k.rc" 2>/dev/null)" == 0 ]] || status=1
+  done
+  rm -rf "$tmp"
+  return $status
+}

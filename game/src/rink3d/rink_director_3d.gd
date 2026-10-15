@@ -1,8 +1,8 @@
 class_name MwRinkDirector3D
 extends RefCounted
-## The cinematic camera's director (plan 20, F7; owner: "swoops and zooms
-## that aren't necessarily good for gameplay but work well to capture
-## footage"). It picks shots of the play and moves through them:
+## The cinematic camera's director (plan 20, F7; owner: swoops and zooms to
+## capture footage, not meant for play). It picks shots of the play and moves
+## through them:
 ##
 ## * CRANE: from high behind the play down towards it.
 ## * ORBIT: round the puck above the glass, slowly.
@@ -60,7 +60,17 @@ func place(cam: MwRinkCamera3D, look: Vector3, snapping: bool, step: float) -> b
 	time += step
 	if time >= _length:
 		_next(puck, _rng.randf() < 0.35)
-	var focus := puck.lerp(Vector3(look.x, look.y, 8.0), 0.25)
+	_frame(cam, puck.lerp(Vector3(look.x, look.y, 8.0), 0.25), step)
+	cut_boards = signf(_eye.y) * MwRinkShape.BOARD.y if absf(_eye.y) > MwRinkShape.BOARD.y else 0.0
+	return true
+
+
+## Moves the shot's focus to [param focus] and its eye and lens to where the
+## shot puts them for it ([method _shot_eye]) - at once on a cut, else
+## smoothly (slowly when moving to the shot gently) - and places [param cam]
+## there, [param step] s on. Shared with the match's opening's director
+## (MwIntroDirector3D, plan 33).
+func _frame(cam: MwRinkCamera3D, focus: Vector3, step: float) -> void:
 	if _cut:
 		_focus = focus
 		_focus_v = Vector3.ZERO
@@ -78,9 +88,9 @@ func place(cam: MwRinkCamera3D, look: Vector3, snapping: bool, step: float) -> b
 		_cut = false
 	else:
 		var omega := 1.3 if _gentle else 7.0
-		var e := MwRinkCamera3D.damp(_eye, _eye_v, want[0], omega, step)
-		_eye = e[0]
-		_eye_v = e[1]
+		var damped_eye := MwRinkCamera3D.damp(_eye, _eye_v, want[0], omega, step)
+		_eye = damped_eye[0]
+		_eye_v = damped_eye[1]
 		var z := MwRinkCamera3D.damp(_fov, _fov_v, fov, 1.5 if _gentle else 6.0, step)
 		_fov = z[0]
 		_fov_v = z[1]
@@ -89,8 +99,12 @@ func place(cam: MwRinkCamera3D, look: Vector3, snapping: bool, step: float) -> b
 	cam.transform = MwRinkCamera3D.looking(_eye, _focus)
 	cam.fov = _fov
 	cam.near = 0.5
-	cut_boards = signf(_eye.y) * MwStands.BOARD.y if absf(_eye.y) > MwStands.BOARD.y else 0.0
-	return true
+
+
+## The world root's scale while this director films (MwRinkCamera3D
+## .world_scale): the true one.
+func world_scale() -> Vector3:
+	return Vector3.ONE
 
 
 ## New shots on the play's cues: a goal (the goal orbit), a faceoff or a
@@ -126,8 +140,8 @@ func _next(puck: Vector3, gentle: bool) -> void:
 	_start(pick, _rng.randf_range(4.0, 8.0), gentle, puck)
 
 
-func _start(s: int, length: float, gentle: bool, puck: Vector3) -> void:
-	shot = s as Shot
+func _start(new_shot: int, length: float, gentle: bool, puck: Vector3) -> void:
+	shot = new_shot as Shot
 	time = 0.0
 	_length = length
 	_gentle = gentle
@@ -142,10 +156,10 @@ func _shot_eye(f: Vector3) -> Array:
 	var u := clampf(time / _length, 0.0, 1.0)
 	match shot:
 		Shot.CRANE:
-			var e := u * u * (3.0 - 2.0 * u)
+			var eased := u * u * (3.0 - 2.0 * u)
 			var high := Vector3(f.x * 0.4, f.y + 300.0, 420.0)
 			var low := Vector3(f.x * 0.7, f.y + 150.0, 110.0)
-			return [_inside(high.lerp(low, e), 420.0), lerpf(44.0, 34.0, e)]
+			return [_inside(high.lerp(low, eased), 420.0), lerpf(44.0, 34.0, eased)]
 		Shot.ORBIT:
 			var a := _angle + 0.22 * time
 			return [_inside(f + Vector3(sin(a) * 210.0, cos(a) * 210.0, 120.0), 120.0), 36.0]
@@ -163,6 +177,6 @@ func _shot_eye(f: Vector3) -> Array:
 	return [f + Vector3(0, 200, 200), 40.0]
 
 
-## [param e] kept over the ice (inside the boards), at height [param z].
-static func _inside(e: Vector3, z: float) -> Vector3:
-	return Vector3(clampf(e.x, -175.0, 175.0), clampf(e.y, -360.0, 360.0), z)
+## [param point] kept over the ice (inside the boards), at height [param z].
+static func _inside(point: Vector3, z: float) -> Vector3:
+	return Vector3(clampf(point.x, -175.0, 175.0), clampf(point.y, -360.0, 360.0), z)

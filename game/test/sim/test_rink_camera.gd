@@ -4,13 +4,15 @@ extends "res://test/rom/rom_test_base.gd"
 ## BlastEm; mw_harness rink-fixtures). The FACE OFF! drop shake (phase 9
 ## part 2) writes the shown x itself and is plan 09's; shakes start in the
 ## simulation (here: from the recording).
+## Short names: c the MwRinkCamera under test.
 
 var _seqs: Array
 
 
 func before_all() -> void:
 	super.before_all()
-	_seqs = JSON.parse_string(FileAccess.get_file_as_string(repo_path("compare/fixtures/rink_camera.json")))["sequences"]
+	_seqs = JSON.parse_string(FileAccess.get_file_as_string(
+			repo_path("compare/fixtures/rink_camera.json")))["sequences"]
 
 
 static func _cam(c: MwRinkCamera, d: Dictionary) -> void:
@@ -29,17 +31,17 @@ static func _vals(c: MwRinkCamera) -> Array:
 
 
 ## A state with what the target choice and the look-ahead read.
-static func _state(p: Dictionary, phase: int) -> MwRinkState:
+static func _state(pass_record: Dictionary, phase: int) -> MwRinkState:
 	var s := MwRinkState.new()
 	s.phase = phase
-	s.puck.flags = int(p["puck_flags"])
+	s.puck.flags = int(pass_record["puck_flags"])
 	for t in 2:
-		s.teams[t].flags4 = int(p["flags4"][t])
-		s.teams[t].flags5 = int(p["flags5"][t])
+		s.teams[t].flags4 = int(pass_record["flags4"][t])
+		s.teams[t].flags5 = int(pass_record["flags5"][t])
 	for i in 6:
-		s.teams[0].players[i].flags = int(p["fighting"][i])
-	s.puck.carrier = s._ref(p["carrier"]) as MwRinkState.Player
-	s.camera_target = s._ref(p["previous_target"])
+		s.teams[0].players[i].flags = int(pass_record["fighting"][i])
+	s.puck.carrier = s._ref(pass_record["carrier"]) as MwRinkState.Player
+	s.camera_target = s._ref(pass_record["previous_target"])
 	return s
 
 
@@ -67,8 +69,8 @@ func test_camera_follows_like_the_original() -> void:
 				s.camera.start_shake(30, 8)
 			var lead: Variant = null
 			if s.puck.flags & MwRinkState.Puck.CARRIED:
-				var t := s.teams[1] if s.puck.flags & MwRinkState.Puck.BY_TEAM_B else s.teams[0]
-				lead = MwRinkCamera.LEAD if t.flags4 & 2 else -MwRinkCamera.LEAD
+				var team := s.teams[1] if s.puck.flags & MwRinkState.Puck.BY_TEAM_B else s.teams[0]
+				lead = MwRinkCamera.LEAD if team.flags4 & 2 else -MwRinkCamera.LEAD
 			s.camera.update(rom, int(p["e"]), target.motion if target else null, lead)
 			var got := _vals(s.camera)
 			var want_cam := MwRinkCamera.new()

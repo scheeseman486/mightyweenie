@@ -195,26 +195,26 @@ static func run(rec: MwSimRecording, v: Array, s: MwRinkState, sim: MwScreenSim,
 	if each.is_valid():
 		each.call(first, -1)
 	for j in range(first + 1, last + 1):
-		var e: Array = rec.screen_passes[j]
-		var el := int(e[4])
-		if int(e[3]) in NO_WAIT:
-			el = (int(e[2]) - int(rec.screen_passes[j - 1][2])) & 0xFFFF
-		var after_ := after(rec, j)
+		var screen_pass: Array = rec.screen_passes[j]
+		var el := int(screen_pass[4])
+		if int(screen_pass[3]) in NO_WAIT:
+			el = (int(screen_pass[2]) - int(rec.screen_passes[j - 1][2])) & 0xFFFF
+		var after_record := after(rec, j)
 		var held := []
 		var new := []
 		for p in 4:
-			held.append(MwRinkRam.u8(after_, PADS + 2 * p) if not after_.is_empty() else 0)
-			new.append(MwRinkRam.u8(after_, PADS + 2 * p + 1) if not after_.is_empty() else 0)
+			held.append(MwRinkRam.u8(after_record, PADS + 2 * p) if not after_record.is_empty() else 0)
+			new.append(MwRinkRam.u8(after_record, PADS + 2 * p + 1) if not after_record.is_empty() else 0)
 		if j == last and not contiguous(rec, j):
 			# the rink ran next: no snapshot holds what this pass's read_joypads saw
 			# (on pad 1, or the pad a one-pad screen names: `control_pad()`)
-			var b := tour_press(rec, int(e[2]), scr, int(rec.screen_passes[j - 1][2]))
+			var b := tour_press(rec, int(screen_pass[2]), scr, int(rec.screen_passes[j - 1][2]))
 			var at := int(sim.call("control_pad")) & 3 if sim.has_method("control_pad") else 0
 			held = [0, 0, 0, 0]
 			new = [0, 0, 0, 0]
 			held[at] = b
 			new[at] = b
-		s.tick = int(e[2])
+		s.tick = int(screen_pass[2])
 		hooks.now = int(rec.screen_passes[j + 1][2]) - 1 if j + 1 <= last else s.tick
 		hooks.pass_start_tick = s.tick
 		# the last pass: as long as its own elapsed (the screen left, no next boundary)
@@ -235,10 +235,10 @@ static func run(rec: MwSimRecording, v: Array, s: MwRinkState, sim: MwScreenSim,
 
 ## The screen's call before record [param i]: the screen it came from.
 static func from_screen(rec: MwSimRecording, i: int) -> int:
-	var e: Array = rec.screen_passes[i]
+	var screen_pass: Array = rec.screen_passes[i]
 	var prev := -1
 	for x in rec.meta["screens"]:
-		if int(x[2]) == int(e[2]) and int(x[1]) == int(e[1]):
+		if int(x[2]) == int(screen_pass[2]) and int(x[1]) == int(screen_pass[1]):
 			return prev
 		prev = int(x[1])
 	return prev

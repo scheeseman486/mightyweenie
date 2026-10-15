@@ -59,7 +59,7 @@ extends MwScreenSim
 
 const TITLE := 0x1CF96               ## "GAME STATS": x, y, attr (words), text, plane, font (longs)
 const NAME_PLANE := 0x1CFA0          ## the team names' plane (a long: the window)
-const NAME_FONT := 0x22BEC           ## the team names' font (`$CD60`), 9's jersey numbers
+const NAME_FONT := MwFonts.HEADING           ## the team names' font (`$CD60`), 9's jersey numbers
 const LABEL_A := 0x1CFD8             ## team A's column: x, y, attr (words)
 const LABEL_A_TEXT := 0x1CFDE        ## ... then its text, plane, font (longs)
 const LABEL_B := 0x1CFEA
@@ -80,8 +80,8 @@ const LOGO_A := 0x1CFC8              ## 8's team logos: x, y, depth, attr
 const LOGO_B := 0x1CFD0
 const STAR_VX := 0x13470             ## the starfield's velocities by direction (words)
 const STAR_VY := 0x1346C
-const MUSIC := 0x1CE2D0              ## the track `$13C6E` plays
-const BUTTON := 0x25                 ## the sound of an accepted button
+const MUSIC := MwSoundRom.MUSIC_GAME              ## the track `$13C6E` plays
+const BUTTON := MwSoundIds.MOVE                 ## the sound of an accepted button
 const FADE_IN := 32                  ## a set-up's palette fade (`$1498C` per line)
 const SPRITE_ORIGIN := 0x80          ## sprite coordinates of the screen's corner
 const SCROLL_TOP := -80              ## plane A's vscroll at the first row (`$FFB0`)
@@ -90,12 +90,12 @@ const SCROLL_STEP := 2               ## px per pass
 const SCROLL_ROWS := 16              ## px per press
 const WINDOW_SIZE := Vector2i(40, 28)   ## the window object's cells (`$FFB0D2`)
 # 9
-const BOX_FONT := 0x447F4            ## the text boxes' font (`$D572`)
+const BOX_FONT := MwFonts.LIGHT            ## the text boxes' font (`$D572`)
 const HEADER_AT := 0x1D078           ## the team name: cursor x, y
-const HEADER_FONT := 0x246FA
+const HEADER_FONT := MwFonts.BIG
 const TITLE_9 := 0x50B9B             ## "PLAYER STATS"
 const TITLE_9_AT := 0x1D07E          ## x, y, attr
-const TITLE_9_FONT := 0x22EE0
+const TITLE_9_FONT := MwFonts.TITLE
 const NUMBER_HEAD := 0x50BB6         ## "NO"
 const NUMBER_HEAD_AT := 0x1D084      ## x, y, attr (the page name at x 4 on the same row)
 const PAGE_NAMES := 0x1D09C          ## by page (longs)
@@ -199,6 +199,7 @@ func _init(rom_: PackedByteArray) -> void:
 	texts.resize(TEXTS_SIZE)
 
 
+## Check hook: this screen's passes are ported (the screen checks run them; stubs lack it).
 func ported() -> bool:
 	return true
 
@@ -230,27 +231,28 @@ func enter_ram(ram: PackedByteArray) -> void:
 	music_fade = MwRinkRam.u16(ram, MUSIC_FADE)
 
 
-static func _box_from(ram: PackedByteArray, a: int, b: MwRinkState.TextBox) -> void:
-	b.plane = MwRinkRam.u32(ram, a)
-	b.font = MwRinkRam.u32(ram, a + 4)
-	b.x = MwRinkRam.s16(ram, a + 8)
-	b.y = MwRinkRam.s16(ram, a + 0xA)
-	b.w = MwRinkRam.s16(ram, a + 0xC)
-	b.h = MwRinkRam.s16(ram, a + 0xE)
-	b.spacing = MwRinkRam.s16(ram, a + 0x10)
-	b.cursor_x = MwRinkRam.s16(ram, a + 0x12)
-	b.cursor_y = MwRinkRam.s16(ram, a + 0x14)
+static func _box_from(ram: PackedByteArray, a: int, box: MwRinkState.TextBox) -> void:
+	box.plane = MwRinkRam.u32(ram, a)
+	box.font = MwRinkRam.u32(ram, a + 4)
+	box.x = MwRinkRam.s16(ram, a + 8)
+	box.y = MwRinkRam.s16(ram, a + 0xA)
+	box.w = MwRinkRam.s16(ram, a + 0xC)
+	box.h = MwRinkRam.s16(ram, a + 0xE)
+	box.spacing = MwRinkRam.s16(ram, a + 0x10)
+	box.cursor_x = MwRinkRam.s16(ram, a + 0x12)
+	box.cursor_y = MwRinkRam.s16(ram, a + 0x14)
 
 
-static func _label_from(ram: PackedByteArray, a: int, l: Column) -> void:
-	l.x = MwRinkRam.s16(ram, a)
-	l.y = MwRinkRam.s16(ram, a + 2)
-	l.attr = MwRinkRam.u16(ram, a + 4)
-	l.text = MwRinkRam.u32(ram, a + 6)
-	l.plane = MwRinkRam.u32(ram, a + 0xA)
-	l.font = MwRinkRam.u32(ram, a + 0xE)
+static func _label_from(ram: PackedByteArray, a: int, column: Column) -> void:
+	column.x = MwRinkRam.s16(ram, a)
+	column.y = MwRinkRam.s16(ram, a + 2)
+	column.attr = MwRinkRam.u16(ram, a + 4)
+	column.text = MwRinkRam.u32(ram, a + 6)
+	column.plane = MwRinkRam.u32(ram, a + 0xA)
+	column.font = MwRinkRam.u32(ram, a + 0xE)
 
 
+## Clears the per-pass outputs, plane A's operations ([member plane_a_ops]) too.
 func begin_pass() -> void:
 	super.begin_pass()
 	plane_a_ops.clear()
@@ -295,8 +297,7 @@ func _music_8() -> void:
 		if music_track != 0:
 			events.append(["music_stop", music_handle])
 		music_track = MUSIC
-		_serial = (_serial + 1) & 0x3FFFFFFF
-		music_handle = _serial | 0x40000000
+		music_handle = next_handle()
 		events.append(["music_track", MUSIC, music_handle])
 	music_on = 0xFF
 	music_fade = 0
@@ -334,12 +335,12 @@ func _title() -> void:
 func _team_names() -> void:
 	var la := labels[0]
 	var lb := labels[1]
-	lb.text = MwGfx.u32(rom, s.teams[1].record + 4)
+	lb.text = MwGfx.u32(rom, s.teams[1].record + MwTeams.NAME)
 	lb.plane = MwGfx.u32(rom, NAME_PLANE)
 	lb.font = NAME_FONT
 	_label_place(lb, LABEL_B)
 	lb.x = MwRinkSim.s16(lb.x - _width(lb.font, _label_text(lb)))
-	la.text = MwGfx.u32(rom, s.teams[0].record + 4)
+	la.text = MwGfx.u32(rom, s.teams[0].record + MwTeams.NAME)
 	la.plane = MwGfx.u32(rom, NAME_PLANE)
 	la.font = NAME_FONT
 	_label_place(la, LABEL_A)
@@ -352,16 +353,16 @@ func _team_names() -> void:
 	_rows()
 
 
-func _label_place(l: Column, a: int) -> void:
-	l.x = MwGfx.s16(rom, a)
-	l.y = MwGfx.s16(rom, a + 2)
-	l.attr = MwGfx.u16(rom, a + 4)
+func _label_place(column: Column, a: int) -> void:
+	column.x = MwGfx.s16(rom, a)
+	column.y = MwGfx.s16(rom, a + 2)
+	column.attr = MwGfx.u16(rom, a + 4)
 
 
-func _label_target(l: Column, a: int) -> void:
-	l.text = MwGfx.u32(rom, a)
-	l.plane = MwGfx.u32(rom, a + 4)
-	l.font = MwGfx.u32(rom, a + 8)
+func _label_target(column: Column, a: int) -> void:
+	column.text = MwGfx.u32(rom, a)
+	column.plane = MwGfx.u32(rom, a + 4)
+	column.font = MwGfx.u32(rom, a + 8)
 
 
 ## `$CDEA`: the rows of `$1CFFC` from plane A's row 0, two rows apart: the
@@ -405,8 +406,8 @@ func _row(label: int) -> void:
 
 
 ## `draw_text` of a descriptor's string at its place.
-func _draw_label(l: Column) -> void:
-	_ops_for(l.plane).append(["text", l.font, l.x, l.y, l.attr, _label_text(l)])
+func _draw_label(column: Column) -> void:
+	_ops_for(column.plane).append(["text", column.font, column.x, column.y, column.attr, _label_text(column)])
 
 
 ## The special rows (`$1D050`'s routines): power plays `$CF78` ("a/b" of
@@ -490,7 +491,6 @@ func _number(v: int, at: int, entry := 100) -> int:
 	return at + 1
 
 
-
 ## 68000 `divu.w`: [param d0] (32 bits) / [param divisor]: remainder in
 ## the high word, quotient in the low; on overflow (a quotient over $FFFF)
 ## d0 unchanged.
@@ -534,8 +534,8 @@ static func _text_offset(addr: int) -> int:
 
 
 ## A descriptor's string: the strings' bytes up to their 0, or the ROM's.
-func _label_text(l: Column) -> PackedByteArray:
-	return _string_at(l.text)
+func _label_text(column: Column) -> PackedByteArray:
+	return _string_at(column.text)
 
 
 func _string_at(addr: int) -> PackedByteArray:
@@ -589,7 +589,7 @@ func _piece(piece: int, at: int, out: Array) -> void:
 func _logo(team: MwRinkState.Team, at: int, dx: int, dy: int, attr: int, out: Array) -> void:
 	if s.replay.open != 0:
 		push_warning("MwStatsSim: draw_frame with the replay recording ($FFC2D2)")
-	var frame := MwGfx.u32(rom, team.record + 0x78)
+	var frame := MwGfx.u32(rom, team.record + MwTeams.LOGO)
 	var x := MwGfx.s16(rom, at) + dx - SPRITE_ORIGIN
 	var y := MwGfx.s16(rom, at + 2) + dy - SPRITE_ORIGIN
 	var depth := MwGfx.u16(rom, at + 4)
@@ -660,8 +660,8 @@ func _stars_run(ticks: int) -> void:
 	if not star_task or ticks <= 0:
 		return
 	star.step(star_params, ticks)
-	var p := star.pixels()
-	s.scroll_b = Vector2i(MwRinkSim.s16(p.x), MwRinkSim.s16(p.y))
+	var point := star.pixels()
+	s.scroll_b = Vector2i(MwRinkSim.s16(point.x), MwRinkSim.s16(point.y))
 
 
 ## B (newly pressed): the starfield stopped, or started again in a new
@@ -809,16 +809,16 @@ func _setup_9() -> void:
 ## `$D55C`: the boxes (0, 0, 40, 28) on plane A and on the window, font `$447F4`.
 func _boxes_init() -> void:
 	for i in 2:
-		var b := boxes[i]
-		b.x = 0
-		b.y = 0
-		b.w = 0x28
-		b.h = 0x1C
-		b.spacing = 0
-		b.plane = PLANE_A if i == 0 else WINDOW
-		b.font = BOX_FONT
-		b.cursor_x = 0
-		b.cursor_y = 0
+		var box := boxes[i]
+		box.x = 0
+		box.y = 0
+		box.w = 0x28
+		box.h = 0x1C
+		box.spacing = 0
+		box.plane = PLANE_A if i == 0 else WINDOW
+		box.font = BOX_FONT
+		box.cursor_x = 0
+		box.cursor_y = 0
 
 
 ## `$D1E4`..: the tick wait's end (the tick noted), the pads (newly
@@ -879,10 +879,10 @@ func _redraw_9() -> void:
 	_logo(team, LOGO_A, 0x10, -8, 0x20 if team_shown == 0 else 0x40, _sprites_9)
 	for at in ARROWS_9:
 		_piece(ARROW, int(at), _sprites_9)
-	var b := _box()
-	_ops_for(b.plane).append(["fill", b.x, b.y, b.w, b.h, 0])
-	_header_9(b, team)
-	_rows_9(b, team)
+	var box := _box()
+	_ops_for(box.plane).append(["fill", box.x, box.y, box.w, box.h, 0])
+	_header_9(box, team)
+	_rows_9(box, team)
 	_swap_9()
 
 
@@ -903,33 +903,33 @@ func _swap_9() -> void:
 
 ## `$D366`: the team name (font `$246FA`, attr $20 / $40), "PLAYER STATS"
 ## (font `$22EE0`), "NO", the page's name, its column header.
-func _header_9(b: MwRinkState.TextBox, team: MwRinkState.Team) -> void:
+func _header_9(box: MwRinkState.TextBox, team: MwRinkState.Team) -> void:
 	var attr := 0x20 if team_shown == 0 else 0x40
-	saved_font = b.font
-	b.font = HEADER_FONT
-	_cursor(b, MwGfx.s16(rom, HEADER_AT), MwGfx.s16(rom, HEADER_AT + 2))
-	_write(b, MwGfx.rom_string(rom, MwGfx.u32(rom, team.record + 4)), attr)
-	b.font = saved_font
-	saved_font = b.font
-	b.font = TITLE_9_FONT
-	_cursor(b, MwGfx.s16(rom, TITLE_9_AT), MwGfx.s16(rom, TITLE_9_AT + 2))
-	_write(b, MwGfx.rom_string(rom, TITLE_9), MwGfx.u16(rom, TITLE_9_AT + 4))
-	b.font = saved_font
+	saved_font = box.font
+	box.font = HEADER_FONT
+	_cursor(box, MwGfx.s16(rom, HEADER_AT), MwGfx.s16(rom, HEADER_AT + 2))
+	_write(box, MwGfx.rom_string(rom, MwGfx.u32(rom, team.record + MwTeams.NAME)), attr)
+	box.font = saved_font
+	saved_font = box.font
+	box.font = TITLE_9_FONT
+	_cursor(box, MwGfx.s16(rom, TITLE_9_AT), MwGfx.s16(rom, TITLE_9_AT + 2))
+	_write(box, MwGfx.rom_string(rom, TITLE_9), MwGfx.u16(rom, TITLE_9_AT + 4))
+	box.font = saved_font
 	var y := MwGfx.s16(rom, NUMBER_HEAD_AT + 2)
 	var a := MwGfx.u16(rom, NUMBER_HEAD_AT + 4)
-	_cursor(b, MwGfx.s16(rom, NUMBER_HEAD_AT), y)
-	_write(b, MwGfx.rom_string(rom, NUMBER_HEAD), a)
-	_cursor(b, 4, y)
-	_write(b, MwGfx.rom_string(rom, MwGfx.u32(rom, PAGE_NAMES + 4 * page)), a)
-	_cursor(b, MwGfx.s16(rom, COLUMN_X + 2 * page), y)
-	_write(b, MwGfx.rom_string(rom, MwGfx.u32(rom, COLUMN_HEADS + 4 * page)), a)
+	_cursor(box, MwGfx.s16(rom, NUMBER_HEAD_AT), y)
+	_write(box, MwGfx.rom_string(rom, NUMBER_HEAD), a)
+	_cursor(box, 4, y)
+	_write(box, MwGfx.rom_string(rom, MwGfx.u32(rom, PAGE_NAMES + 4 * page)), a)
+	_cursor(box, MwGfx.s16(rom, COLUMN_X + 2 * page), y)
+	_write(box, MwGfx.rom_string(rom, MwGfx.u32(rom, COLUMN_HEADS + 4 * page)), a)
 
 
 ## `$D446`: from row 9, 3 rows apart: pages 0-3 the line's 5 roster slots
 ## (team record +$18 + 24 * page), page 4 the 4 goalies (slot 5 of each
 ## line); each player's line (`$D4BA`) and stats (`$D5A6`); the footer.
-func _rows_9(b: MwRinkState.TextBox, team: MwRinkState.Team) -> void:
-	var roster := team.record + 0x18
+func _rows_9(box: MwRinkState.TextBox, team: MwRinkState.Team) -> void:
+	var roster := team.record + MwTeams.ROSTER
 	var a := roster
 	row = FIRST_ROW
 	var count := 0
@@ -945,26 +945,26 @@ func _rows_9(b: MwRinkState.TextBox, team: MwRinkState.Team) -> void:
 	else:
 		return
 	for i in count:
-		_player_line(b, a)
-		_player_stats(b, team, (a - roster) >> 2)
+		_player_line(box, a)
+		_player_stats(box, team, (a - roster) >> 2)
 		row = (row + ROW_STEP) & 0xFFFF
 		a += stride
-	_cursor(b, 8, 0x18)
-	_write(b, MwGfx.rom_string(rom, FOOTER), 0x60)
+	_cursor(box, 8, 0x18)
+	_write(box, MwGfx.rom_string(rom, FOOTER), 0x60)
 
 
 ## `$D4BA`: the jersey number (two digits, font `$22BEC`) at (1, row); the
 ## name split at its first space: the first word at (4, row) (copied into
 ## `$FFC432`), the rest at (4, row + 1) - a one-word name only there.
-func _player_line(b: MwRinkState.TextBox, slot: int) -> void:
+func _player_line(box: MwRinkState.TextBox, slot: int) -> void:
 	var player := MwGfx.u32(rom, slot)
 	_number(rom[player + 4], 0, 2)
-	saved_font = b.font
-	b.font = NAME_FONT
-	_cursor(b, 1, row)
-	_write(b, _string_at(TEXTS), 0x60)
-	b.font = saved_font
-	_cursor(b, 4, row)
+	saved_font = box.font
+	box.font = NAME_FONT
+	_cursor(box, 1, row)
+	_write(box, _string_at(TEXTS), 0x60)
+	box.font = saved_font
+	_cursor(box, 4, row)
 	var name := MwGfx.u32(rom, player)
 	var sp := name
 	while rom[sp] != 0 and rom[sp] != 0x20:
@@ -977,22 +977,22 @@ func _player_line(b: MwRinkState.TextBox, slot: int) -> void:
 			at += 1
 		_put(at, 0)
 		rest = sp + 1
-		_write(b, _string_at(TEXTS), 0x60)
-	_cursor(b, 4, row + 1)
-	_write(b, MwGfx.rom_string(rom, rest), 0x60)
+		_write(box, _string_at(TEXTS), 0x60)
+	_cursor(box, 4, row + 1)
+	_write(box, MwGfx.rom_string(rom, rest), 0x60)
 
 
 ## `$D5BA` (every page's routine in `$1D0CE`): the roster slot's entry
 ## (team +$3A2 + 8 * slot) right-aligned on row + 1: skaters +4 (G, at
 ## most two digits) to column 24, +6 (PTS) 29, +2 (SOG) 34, +0 (PIM) 39;
 ## goalies +4, max(+2 - +4, 0) (SAV), +2.
-func _player_stats(b: MwRinkState.TextBox, team: MwRinkState.Team, slot: int) -> void:
+func _player_stats(box: MwRinkState.TextBox, team: MwRinkState.Team, slot: int) -> void:
 	if MwGfx.u32(rom, PAGE_ROUTINES + 4 * page) != PLAYER_STATS:
 		push_warning("MwStatsSim: page %d's routine is not $D5BA" % page)
 	var entry := 0x3A2 + 8 * slot
 	var goals := team_word(team, entry + 4)
 	_number(goals, 0, 10)
-	_right_aligned(b, 0x18)
+	_right_aligned(box, 0x18)
 	var values: Array[int] = []
 	if page != 4:
 		values.append(team_word(team, entry + 6))
@@ -1004,20 +1004,20 @@ func _player_stats(b: MwRinkState.TextBox, team: MwRinkState.Team, slot: int) ->
 	var right := 0x1D
 	for v in values:
 		_number(v, 0)
-		_right_aligned(b, right)
+		_right_aligned(box, right)
 		right += 5
 
 
 ## The number just formatted (its [member _digits]) ending at column [param right].
-func _right_aligned(b: MwRinkState.TextBox, right: int) -> void:
-	_cursor(b, right - _digits, row + 1)
-	_write(b, _string_at(TEXTS), 0x60)
+func _right_aligned(box: MwRinkState.TextBox, right: int) -> void:
+	_cursor(box, right - _digits, row + 1)
+	_write(box, _string_at(TEXTS), 0x60)
 
 
 ## `$1580E`: the box's cursor.
-static func _cursor(b: MwRinkState.TextBox, x: int, y: int) -> void:
-	b.cursor_x = x & 0xFFFF
-	b.cursor_y = y & 0xFFFF
+static func _cursor(box: MwRinkState.TextBox, x: int, y: int) -> void:
+	box.cursor_x = x & 0xFFFF
+	box.cursor_y = y & 0xFFFF
 
 
 ## `text_box_write` `$15860`: [param text] from the box's cursor with
@@ -1025,109 +1025,80 @@ static func _cursor(b: MwRinkState.TextBox, x: int, y: int) -> void:
 ## not fit and the line is not empty, spaces advance by the font's space,
 ## $0A starts a line, nothing is drawn from the box's bottom on (the cursor
 ## kept where it stopped). Each word is a "text" operation at its cells.
-func _write(b: MwRinkState.TextBox, text: PackedByteArray, attr: int) -> void:
-	var f := b.font & 0xFFFFFF
-	var line := (MwGfx.u16(rom, f) + b.spacing) & 0xFFFF
-	var space := MwGfx.u16(rom, f + 2)
-	var ops := _ops_for(b.plane)
-	var d1 := MwRinkSim.s16(b.cursor_x)
-	var i := 0
-	var ch := _at(text, i)
-	while ch != 0:
-		while ch < 0x21 or ch > 0x7E:
-			if ch == 0x20:
-				d1 = MwRinkSim.s16(d1 + space)
-			elif ch == 0x0A:
-				b.cursor_y = (b.cursor_y + line) & 0xFFFF
-				d1 = 0
-			i += 1
-			ch = _at(text, i)
-			if ch == 0:
-				break
-		var j := i
-		var width := 0
-		while ch >= 0x21 and ch <= 0x7E:
-			width += MwGfx.char_width(rom, f, ch)
-			j += 1
-			ch = _at(text, j)
-		if MwRinkSim.s16(d1 + width) > MwRinkSim.s16(b.w) and d1 != 0:
-			b.cursor_y = (b.cursor_y + line) & 0xFFFF
-			d1 = 0
-		if (b.cursor_y & 0xFFFF) >= (b.h & 0xFFFF):
-			b.cursor_x = d1 & 0xFFFF
-			return
-		if j > i:
-			ops.append(["text", f, d1 + b.x, MwRinkSim.s16(b.cursor_y) + b.y, attr, text.slice(i, j)])
-		d1 = MwRinkSim.s16(d1 + width)
-		i = j
-		ch = _at(text, i)
-	b.cursor_x = d1 & 0xFFFF
-
-
-static func _at(text: PackedByteArray, i: int) -> int:
-	return text[i] if i < text.size() else 0
+func _write(box: MwRinkState.TextBox, text: PackedByteArray, attr: int) -> void:
+	var f := box.font & 0xFFFFFF
+	var line := (MwGfx.u16(rom, f) + box.spacing) & 0xFFFF
+	var ops := _ops_for(box.plane)
+	var l := MwTextBox.layout(rom, f, text, box.w, box.h, line, box.cursor_x, box.cursor_y)    # plan 40 (D2)
+	for wd: Array in l["words"]:
+		ops.append(["text", f, int(wd[2]) + box.x, MwRinkSim.s16(wd[3]) + box.y, attr, text.slice(wd[0], wd[1])])
+	box.cursor_x = l["cursor_x"]
+	box.cursor_y = l["cursor_y"]
 
 
 # --- comparison ----------------------------------------------------------------------------------
 
+## The fields this screen models that differ from the original's [param ram] and [param stack]
+## after the same pass (["what", ours, theirs]): the scratch, the boxes, the strings, the
+## scrolls, the starfield, the aux stream, the music state and the teams (left as they were).
 func compare(ram: PackedByteArray, stack: PackedByteArray) -> Array:
-	var d := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
+	var diff := MwScoreboardSim.Diff.new(MwScoreboardSim.Mem.new(ram, stack))
 	if tick_seen >= 0:
-		d.long("tick $C3EE", 0xFFC3EE, tick_seen)
-	d.long("saved font $C3F2", 0xFFC3F2, saved_font)
-	d.long("box $C3F6", 0xFFC3F6, box_at)
-	d.word("formatters $C3FA", 0xFFC3FA, formatter)
-	d.word("scroll left $C3FC", 0xFFC3FC, scroll_left)
-	d.word("scroll step $C3FE", 0xFFC3FE, scroll_step)
-	d.word("page $C400", 0xFFC400, page)
-	d.word("row $C402", 0xFFC402, row)
-	d.byte("redraw $C404", 0xFFC404, redraw)
-	d.byte("starfield on $C405", 0xFFC405, stars_on)
+		diff.long("tick $C3EE", 0xFFC3EE, tick_seen)
+	diff.long("saved font $C3F2", 0xFFC3F2, saved_font)
+	diff.long("box $C3F6", 0xFFC3F6, box_at)
+	diff.word("formatters $C3FA", 0xFFC3FA, formatter)
+	diff.word("scroll left $C3FC", 0xFFC3FC, scroll_left)
+	diff.word("scroll step $C3FE", 0xFFC3FE, scroll_step)
+	diff.word("page $C400", 0xFFC400, page)
+	diff.word("row $C402", 0xFFC402, row)
+	diff.byte("redraw $C404", 0xFFC404, redraw)
+	diff.byte("starfield on $C405", 0xFFC405, stars_on)
 	for i in 2:
-		_compare_box(d, (BOX_A if i == 0 else BOX_W) & 0xFFFFFF, boxes[i], "box %d" % i)
-		_compare_label(d, LABELS + 0x12 * i, labels[i], "label %s" % ("A" if i == 0 else "B"))
+		_compare_box(diff, (BOX_A if i == 0 else BOX_W) & 0xFFFFFF, boxes[i], "box %d" % i)
+		_compare_label(diff, LABELS + 0x12 * i, labels[i], "label %s" % ("A" if i == 0 else "B"))
 	for i in TEXTS_SIZE:
-		d.byte("strings $%X" % (TEXTS + i), TEXTS + i, texts[i])
-	d.flag("sound $C472", HANDLE, handle != 0)
-	d.word("plane A vscroll $B0DA", SCROLL_A, scroll_a)
-	d.word("plane A hscroll $B0D6", HSCROLL_A, hscroll_a)
-	d.word("plane B hscroll $B0D8", MwRinkRam.SCROLL_B, s.scroll_b.x)
-	d.word("plane B vscroll $B0DC", MwRinkRam.SCROLL_B + 4, s.scroll_b.y)
+		diff.byte("strings $%X" % (TEXTS + i), TEXTS + i, texts[i])
+	diff.flag("sound $C472", HANDLE, handle != 0)
+	diff.word("plane A vscroll $B0DA", SCROLL_A, scroll_a)
+	diff.word("plane A hscroll $B0D6", HSCROLL_A, hscroll_a)
+	diff.word("plane B hscroll $B0D8", MwRinkRam.SCROLL_B, s.scroll_b.x)
+	diff.word("plane B vscroll $B0DC", MwRinkRam.SCROLL_B + 4, s.scroll_b.y)
 	for k in 3:
-		d.long("star pos %d" % k, STAR + 8 * k, star.pos[k])
-		d.word("star vel %d" % k, STAR + 8 * k + 4, star.vel[k])
-		d.word("star acc %d" % k, STAR + 8 * k + 6, star.acc[k])
+		diff.long("star pos %d" % k, STAR + 8 * k, star.pos[k])
+		diff.word("star vel %d" % k, STAR + 8 * k + 4, star.vel[k])
+		diff.word("star acc %d" % k, STAR + 8 * k + 6, star.acc[k])
 	var params := [star_params.gravity, star_params.restitution, star_params.friction_ground, star_params.friction_air]
 	params.append_array(Array(star_params.ground))
 	params.append_array(Array(star_params.air))
 	for i in params.size():
-		d.word("star params +%d" % (2 * i), STAR_PARAMS + 2 * i, int(params[i]))
-	d.long("aux rng $CA18", AUX, aux.state)
-	d.handle("music handle $CA2C", MUSIC_HANDLE, music_handle >= 0)
-	d.long("music track $CA30", MUSIC_TRACK, music_track)
-	d.byte("music on $CA34", MUSIC_ON, music_on)
-	d.word("music fade $CA36", MUSIC_FADE, music_fade)
+		diff.word("star params +%d" % (2 * i), STAR_PARAMS + 2 * i, int(params[i]))
+	diff.long("aux rng $CA18", AUX, aux.state)
+	diff.handle("music handle $CA2C", MUSIC_HANDLE, music_handle >= 0)
+	diff.long("music track $CA30", MUSIC_TRACK, music_track)
+	diff.byte("music on $CA34", MUSIC_ON, music_on)
+	diff.word("music fade $CA36", MUSIC_FADE, music_fade)
 	# nothing for the rink: the teams as they were
-	d.ram_range(MwRinkRam.encode(s, ram), MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
-	return d.out
+	diff.ram_range(MwRinkRam.encode(s, ram), MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
+	return diff.out
 
 
-static func _compare_box(d: MwScoreboardSim.Diff, a: int, b: MwRinkState.TextBox, what: String) -> void:
-	d.long(what + " plane", a, b.plane)
-	d.long(what + " font", a + 4, b.font)
-	d.word(what + " x", a + 8, b.x)
-	d.word(what + " y", a + 0xA, b.y)
-	d.word(what + " w", a + 0xC, b.w)
-	d.word(what + " h", a + 0xE, b.h)
-	d.word(what + " spacing", a + 0x10, b.spacing)
-	d.word(what + " cursor x", a + 0x12, b.cursor_x)
-	d.word(what + " cursor y", a + 0x14, b.cursor_y)
+static func _compare_box(diff: MwScoreboardSim.Diff, a: int, box: MwRinkState.TextBox, what: String) -> void:
+	diff.long(what + " plane", a, box.plane)
+	diff.long(what + " font", a + 4, box.font)
+	diff.word(what + " x", a + 8, box.x)
+	diff.word(what + " y", a + 0xA, box.y)
+	diff.word(what + " w", a + 0xC, box.w)
+	diff.word(what + " h", a + 0xE, box.h)
+	diff.word(what + " spacing", a + 0x10, box.spacing)
+	diff.word(what + " cursor x", a + 0x12, box.cursor_x)
+	diff.word(what + " cursor y", a + 0x14, box.cursor_y)
 
 
-static func _compare_label(d: MwScoreboardSim.Diff, a: int, l: Column, what: String) -> void:
-	d.word(what + " x", a, l.x)
-	d.word(what + " y", a + 2, l.y)
-	d.word(what + " attr", a + 4, l.attr)
-	d.long(what + " text", a + 6, l.text)
-	d.long(what + " plane", a + 0xA, l.plane)
-	d.long(what + " font", a + 0xE, l.font)
+static func _compare_label(diff: MwScoreboardSim.Diff, a: int, column: Column, what: String) -> void:
+	diff.word(what + " x", a, column.x)
+	diff.word(what + " y", a + 2, column.y)
+	diff.word(what + " attr", a + 4, column.attr)
+	diff.long(what + " text", a + 6, column.text)
+	diff.long(what + " plane", a + 0xA, column.plane)
+	diff.long(what + " font", a + 0xE, column.font)

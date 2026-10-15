@@ -50,6 +50,24 @@ extends RefCounted
 
 ## [method pass_end] / [method handler]: the pause menu is open.
 const PAUSED := -2
+## [method menu_press]: TEAM INFO picked (plan 29) - the menu stays open, the
+## rink shows the team description over itself and comes back to it.
+const TEAM_INFO := -3
+## The port menus' sound when the selection moves (`$13CEE` sound `$25`).
+const MENU_MOVE := MwSoundIds.MOVE
+## A spectated match's pause menu (MwRinkState.spectated; owner,
+## 2026-10-10: no special plays and no pause menu options that control the
+## team or the players, FORFEIT among them): the instant replay and the team
+## descriptions to watch, and QUIT GAME (owner, later that day: in CPU v CPU
+## matches alone, ending the match at once, back to the exhibition's game
+## options; ARE YOU SURE? as FORFEIT asks: [method _quit_match]) - no
+## TIMEOUT or FORFEIT. No other pause menu has QUIT GAME (the captains' own
+## menus' QUIT GAME is another thing: MwRinkControl).
+const QUIT := "QUIT GAME"
+const SPECTATED_ITEMS: Array[String] = ["REPLAY", "TEAM INFO", QUIT]
+## Where QUIT GAME goes: the game options (the game setup, its exhibition
+## variant).
+const QUIT_TO := 1
 ## [method MwRinkUpdate.draws]' rules phase when the overlays come from
 ## here (the draw pass then leaves the puck rules' icon to [member overlays]).
 const RULES_DRAWN := 0x7FFF
@@ -105,23 +123,23 @@ const TICK_ADDRESSES := {0x16F4: TICK_TIMER_START, 0x257E: TICK_UNPAUSE, 0xA728:
 ## still saw it and the first that saw it done; $F: 33 voices, playing at
 ## 202, done at 203; $B: 8 voices, 206 / 208). Voices $C and $32 were never
 ## recorded: [constant VOICE_DEFAULT]. The sound driver (plan 12) decides
-## these in the original (`$13D9C` -> `$189BE`).
+## these in the original (`$13D9C` -> `$189BE`). They are what a sim that
+## doesn't drive the sound (MwRinkSim.live off: the match's opening's
+## rehearsal, the instant replay's demo) predicts a voice by; on the rink's
+## passes the driver's model answers the same (plan 40, D6: one "still
+## playing?", test_voice_lengths).
 const VOICE_TICKS := {0x0B: 207, 0x0F: 203}
 const VOICE_DEFAULT := 203
 
 # --- ROM -------------------------------------------------------------------------------------
 const PAUSE_PADS := 0x1C24C          ## by pad mode: pads that may pause (1, 2, 2, 3, 4, 0)
 const PAUSE_SPLIT := 0x1C258         ## by pad mode: pads below it pause for team A
-const QUOTES := 0x1D404              ## [category][situation][set] -> value.w, count.w, strings
-const NO_QUOTE := 0x50D2D            ## the "nothing to say" line (a set without quotes)
-const COACHES := 0x1CD26             ## 20 x (coach record.l, portrait data.l, quote set.w)
-const COACH_DEFAULT := 0x1CCA2       ## the portrait data of a coach not in the list
 const SPEECH_BOX_AT := 0x1EA02       ## (3, 3, 34, 6)
-const SPEECH_FONT := 0x1F958
-const NAME_FONT := 0x22EE0
-const TITLE_FONT := 0x22BEC
-const BIG_FONT := 0x246FA
-const CLOCK_FONT := 0x447F4
+const SPEECH_FONT := MwFonts.DARK
+const NAME_FONT := MwFonts.TITLE
+const TITLE_FONT := MwFonts.HEADING
+const BIG_FONT := MwFonts.BIG
+const CLOCK_FONT := MwFonts.LIGHT
 const BUBBLE_TAIL := 0x1FB02
 const PORTRAIT_BORDERS := 0x1CDF6
 const SPOTS := 0x1CA9A               ## faceoff spots (x, y)
@@ -152,6 +170,10 @@ const T_NONE := 0x6252D
 const T_FIGHT := 0x6252E
 const T_FORFEIT := 0x62535
 
+## Port only: the screens a goal song may play on into
+## ([member MwSettings.goal_song_carries]): the scoreboards after a goal and
+## after the game.
+const SONG_SCREENS: Array[int] = [12, 15, 16]
 const TEAM_WORDS := [0xB402, 0xB8AC] ## the teams' RAM address words (`$C640` etc. hold them sign-extended)
 
 var sim: MwRinkSim
@@ -162,6 +184,26 @@ var rom: PackedByteArray
 var hooks: Object = null
 ## The pause menu is open (live play: [method pause_press]).
 var paused := false
+## The port's pause menu (plan 23, owner): player (1-4) -> true when that
+## player's pause opens the port's menu (the STANDARD layout) instead of the
+## original's lettered one; unset: always the original's (comparisons).
+var port_menu := Callable()
+## Plan 35 (online, owner: no replay viewing in multiplayer, the recording
+## still made): the pause menu has no REPLAY; the host's players' menu has
+## PLAYERS (the kick list, MwRinkControl.open_players).
+var online := false
+## The port's menu while it is open ([method menu_press]; drawn by the
+## rink scene, MwPauseMenu): {"player": the pad (1-12), "items": ["REPLAY",
+## ("TIMEOUT"), "TEAM INFO", ("PLAYERS"), "FORFEIT"] - a spectated match's
+## [constant SPECTATED_ITEMS] -, "sel": the selected
+## item, "confirm": the ARE YOU SURE? menu is up, "ask": the item it asks
+## about, "sure": its selection (0 YES, 1 NO)}; empty: closed or the
+## original's.
+var menu := {}
+## Port only ([member MwSettings.goal_song_carries]): the goal song's
+## handle (sound 9 of [method goal_step], live play), so an exit to the goal
+## scoreboard while it plays lets it play on ([method _sounds_off]).
+var goal_song := MwSound.NONE
 ## This pass's window plane operations, in the original's order (cells;
 ## texts stay on the window until filled over or the rink is left):
 ## ["text", font, x, y, attr, string] (`$14CAE`; string: a ROM address or
@@ -254,7 +296,7 @@ func handler(e: int) -> int:
 func exit(screen: int) -> int:
 	paused = false
 	MwRinkMatch.rink_exit(sim, screen)
-	_sounds_off(screen)                         # `$FBB4`
+	_sounds_off(screen, screen in SONG_SCREENS and s.fight_block == 0)   # `$FBB4`
 	if s.fight_block != 0:
 		return 1
 	return screen
@@ -277,7 +319,8 @@ func enter(screen: int) -> int:
 	var to := MwRinkMatch.enter(sim, screen)
 	window_ops.append(["fill", 0, 0, 64, 32, 0x8000])     # `$F7F0` rink_load: the window cleared
 	if to < 0 and s.clock_widget & 2:
-		window_ops.append(["widget", s.clock_widget & 1 != 0, s.period & 0xFF, s.clock & 0xFFFF, s.pp_seconds & 0xFFFF])   # `$25AA`
+		# `$25AA`
+		window_ops.append(["widget", s.clock_widget & 1 != 0, s.period & 0xFF, s.clock & 0xFFFF, s.pp_seconds & 0xFFFF])
 	if to >= 0:
 		_sounds_off(to)                         # `$FBB4` (`rink_exit` at the line-up)
 		return 1 if s.fight_block != 0 else to
@@ -310,11 +353,18 @@ func _sound(id: int) -> int:
 ## `$13C04` (music fade with the caller's [param d0], crowd off, the
 ## driver reset): the event ["sounds_off"]. `rink_exit` passes its screen
 ## (`$3BA6` / `$107D0` may have replaced it by then; no music plays in the
-## rink, so the fade never reads it).
-func _sounds_off(d0: int) -> void:
+## rink, so the fade never reads it). Port only: with [param carry] (an exit
+## to a scoreboard, not in the attract demo) and [member
+## MwSettings.goal_song_carries], a goal song still playing plays on into
+## the scoreboard ([method MwSound.carry_over]) - the rest as `$13C04`.
+func _sounds_off(d0: int, carry := false) -> void:
 	sim.events.append(["sounds_off"])
 	if sim.live:
-		MwSound.enter_match(d0 & 0xFFFF)
+		if carry and MwSettings.goal_song_carries and goal_song != MwSound.NONE and MwSound.busy(goal_song):
+			MwSound.carry_over(goal_song)
+		else:
+			MwSound.enter_match(d0 & 0xFFFF)
+		goal_song = MwSound.NONE
 
 
 static func _team_long(t: int) -> int:
@@ -427,27 +477,42 @@ func _play_on(r: int) -> int:
 ## when the team carries the puck and has its timeout left, "B -
 ## TIMEOUT". Only that pad answers (Start resumes, A the instant replay, B
 ## the timeout). Returns 0 (no pause), the answer (hooks) or [constant
-## PAUSED] (live: [method pause_press]).
+## PAUSED] (live: [method pause_press]). Plan 34, an extended set-up: any
+## player's pad, the highest match pad first, for that player's team. A
+## spectated match (MwRinkState.spectated): any player's Start, the highest
+## numbered first, opens the spectators' menu ([method _spectators_menu]).
 func _pause_menu() -> int:
+	if s.spectated:
+		return _spectators_menu()
 	var mode := s.pad_mode & 0xFF
-	var n := MwGfx.u16(rom, PAUSE_PADS + 2 * mode)
 	var pad := -1
-	for i in range(n - 1, -1, -1):
-		if s.pads_new[i] & 0x80:
-			pad = i
-			break
+	var t := 0
+	if s.extended:
+		for ti in 2:
+			for i in s.teams[ti].port_pads:
+				if i > pad and s.pads_new[i] & 0x80:
+					pad = i
+					t = ti
+	else:
+		var n := MwGfx.u16(rom, PAUSE_PADS + 2 * mode)
+		for i in range(n - 1, -1, -1):
+			if s.pads_new[i] & 0x80:
+				pad = i
+				break
+		t = 0 if pad < MwGfx.u16(rom, PAUSE_SPLIT + 2 * mode) else 1
 	if pad < 0:
 		return 0
 	s.pause_pad = 2 * pad
-	var t := 0 if pad < MwGfx.u16(rom, PAUSE_SPLIT + 2 * mode) else 1
 	var team := s.teams[t]
 	s.pause_team = TEAM_WORDS[t]
 	s.pause_attr = (team.attr & 0xFF) | 0x80
 	_sounds_off(s.pause_attr)                   # `$4958`: d0 = the menu's attr
 	window_ops.append(["fill", 0, 0, 40, 28, 0x8000])
 	s.clock_widget |= 4
-	window_ops.append(["text", BIG_FONT, 12, 3, s.pause_attr, T_PAUSE])
-	window_ops.append(["text", BIG_FONT, 7, 8, s.pause_attr, T_REPLAY])
+	var port := port_menu.is_valid() and bool(port_menu.call(pad + 1))
+	if not port:
+		window_ops.append(["text", BIG_FONT, 12, 3, s.pause_attr, T_PAUSE])
+		window_ops.append(["text", BIG_FONT, 7, 8, s.pause_attr, T_REPLAY])
 	s.pause_offer = 0
 	var pk := s.puck
 	if pk.flags & MwRinkState.Puck.CARRIED:
@@ -456,7 +521,52 @@ func _pause_menu() -> int:
 			d += 1
 		if d == 0 and team.flags4 & 0x10:
 			s.pause_offer = 1
-			window_ops.append(["text", BIG_FONT, 7, 12, s.pause_attr, T_TIMEOUT])
+			if not port:
+				window_ops.append(["text", BIG_FONT, 7, 12, s.pause_attr, T_TIMEOUT])
+	if port:
+		# plan 29 (owner): TEAM INFO, the team description over the paused game
+		# (the owner's longer name for it is 392 px in the menu's letters)
+		# (no QUIT GAME: a spectated match's alone - owner, 2026-10-10; plan 34
+		# had it here for the player who paused)
+		var items := ["REPLAY", "TIMEOUT", "TEAM INFO", "FORFEIT"] if s.pause_offer != 0 \
+				else ["REPLAY", "TEAM INFO", "FORFEIT"]
+		if online:
+			items.erase("REPLAY")                    # plan 35: no replays watched online
+			var seat := s.control.seat_on_pad(pad) if s.control != null else null
+			if seat != null and s.control.machine_of(seat.player) == 0:
+				items.insert(items.size() - 1, MwRinkControl.PLAYERS)   # the host's: the kick list
+		menu = {"player": pad + 1, "items": items, "sel": 0, "confirm": false, "sure": 1}
+	if hooks != null and hooks.has_method("pause_result"):
+		return _pause_answer(int(hooks.call("pause_result", self)))
+	paused = true
+	return PAUSED
+
+
+## A spectated match's pause (port only, MwRinkState.spectated): Start
+## newly pressed by any player (MwRinkState.watch_new: players 1-12's, the
+## highest numbered first - as an extended set-up's pause) opens the port's
+## menu whatever their layout (the original's lettered menu has nothing to
+## leave a match with) with [constant SPECTATED_ITEMS], for that player
+## alone to answer: sounds off, the window cleared, the clock paused as
+## `$48FC` does, in team A's colours (nobody's team). Returns 0 (no pause),
+## the answer (hooks) or [constant PAUSED].
+func _spectators_menu() -> int:
+	var pad := -1
+	for i in range(s.watch_new.size() - 1, -1, -1):
+		if s.watch_new[i] & 0x80:
+			pad = i
+			break
+	if pad < 0:
+		return 0
+	s.pause_pad = 2 * pad
+	s.pause_team = TEAM_WORDS[0]
+	s.pause_attr = (s.teams[0].attr & 0xFF) | 0x80
+	s.pause_offer = 0                           # no timeout
+	_sounds_off(s.pause_attr)
+	window_ops.append(["fill", 0, 0, 40, 28, 0x8000])
+	s.clock_widget |= 4
+	var items: Array = SPECTATED_ITEMS.duplicate()
+	menu = {"player": pad + 1, "items": items, "sel": 0, "confirm": false, "sure": 1}
 	if hooks != null and hooks.has_method("pause_result"):
 		return _pause_answer(int(hooks.call("pause_result", self)))
 	paused = true
@@ -485,6 +595,126 @@ func pause_press(pressed: int) -> int:
 	return _play_on(_pause_answer(r))
 
 
+## The port's pause menu (plan 23; [member menu]): the pausing player's
+## newly pressed verbs [param v] ("up", "down", "select" - Menu Accept -,
+## "resume" - Start -, "back": bools). Up / down move the selection
+## (wrapping); select picks it: REPLAY and TIMEOUT answer as the original's
+## A and B, TEAM INFO returns [constant TEAM_INFO] (the menu stays as it
+## is: plan 29), FORFEIT asks ARE YOU SURE? (NO selected), whose YES
+## forfeits ([method _forfeit]) and NO goes back; a spectated match's QUIT
+## GAME asks too, whose YES stops the match for the game options ([method
+## _quit_match]); Start and Menu Back resume (on ARE YOU SURE?: back to the
+## menu). Nothing else picks an item
+## (owner, 2026-10-09: the original's A / B as shortcuts picked REPLAY /
+## TIMEOUT whatever was selected - gone; the STANDARD layout leaves those
+## verbs unbound, MwInputMap.STANDARD_UNUSED). Returns [constant PAUSED],
+## the screen to leave for, or -1 (play resumes).
+func menu_press(v: Dictionary) -> int:
+	if not paused or menu.is_empty():
+		return -1 if not paused else PAUSED
+	window_ops.clear()
+	sprite_ops.clear()
+	overlays.clear()
+	var items: Array = menu["items"]
+	if menu["confirm"]:
+		match MwMenuDict.confirm_verbs(menu, v):              # plan 40 (M4)
+			MwMenuDict.MOVED:
+				_sound(MENU_MOVE)
+			MwMenuDict.YES:
+				if menu.get("ask", "") == MwRinkControl.KICK:
+					s.control.kick(int(menu["target"]))      # plan 35: the host's network does it
+					s.control.close_players(menu)
+					return PAUSED
+				if menu.get("ask", "") == QUIT:
+					return _quit_match()
+				return _forfeit()
+			MwMenuDict.NO:
+				menu["confirm"] = false
+		return PAUSED
+	if menu.get("players", false):
+		# plan 35: the host's PLAYERS list - Up / Down, select a machine (or
+		# BACK); Start and Back return to the menu
+		if v.get("resume", false) or v.get("back", false):
+			s.control.close_players(menu)
+			_sound(MENU_MOVE)
+		elif MwMenuDict.move(menu, v):
+			_sound(MENU_MOVE)
+		elif v.get("select", false):
+			s.control.players_select(menu)
+			_sound(MENU_MOVE)
+		return PAUSED
+	if v.get("resume", false) or v.get("back", false):
+		menu = {}
+		return _play_on(_pause_answer(1))
+	if MwMenuDict.move(menu, v):
+		_sound(MENU_MOVE)
+	elif v.get("select", false):
+		match str(items[int(menu["sel"])]):
+			"REPLAY":
+				menu = {}
+				return _play_on(_pause_answer(2))
+			"TIMEOUT":
+				menu = {}
+				return _play_on(_pause_answer(3))
+			"TEAM INFO":
+				return TEAM_INFO
+			"FORFEIT", QUIT:
+				menu["confirm"] = true
+				menu["ask"] = str(items[int(menu["sel"])])
+				menu["sure"] = 1
+			MwRinkControl.PLAYERS:
+				if s.control != null:
+					s.control.open_players(menu)
+					_sound(MENU_MOVE)
+	return PAUSED
+
+
+## Plan 35: the pausing player's machine went away (online): play resumes
+## as if they had picked RESUME - the match never waits. Returns what
+## [method menu_press] / [method pause_press] would.
+func resume_now() -> int:
+	if not paused:
+		return -1
+	window_ops.clear()
+	sprite_ops.clear()
+	overlays.clear()
+	menu = {}
+	return _play_on(_pause_answer(1))
+
+
+## QUIT GAME confirmed (a spectated match's pause menu; owner: it ends the
+## match at once, back to the exhibition's game options): the match is given
+## up where it stands - no forfeit, no scoreboards, no replay question - and
+## the rink left for the game options ([constant QUIT_TO]: the game setup's
+## exhibition variant) as any exit leaves it ([method exit]: `rink_exit`'s
+## team clean-up, a replay frame left open given up, every sound and the
+## music off). The menu and the pause are over, the window cleared; the clock
+## stays stopped (nothing plays on).
+func _quit_match() -> int:
+	menu = {}
+	paused = false
+	window_ops.append(["fill", 0, 0, 40, 28, 0x8000])
+	return exit(QUIT_TO)
+
+
+## FORFEIT confirmed (the port's pause menu): play resumes into the
+## original's forfeit (phase 13, `$101CE`: "FORFEIT!" for 300 ticks, then
+## screen 17's forfeit message and the game over) with the pausing team as
+## the forfeiting one (`$C640`, as `$F7C8` / `off_ice_dead` set it).
+## Marked as a manual forfeit ([member MwRinkState.forfeit_manual]: screen
+## 17 has the referee say one of the port's own lines; plan 26).
+func _forfeit() -> int:
+	var team := 0 if s.pause_team == TEAM_WORDS[0] else 1
+	menu = {}
+	var r := _play_on(_pause_answer(1))
+	s.phase = MwRinkMatch.PHASE_FORFEIT
+	s.forfeit_manual = true
+	s.subphase = 0
+	s.scoring = 0xFFFF0000 | (MwRinkRam.TEAMS[team] & 0xFFFF)
+	s.phase_tick = s.tick & 0xFFFFFFFF
+	return r
+
+
 ## The pause menu's answer [param r]: A plays a sound; B (offered) stops
 ## the clock, takes the faceoff to the circle nearest the puck (`$AF12`)
 ## and uses the team's timeout (`$3AD2`); the window cleared.
@@ -494,8 +724,8 @@ func _pause_answer(r: int) -> int:
 		_sound(0x26)
 	elif r == 3:
 		_clock_stop()
-		var p := s.puck.motion.pixels()
-		s.faceoff_spot = nearest_spot(rom, MwRinkSim.s16(p.x), MwRinkSim.s16(p.y))
+		var point := s.puck.motion.pixels()
+		s.faceoff_spot = nearest_spot(rom, MwRinkSim.s16(point.x), MwRinkSim.s16(point.y))
 		_timeout(s.teams[0] if s.pause_team == TEAM_WORDS[0] else s.teams[1])
 		_sound(0x26)
 	window_ops.append(["fill", 0, 0, 40, 28, 0x8000])
@@ -527,7 +757,8 @@ static func nearest_spot(rom_: PackedByteArray, x: int, y: int) -> int:
 		a += 8
 		spot += 2
 	var d1 := MwTrig.distance(MwRinkSim.s16(x - MwGfx.s16(rom_, a)), MwRinkSim.s16(y - MwGfx.s16(rom_, a + 2))) & 0xFFFF
-	var d2 := MwTrig.distance(MwRinkSim.s16(x - MwGfx.s16(rom_, a + 4)), MwRinkSim.s16(y - MwGfx.s16(rom_, a + 6))) & 0xFFFF
+	var d2 := MwTrig.distance(MwRinkSim.s16(x - MwGfx.s16(rom_, a + 4)),
+			MwRinkSim.s16(y - MwGfx.s16(rom_, a + 6))) & 0xFFFF
 	if MwRinkSim.s16(d2) <= MwRinkSim.s16(d1):
 		spot += 1
 	return spot
@@ -548,7 +779,7 @@ func _phase_faceoff(e: int) -> int:
 ## `$AC1C`: one step of the faceoff sequence (`$FFC31C`; at most one state
 ## per call, states 0-1 together); returns the state (sign-extended byte,
 ## -1 when done).
-func faceoff_step(e: int) -> int:
+func faceoff_step(_e: int) -> int:
 	match MwRinkSim.s8(s.faceoff_step):
 		0:
 			s.faceoff_text = ((0x30 + s.period) & 0xFF) << 8      # '0' + period, 0
@@ -647,20 +878,20 @@ func _rules_reset(y: int) -> void:
 ## pushed pointer `$FFFFC304` - so the first settled pass is always the
 ## last (the counter ends at `$C304`).
 func _drop_step(e: int) -> bool:
-	var o := s.drop
-	var old_vz := o.vel[2]
-	o.step(s.puck_params, e)
+	var motion := s.drop
+	var old_vz := motion.vel[2]
+	motion.step(s.puck_params, e)
 	var settled := false
 	if old_vz < 0:
-		if o.vel[2] < 0:
+		if motion.vel[2] < 0:
 			return _drop_draw()
-		if o.vel[2] < 0x100:
+		if motion.vel[2] < 0x100:
 			settled = true
-		elif o.pos[0] == 0:
-			o.pos[0] = 1
+		elif motion.pos[0] == 0:
+			motion.pos[0] = 1
 			_sound(0x15)
 	if not settled:
-		var vz := o.vel[2]
+		var vz := motion.vel[2]
 		if vz < 0:
 			_plane_b(s.drop_plane.x, s.camera.shown.y)
 			return _drop_draw()
@@ -669,11 +900,11 @@ func _drop_step(e: int) -> bool:
 			settled = true
 		else:
 			d = mini(absi(d), 0x18) * 2
-			if o.pos[1] & 1 == 0:
+			if motion.pos[1] & 1 == 0:
 				d = -d
 			_plane_b(MwRinkSim.s16(s.drop_plane.x + d), s.camera.shown.y)
 			return _drop_draw()
-	o.pos[2] = 0x200
+	motion.pos[2] = 0x200
 	_drop_text(4)
 	s.faceoff_text = (s.faceoff_text + 0xC304) & 0xFFFF       # the bug
 	if s.faceoff_text >= 0x28:
@@ -683,11 +914,11 @@ func _drop_step(e: int) -> bool:
 
 ## `$ADC2`: the pass counter (y.l) + 1, the letters at the height.
 func _drop_draw() -> bool:
-	var o := s.drop
-	o.pos[1] = (o.pos[1] + 1) & 0xFFFFFFFF
-	if o.pos[1] >= 0x80000000:
-		o.pos[1] -= 0x100000000
-	_drop_text(MwRinkSim.s16(MwRinkSim.asr(o.pos[2], 8)))
+	var motion := s.drop
+	motion.pos[1] = (motion.pos[1] + 1) & 0xFFFFFFFF
+	if motion.pos[1] >= 0x80000000:
+		motion.pos[1] -= 0x100000000
+	_drop_text(MwRinkSim.s16(MwRinkSim.asr(motion.pos[2], 8)))
 	return false
 
 
@@ -726,7 +957,7 @@ func _phase_start(e: int) -> int:
 		1:
 			if speech(e):
 				return -1
-			if s.speaker == 0 and s.teams[1].flags4 & 4:
+			if s.speaker == 0 and s.has_players(s.teams[1]):
 				s.speaker = 1
 				_setup_period_start(s.teams[1], s.teams[0])
 				return -1
@@ -787,9 +1018,9 @@ func goal_step(_e: int) -> int:
 				sim.events.append(["demon_net"])
 				if sim.live:
 					MwSound.crowd_fade()                  # `$92E2`
-				var n := s.nets[0]
-				n.anim = MwAnimState.from_record(rom, DEMON_NET_GOAL)
-				n.anim.flags |= MwAnimState.PLAYING
+				var net := s.nets[0]
+				net.anim = MwAnimState.from_record(rom, DEMON_NET_GOAL)
+				net.anim.flags |= MwAnimState.PLAYING
 			s.goal_message_step = 1
 			_clock_stop()
 			s.goal_tick = _now(TICK_GOAL_0)
@@ -807,7 +1038,8 @@ func goal_step(_e: int) -> int:
 				elif s.goal_message_step & 1:
 					window_ops.append(["fill", 6, 4, 28, 3, 0x8000])
 				else:
-					window_ops.append(["text", BIG_FONT, 6, 4, 0xA0, T_HAT_TRICK if _scorer_goals() == 3 else T_HE_SCORES])
+					window_ops.append(["text", BIG_FONT, 6, 4, 0xA0,
+							T_HAT_TRICK if _scorer_goals() == 3 else T_HE_SCORES])
 		2:
 			# the scored end's lamp pops; the visitors' goal sound; the clock widget goes
 			_demon_net_sounds()
@@ -821,7 +1053,7 @@ func goal_step(_e: int) -> int:
 		3:
 			_demon_net_sounds()
 			if not (s.puck.motion.pos[1] < 0 and s.nets[0].style == 0 and s.nets[0].anim.playing()):
-				_sound(9)
+				goal_song = _sound(9)
 				_goal_panel()
 				s.goal_message = 4
 				s.goal_tick = _now(TICK_GOAL_3)
@@ -880,7 +1112,7 @@ func _panel(mode: int, a0: Variant, a1: Variant) -> void:
 	for t in 2:
 		var team := s.teams[t]
 		var row := 0x13 if t == 0 else 0x17
-		window_ops.append(["text", BIG_FONT, 1, row, 0xA0, MwGfx.u32(rom, team.record + 4)])
+		window_ops.append(["text", BIG_FONT, 1, row, 0xA0, MwGfx.u32(rom, team.record + MwTeams.NAME)])
 		var g := MwRinkSim.s16(team.score)
 		if g >= 10:
 			window_ops.append(["glyph", BIG_FONT, 0x21, row, 0xA0, (0x30 + (g & 0xFFFF) / 10) & 0xFF])
@@ -980,7 +1212,7 @@ func _next_period() -> int:
 func _phase_game_over(e: int) -> int:
 	if speech(e):
 		return -1
-	if s.speaker == 0 and s.teams[1].flags4 & 4:
+	if s.speaker == 0 and s.has_players(s.teams[1]):
 		s.speaker = 1
 		_setup_game_over(s.teams[1], s.teams[0])
 		return -1
@@ -1083,11 +1315,11 @@ func _phase_waste_goalie() -> int:
 	if s.subphase == 0 and s.clock == 0:
 		_sound(0x1D)
 		s.subphase = 1
-	var g := victim.players[5]
-	if g.present and g.state != 0x12:
+	var player := victim.players[5]
+	if player.present and player.state != 0x12:
 		if _since(TICK_WASTE_GOALIE, s.phase_tick) < 0x1E0:
 			return -1
-		sim.players.enter(g, 0x12)
+		sim.players.enter(player, 0x12)
 	_sound(9)
 	s.subphase = 2
 	return -1
@@ -1100,16 +1332,16 @@ func _phase_waste_goalie() -> int:
 ## screen (19).
 func _phase_waste_ref(e: int) -> int:
 	_clock_stop()
-	var r := s.referee
+	var actor := s.referee
 	s.ref_flag = 5
 	s.ref_attr = 0xA0
-	r.motion.init(0xA5, 0, 0)
-	r.anim = MwAnimState.from_record(rom, REF_ANIM)
-	if r.anim.playing():
-		r.motion.step(s.player_params, e)
-		r.anim.advance(e)
+	actor.motion.init(0xA5, 0, 0)
+	actor.anim = MwAnimState.from_record(rom, REF_ANIM)
+	if actor.anim.playing():
+		actor.motion.step(s.player_params, e)
+		actor.anim.advance(e)
 	elif s.ref_flag != 0:
-		r.anim = MwAnimState.from_record(rom, REF_ANIM)
+		actor.anim = MwAnimState.from_record(rom, REF_ANIM)
 	sim.events.append(["referee"])
 	sprite_ops.append(["referee", s.ref_attr])
 	if _since(TICK_WASTE_REF, s.phase_tick) >= 0xB4:
@@ -1201,9 +1433,9 @@ func puck_rules(e: int) -> void:
 	if c != null and c.position == 5:
 		if ((s.rule_clock - s.clock) & 0xFFFF) >= 0xF:
 			# `$C9C6`: the goalie hold
-			var p := pk.motion.pixels()
+			var held_at := pk.motion.pixels()
 			s.rule_hold = 0xFFFF
-			s.rule_spot = Vector2i(MwRinkSim.s16(p.x), MwRinkSim.s16(p.y))
+			s.rule_spot = Vector2i(MwRinkSim.s16(held_at.x), MwRinkSim.s16(held_at.y))
 			s.phase = 8
 			s.puck_rule = 0
 			return
@@ -1230,8 +1462,8 @@ func puck_rules(e: int) -> void:
 			r = 1
 			note = false
 		elif was_b != s.rule_team_b:
-			var t := pk.carrier
-			var pos := t.position if t != null else rom[0x69]
+			var player := pk.carrier
+			var pos := player.position if player != null else rom[0x69]
 			if pos != 5:
 				r = 2
 				note = false
@@ -1248,8 +1480,8 @@ func puck_rules(e: int) -> void:
 				s.stoppage.flags |= 0x80
 				s.stoppage.anim.flags |= MwAnimState.PLAYING
 				_icon(e)
-				var p := pk.motion.pixels()
-				s.rule_spot = Vector2i(MwRinkSim.s16(p.x), MwRinkSim.s16(-p.y))
+				var point := pk.motion.pixels()
+				s.rule_spot = Vector2i(MwRinkSim.s16(point.x), MwRinkSim.s16(-point.y))
 				s.puck_rule = 1
 			else:
 				_icon(e)
@@ -1277,21 +1509,30 @@ func _note_carrier() -> void:
 ## of the speaking team (in a goal speech the other team's, if it has a
 ## pad; a CPU team cannot skip). Returns true while it goes on; at the end
 ## the box and name are erased, the portrait stops, its voice too.
+##
+## Plan 34: a speaking team without players - team A's coach always speaks
+## (period starts, the game's end) - is skipped by the other team's players
+## when it has some, as the original hands a goal speech's skip to the other
+## team: team A with nobody left in (QUIT GAME, or online their machines
+## away - MwRinkState.has_players; the CPU team's decisions: its own pads
+## skip nothing) or team B only. The original's set-ups never have that
+## (team A has a pad in every pad mode with a human), so their speeches are
+## the original's.
 func speech(e: int) -> bool:
 	sim.events.append(["crowd_off"])
 	if sim.live:
 		MwSound.crowd_off()                     # `$102A8`
 	s.crowd_quiet = 1
-	var p := s.portrait
+	var portrait := s.portrait
 	_portrait_step(e)
-	if p.anim.playing():
-		if p.mode == 0 and (s.quote_value & 0xFFFF) >= 2 and (s.quote_value & 0xFFFF) <= 3:
+	if portrait.anim.playing():
+		if portrait.mode == 0 and (s.quote_value & 0xFFFF) >= 2 and (s.quote_value & 0xFFFF) <= 3:
 			if (sim.rng_next() & 0xFFFF) < 0xC00:
 				_talk_mode(1)
 	else:
 		_talk_mode(0)
 	sprite_ops.append(["portrait", 0xE8 if s.speaker != 0 else 0x20, 0x64, 0x8000, 0xA0,
-			p.anim.address, p.anim.variant, p.anim.frame, p.size])
+			portrait.anim.address, portrait.anim.variant, portrait.anim.frame, portrait.size])
 	_box(false)
 	_print_quote()
 	if s.speaker != 0:
@@ -1306,8 +1547,10 @@ func speech(e: int) -> bool:
 	if not done:
 		var skipper := s.teams[1] if s.speaker != 0 else s.teams[0]
 		var other := s.teams[0] if skipper == s.teams[1] else s.teams[1]
-		if s.phase == 3 and other.flags4 & 4:
+		if s.phase == 3 and s.has_players(other):
 			skipper = other
+		elif not s.has_players(skipper) and s.has_players(other):
+			skipper = other                     # plan 34 (above): nobody in holds nobody up
 		done = _skips(skipper)
 	if not done:
 		return true
@@ -1319,8 +1562,21 @@ func speech(e: int) -> bool:
 
 
 ## The skip test: [param team]'s first pad slot (none: no skip), then its
-## second; Start / A / C / B held or newly pressed (word & $F0F0).
+## second; Start / A / C / B held or newly pressed (word & $F0F0). Plan 34,
+## an extended set-up: any of the team's players. A spectated match: any
+## player's (MwRinkState.watch_held / watch_new) - every speech is the
+## spectators' to skip.
 func _skips(team: MwRinkState.Team) -> bool:
+	if s.spectated:
+		for i in mini(s.watch_held.size(), s.watch_new.size()):
+			if (((s.watch_held[i] & 0xFF) << 8) | (s.watch_new[i] & 0xFF)) & 0xF0F0:
+				return true
+		return false
+	if s.extended:
+		for pad in team.port_pads:
+			if (((s.pads_held[pad] & 0xFF) << 8) | (s.pads_new[pad] & 0xFF)) & 0xF0F0:
+				return true
+		return false
 	for k in 2:
 		var pad: int = team.pads[k]
 		if pad & 0x80:
@@ -1339,13 +1595,13 @@ func _skips(team: MwRinkState.Team) -> bool:
 ## them a 480-tick pause, the mouth shut) - the mouth alternates a random
 ## frame (`rng_range(0, frames - 1)`) and frame 0.
 func _portrait_step(e: int) -> void:
-	var p := s.portrait
-	if p.mode != 0:
-		var old := p.anim.frame
-		p.anim.advance(e)
-		if old == p.anim.frame:
+	var portrait := s.portrait
+	if portrait.mode != 0:
+		var old := portrait.anim.frame
+		portrait.anim.advance(e)
+		if old == portrait.anim.frame:
 			return
-		var a := p.data + 0xA
+		var a := portrait.data + 0xA
 		while true:
 			var w := MwGfx.u16(rom, a)
 			if old < w:
@@ -1355,67 +1611,63 @@ func _portrait_step(e: int) -> void:
 				return
 			a += 4
 		return
-	if not p.anim.playing():
+	if not portrait.anim.playing():
 		return
-	var t := MwRinkSim.s16(e + p.timer)
+	var t := MwRinkSim.s16(e + portrait.timer)
 	if t < 0:
-		p.timer = t & 0xFFFF
+		portrait.timer = t & 0xFFFF
 		return
 	t = MwRinkSim.s16(t - 8)
-	if not _voice_playing(p.handle):
-		if p.voices == 0:
-			p.timer = 0xFE20                       # -480: the pause, mouth shut
-			p.voices = 2
-			p.anim.frame = 0
+	if not _voice_playing(portrait.handle):
+		if portrait.voices == 0:
+			portrait.timer = 0xFE20                       # -480: the pause, mouth shut
+			portrait.voices = 2
+			portrait.anim.frame = 0
 			return
-		p.voices = (p.voices - 1) & 0xFFFF
-		p.handle = _start_voice(MwGfx.u16(rom, p.data + 8))
-	if p.anim.frame != 0:
-		p.anim.frame = 0
+		portrait.voices = (portrait.voices - 1) & 0xFFFF
+		portrait.handle = _start_voice(MwGfx.u16(rom, portrait.data + 8))
+	if portrait.anim.frame != 0:
+		portrait.anim.frame = 0
 	else:
-		p.anim.frame = sim.rng_range(0, rom[p.anim.address + 3] - 1) & 0xFF
-	p.timer = t & 0xFFFF
+		portrait.anim.frame = sim.rng_range(0, rom[portrait.anim.address + 3] - 1) & 0xFF
+	portrait.timer = t & 0xFFFF
 
 
 ## `$B542`: the portrait talking (0) or pulling a face (1): that
 ## animation from its start, playing, the timer at -40, two voices.
 func _talk_mode(mode: int) -> void:
-	var p := s.portrait
+	var portrait := s.portrait
 	if mode >= 2:
 		mode = 1
-	p.mode = mode
-	p.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, p.data + 4 * mode))
-	p.x0b = 0
-	p.anim.flags |= MwAnimState.PLAYING
-	p.timer = 0xFFD8
-	p.voices = 2
+	portrait.mode = mode
+	portrait.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, portrait.data + 4 * mode))
+	portrait.x0b = 0
+	portrait.anim.flags |= MwAnimState.PLAYING
+	portrait.timer = 0xFFD8
+	portrait.voices = 2
 
 
 ## `$B656`: the portrait stopped, its voice too.
 func _portrait_stop() -> void:
-	var p := s.portrait
-	p.anim.flags &= ~MwAnimState.PLAYING
-	sim.events.append(["voice_stop", p.handle])
+	var portrait := s.portrait
+	portrait.anim.flags &= ~MwAnimState.PLAYING
+	sim.events.append(["voice_stop", portrait.handle])
 	if sim.live:
-		MwSound.stop(p.handle)                  # `$B660`
-	_voice_end.erase(p.handle)
-	p.handle = 0
+		MwSound.stop(portrait.handle)                  # `$B660`
+	_voice_end.erase(portrait.handle)
+	portrait.handle = 0
 
 
 ## `$B6D2`: the portrait for coach record [param coach] (`$1CD26`: 20
 ## coaches, else the default `$1CCA2` and the set the word at ROM 4
 ## holds); size 1. Returns the coach's quote set.
 func _portrait_for(coach: int) -> int:
-	var p := s.portrait
-	p.size = 1
-	p.x10 = 0
-	for i in 20:
-		var a := COACHES + 10 * i
-		if MwGfx.u32(rom, a) == coach:
-			p.data = MwGfx.u32(rom, a + 4)
-			return MwGfx.u16(rom, a + 8)
-	p.data = COACH_DEFAULT
-	return MwGfx.u16(rom, 4)
+	var portrait := s.portrait
+	portrait.size = 1
+	portrait.x10 = 0
+	var face := MwPortrait.coach_face(rom, coach)     # plan 40 (D5)
+	portrait.data = face[0]
+	return face[1]
 
 
 ## The voice handle's "still playing?" (`$13D9C` at `$B5C4`): the hooks'
@@ -1453,16 +1705,17 @@ func _start_voice(id: int) -> int:
 func _setup_coach(team: MwRinkState.Team) -> int:
 	_widget_erase()
 	s.penalty.flags &= ~0x80
-	var coach := MwGfx.u32(rom, team.record + 0xC)
+	var coach := MwGfx.u32(rom, team.record + MwTeams.COACH)
 	s.coach_name = MwGfx.u32(rom, coach)
-	var set := _portrait_for(coach)
+	var quote_set := _portrait_for(coach)
 	_talk_mode(0)
-	return set
+	return quote_set
 
 
 ## The set-ups' end: the quote (`$F420`), the box (`$BD96`), the stamp.
-func _setup_quote(set: int, category: int, situation: int, team: MwRinkState.Team, other: MwRinkState.Team, tag: int) -> void:
-	_quote(set, category, situation, team, other)
+func _setup_quote(quote_set: int, category: int, situation: int, team: MwRinkState.Team, other: MwRinkState.Team,
+		tag: int) -> void:
+	_quote(quote_set, category, situation, team, other)
 	_box(true)
 	s.phase_tick = _now(tag)
 	sim.events.append(["speech", s.speaker, s.quote.slice(0, s.quote.find(0))])
@@ -1472,7 +1725,7 @@ func _setup_quote(set: int, category: int, situation: int, team: MwRinkState.Tea
 ## (category 0, 1 in the playoffs) by the skulls (team record +$B)
 ## compared, periods 2-3 (2) by the score, overtime (3) situation 0.
 func _setup_period_start(team: MwRinkState.Team, other: MwRinkState.Team) -> void:
-	var set := _setup_coach(team)
+	var quote_set := _setup_coach(team)
 	var cat := 0
 	var sit := 0
 	var p := s.period & 0xFF
@@ -1492,7 +1745,7 @@ func _setup_period_start(team: MwRinkState.Team, other: MwRinkState.Team) -> voi
 		else:
 			sit = 4
 	else:
-		var d := MwRinkSim.s8(rom[team.record + 0xB] - rom[other.record + 0xB])
+		var d := MwRinkSim.s8(rom[team.record + MwTeams.SKULLS] - rom[other.record + MwTeams.SKULLS])
 		if d >= 2:
 			sit = 0
 		elif d >= -1:
@@ -1502,7 +1755,7 @@ func _setup_period_start(team: MwRinkState.Team, other: MwRinkState.Team) -> voi
 		else:
 			sit = 3
 		cat = 1 if s.play_mode != 0 else 0
-	_setup_quote(set, cat, sit, team, other, TICK_SETUP_START)
+	_setup_quote(quote_set, cat, sit, team, other, TICK_SETUP_START)
 
 
 ## `$1054C`: a game-over speech by [param team]'s coach: a regular game
@@ -1510,7 +1763,7 @@ func _setup_period_start(team: MwRinkState.Team, other: MwRinkState.Team) -> voi
 ## 3+ 1, by 1-2 2, won by 3+ 4, by 1-2 5); the playoffs (5) by the result
 ## `$12854` (team A's as is; team B's: 0 -> 3 or 4, 3+ -> 0, else 4).
 func _setup_game_over(team: MwRinkState.Team, other: MwRinkState.Team) -> void:
-	var set := _setup_coach(team)
+	var quote_set := _setup_coach(team)
 	var cat := 4
 	var sit := s.playoff_result & 0xFFFF
 	if MwRinkSim.s16(s.playoff_result) < 0:
@@ -1538,7 +1791,7 @@ func _setup_game_over(team: MwRinkState.Team, other: MwRinkState.Team) -> void:
 				sit = 0
 			else:
 				sit = 4
-	_setup_quote(set, cat, sit, team, other, TICK_SETUP_OVER)
+	_setup_quote(quote_set, cat, sit, team, other, TICK_SETUP_OVER)
 
 
 ## `$10610`: the goal's speech (category 7) by the scoring team's coach if
@@ -1584,14 +1837,14 @@ func _setup_goal() -> bool:
 	if sit == 6:
 		s.scoring = _team_long(_team_index(team))
 		s.scorer = 0
-	if not speaking.flags4 & 4:
+	if not s.has_players(speaking):
 		return false
-	var coach := MwGfx.u32(rom, speaking.record + 0xC)
+	var coach := MwGfx.u32(rom, speaking.record + MwTeams.COACH)
 	s.coach_name = MwGfx.u32(rom, coach)
-	var set := _portrait_for(coach)
+	var quote_set := _portrait_for(coach)
 	_talk_mode(0)
 	var them := s.teams[1] if speaking == s.teams[0] else s.teams[0]
-	_setup_quote(set, 7, sit, speaking, them, TICK_SETUP_GOAL)
+	_setup_quote(quote_set, 7, sit, speaking, them, TICK_SETUP_GOAL)
 	return true
 
 
@@ -1599,7 +1852,7 @@ func _setup_goal() -> bool:
 ## has a pad and a player of it is in the box (+$74 bit 1).
 func _setup_penalty(team: MwRinkState.Team, other: MwRinkState.Team) -> bool:
 	s.penalty.flags &= ~0x80
-	if not team.flags4 & 4:
+	if not s.has_players(team):
 		return false
 	var any := false
 	for p in team.players:
@@ -1608,65 +1861,28 @@ func _setup_penalty(team: MwRinkState.Team, other: MwRinkState.Team) -> bool:
 			break
 	if not any:
 		return false
-	var set := _setup_coach(team)
-	_setup_quote(set, 6, 0, team, other, TICK_SETUP_PENALTY)
+	var quote_set := _setup_coach(team)
+	_setup_quote(quote_set, 6, 0, team, other, TICK_SETUP_PENALTY)
 	return true
 
 
 ## `$F420`: a quote of [param category] / [param situation] for quote set
-## [param set] (`$1D404`): its value word (`$C616`) and one of its strings
+## [param quote_set] (`$1D404`): its value word (`$C616`) and one of its strings
 ## (none: `$50D2D`; several: `rng_range(0, count - 1)`) copied into
 ## `$FFC4FE` with the codes expanded: `[` the team's city and name, `{` the
 ## team's name, `}` the other team's, `@` a5's string (unused by the
 ## rink's categories; category 9's pick by a counter is the screens').
-func _quote(set: int, category: int, situation: int, team: MwRinkState.Team, other: MwRinkState.Team) -> void:
-	var t := MwGfx.u32(rom, QUOTES + 4 * category)
-	t = MwGfx.u32(rom, t + 4 * situation)
-	t = MwGfx.u32(rom, t + 4 * set)
-	s.quote_value = MwGfx.u16(rom, t)
-	var count := MwGfx.u16(rom, t + 2)
-	var src := NO_QUOTE
-	if count == 1:
-		src = MwGfx.u32(rom, t + 4)
-	elif count > 1:
-		src = MwGfx.u32(rom, t + 4 + 4 * (sim.rng_range(0, count - 1) & 0xFFFF))
-	var out := 0
-	while true:
-		var ch := rom[src]
-		src += 1
-		match ch:
-			0x5B:                               # '[': city, a space, then the name
-				out = _copy(out, MwGfx.u32(rom, team.record))
-				_put(out, 0x20)
-				out += 1
-				out = _copy(out, MwGfx.u32(rom, team.record + 4))
-			0x7B:
-				out = _copy(out, MwGfx.u32(rom, team.record + 4))
-			0x7D:
-				out = _copy(out, MwGfx.u32(rom, other.record + 4))
-			0x40:
-				push_warning("MwRinkPhases: quote code @ (category 9 only)")
-			_:
-				_put(out, ch)
-				out += 1
-				if ch == 0:
-					break
+## Port: a custom coach's own lines where he has some (CREATE-A-TEAM's
+## SPEECHES, owner 2026-10-14; [method MwQuotes.coach_set_at]), picked the
+## same way, with the port's possessive.
+func _quote(quote_set: int, category: int, situation: int, team: MwRinkState.Team, other: MwRinkState.Team) -> void:
+	var coach := MwGfx.u32(rom, team.record + MwTeams.COACH)
+	var t := MwQuotes.coach_set_at(rom, category, situation, quote_set, coach)     # plan 40 (D1): MwQuotes
+	s.quote_value = MwQuotes.value_of(rom, t)
+	var src := MwQuotes.choose(rom, t, func(hi: int) -> int: return sim.rng_range(0, hi))
+	MwQuotes.expand_into(s.quote, MwGfx.rom_string(rom, src), MwQuotes.fields(rom, team.record, other.record),
+			MwCustomOverlay.is_custom(t))
 	s.quote_ptr = 0xFFFFC4FE
-
-
-## A string copied without its terminator; returns the next offset.
-func _copy(at: int, src: int) -> int:
-	while rom[src] != 0:
-		_put(at, rom[src])
-		at += 1
-		src += 1
-	_put(at, 0)
-	return at
-
-
-func _put(at: int, v: int) -> void:
-	if at < s.quote.size():
-		s.quote[at] = v & 0xFF
 
 
 ## `$BD96` ([param filled]: the set-up; the speech box framed, filled with
@@ -1692,49 +1908,19 @@ func _box(filled: bool) -> void:
 
 
 ## `$BB2E`: the quote printed into the text box from its corner (`$15860`:
-## word wrap; the cursor ends where the text did).
+## word wrap; the cursor ends where the text did) - the scoreboards' own
+## (MwScoreboardSim.print_quote_into; plan 40, D2).
 func _print_quote() -> void:
-	var tb := s.text_box
-	tb.cursor_x = 0
-	tb.cursor_y = 0
-	window_ops.append(["quote", tb.font, tb.x, tb.y, 0xE0, s.quote.slice(0, maxi(s.quote.find(0), 0)), tb.w, tb.h])
-	var f := tb.font
-	var line := MwGfx.u16(rom, f) + tb.spacing
-	var x := MwRinkSim.s16(tb.cursor_x)
-	var i := 0
-	var q := s.quote
-	while i < q.size() and q[i] != 0:
-		var ch := q[i]
-		if ch < 0x21 or ch > 0x7E:
-			if ch == 0x20:
-				x = MwRinkSim.s16(x + MwGfx.u16(rom, f + 2))
-			elif ch == 0x0A:
-				tb.cursor_y = (tb.cursor_y + line) & 0xFFFF
-				x = 0
-			i += 1
-			continue
-		var width := 0
-		var j := i
-		while j < q.size() and q[j] >= 0x21 and q[j] <= 0x7E:
-			width += glyph_width(rom, f, q[j])
-			j += 1
-		if MwRinkSim.s16(x + width) > MwRinkSim.s16(tb.w) and x != 0:
-			tb.cursor_y = (tb.cursor_y + line) & 0xFFFF
-			x = 0
-		if (tb.cursor_y & 0xFFFF) >= (tb.h & 0xFFFF):
-			break
-		x = MwRinkSim.s16(x + width)
-		i = j
-	tb.cursor_x = x & 0xFFFF
+	MwScoreboardSim.print_quote_into(rom, s, window_ops)
 
 
 ## `$14BE6`: a printable character's width in [param font]'s cells (0 if
 ## the font has no glyph for it).
 static func glyph_width(rom_: PackedByteArray, font: int, ch: int) -> int:
-	var idx := MwGfx.s8(rom_, font + MwGfx.u16(rom_, font + 4) + ch - 0x21)
-	if (idx & 0xFFFF) >= MwGfx.u16(rom_, font + 6):
+	var glyph := MwGfx.s8(rom_, font + MwGfx.u16(rom_, font + 4) + ch - 0x21)
+	if (glyph & 0xFFFF) >= MwGfx.u16(rom_, font + 6):
 		return 0
-	return ((rom_[font + 8 + 6 * idx + 2] >> 2) & 3) + 1
+	return ((rom_[font + 8 + 6 * glyph + 2] >> 2) & 3) + 1
 
 
 ## `$14C14`: a string's width in cells (spaces by the font's width).
@@ -1743,14 +1929,14 @@ func _text_width(font: int, src: int) -> int:
 
 
 ## `$14C14` for the string at ROM [param src].
-static func text_width(rom: PackedByteArray, font: int, src: int) -> int:
+static func text_width(rom_bytes: PackedByteArray, font: int, src: int) -> int:
 	var w := 0
-	while rom[src] != 0:
-		var ch := rom[src]
+	while rom_bytes[src] != 0:
+		var ch := rom_bytes[src]
 		if ch == 0x20:
-			w += MwGfx.u16(rom, font + 2)
+			w += MwGfx.u16(rom_bytes, font + 2)
 		elif ch >= 0x21 and ch <= 0x7E:
-			w += glyph_width(rom, font, ch)
+			w += glyph_width(rom_bytes, font, ch)
 		src += 1
 	return w
 

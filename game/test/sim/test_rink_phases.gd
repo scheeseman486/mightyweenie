@@ -67,8 +67,8 @@ func test_fixture_covers_the_match_flow() -> void:
 			"0:00", "phase 9/1 -> 9/2", "phase 9/2 -> 1/0", "phase 1/0 -> 0/0", "phase 3/0 -> 3/1", "phase 3/0 -> 5/1",
 			"phase 5/1 -> 10/1", "phase 11/1 -> 11/2", "phase 14/0 -> 14/1", "rule 0 -> 1 (phase 0 -> 0)",
 			"rule 1 -> 0 (phase 0 -> 0)", "rule 1 -> 2 (phase 8 -> 8)", "goal 5 -> 65535"]
-	for s in 9:
-		want.append("faceoff %d -> %d" % [s, s + 1 if s < 8 else 255])
+	for step in 9:
+		want.append("faceoff %d -> %d" % [step, step + 1 if step < 8 else 255])
 	for x in [1, 5, 7, 10, 12, 14, 15, 18]:
 		want.append("exit %d" % x)
 	for f in want:
@@ -113,11 +113,11 @@ func test_cases_end_as_the_original() -> void:
 		ph.hooks = rec
 		up.after_segment(int(c["e"]))
 		var to := ph.pass_end(int(c["e"]))
-		var name := "%s pass %d (%s)" % [c["run"], c["pass"], ", ".join(c["features"])]
+		var case_name := "%s pass %d (%s)" % [c["run"], c["pass"], ", ".join(c["features"])]
 		if c.has("exit"):
 			if to != int(c["exit"]):
 				failed += 1
-				fail_test("%s: left for %d" % [name, to])
+				fail_test("%s: left for %d" % [case_name, to])
 			continue
 		up.draws([], MwRinkPhases.RULES_DRAWN, ph.overlays)
 		s.tick = int(c["pass_tick"])
@@ -143,7 +143,7 @@ func test_cases_end_as_the_original() -> void:
 				out.append("%s %s/%s" % [p, str(w), str(g)])
 		if not out.is_empty():
 			failed += 1
-			fail_test("%s: %d fields differ: %s" % [name, out.size(), ", ".join(out.slice(0, 6))])
+			fail_test("%s: %d fields differ: %s" % [case_name, out.size(), ", ".join(out.slice(0, 6))])
 	assert_eq(failed, 0, "%d cases as the original" % ((fx["cases"] as Array).size() - failed))
 
 

@@ -3,7 +3,8 @@ extends GutTest
 
 
 func _item(key: String, at: Vector3, place := MwRinkDraw3D.UPRIGHT) -> Dictionary:
-	return {"key": key, "at": at, "place": place, "frame": 1, "attr": 0, "depth": 0, "offset": Vector2i.ZERO, "order": 0}
+	return {"key": key, "at": at, "place": place, "frame": 1, "attr": 0, "depth": 0, "offset": Vector2i.ZERO,
+			"order": 0}
 
 
 func test_points_move_from_the_previous_pass_to_the_latest() -> void:

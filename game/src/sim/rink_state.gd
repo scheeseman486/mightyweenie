@@ -17,13 +17,52 @@ extends RefCounted
 ## Phases (`$FFC60A`, docs/re/screens.md) the drawing and camera test.
 const PHASE_PLAY := 0
 const PHASE_FACEOFF := 1
+const PHASE_GOAL := 3        ## the goal sequence (`$FDD2`): blink, lamp, panel
 const PHASE_FIGHT := 4
 const PHASE_START := 9
 const PHASE_REF := 12
 const PHASE_FACEOFF_BANNER := 14
 
-const STADIUMS := 0x18D8A + 0x10     ## team record +$10: stadium record
-const TEAM_SIZE := 0x9E
+## Plan 40 (S1): what each of the port's own fields of the rink's state
+## (none of them the original's RAM) is to the comparison layer
+## (MwSimDict), the online hash (MwNetHash) and the resync snapshot
+## (MwNetSnapshot) - the one declaration they read, so a new field is
+## decided once, here (test_port_fields: every field is the original's or
+## listed):
+## [b]IN_DICT[/b]: in MwSimDict's form (hashed with it, carried; the
+## recordings don't have it - it defaults equal there);
+## [b]HASHED[/b]: left out of MwSimDict, hashed by MwNetHash.port_layers,
+## carried;
+## [b]CARRIED[/b]: left out of MwSimDict, not hashed, carried (presentation
+## every machine shows alike, or carried its own way);
+## [b]LOCAL[/b]: left out of MwSimDict, not hashed, not carried (a
+## machine's own presentation).
+enum Port { IN_DICT, HASHED, CARRIED, LOCAL }
+## The port's fields: top level by name, a nested class's as "Class.field"
+## (those are all IN_DICT).
+const PORT_FIELDS := {
+	"pad_sticks": Port.HASHED, "pad_heights": Port.HASHED, "control": Port.HASHED, "pace": Port.HASHED,
+	"crowd_life": Port.HASHED,            # (its noise level: the sound driver hears it)
+	"bench_life": Port.CARRIED,
+	"full_replay": Port.CARRIED,          # (as its frame count: MwNetSnapshot.codec)
+	"splatter": Port.LOCAL,
+	"extended": Port.IN_DICT, "spectated": Port.IN_DICT, "watch_held": Port.IN_DICT,
+	"watch_new": Port.IN_DICT, "forfeit_manual": Port.IN_DICT,
+	"extended_play": Port.IN_DICT, "extended_penalties": Port.IN_DICT, "extended_cpu": Port.IN_DICT,   # (plan 44)
+	"Team.port_pads": Port.IN_DICT, "Team.port_turn": Port.IN_DICT, "Player.pad": Port.IN_DICT,
+}
+
+
+## The top-level port fields declared as [param layer] ([constant PORT_FIELDS]).
+static func port_fields(layer: Port) -> PackedStringArray:
+	var out := PackedStringArray()
+	for k: String in PORT_FIELDS:
+		if PORT_FIELDS[k] == layer and not k.contains("."):
+			out.append(k)
+	return out
+
+const HAZARD_SLOTS := 4              ## +$FC: in-ice hazards
+const OBJECT_SLOTS := 8              ## +$124: rink objects
 const NET_ANIMS := 0x1B8F8           ## by net style: 0 Demon Net, 1 standard, 2 Battle Net
 const NET_Y := 0x149                 ## nets at y -329 (top) / +329 (bottom)
 const OBJECT_KINDS := 0x1C626        ## by kind - 1: animation.l, attr.w
@@ -91,6 +130,12 @@ class Player extends Actor:
 	var flags := 0           ## +$74: see the constants
 	var flags2 := 0          ## +$75: bit 1 Nasty Goalie, 2 AI attack lock, 3 holds the Player Blast weapon
 	var team := 0            ## which team (0 A, 1 B) - not in RAM, the object's address tells
+	## Plan 34, an extended set-up (the port's; nothing in the original's
+	## RAM): the match pad (0-11, MwHumans.pad_index) of the human driving
+	## this player, beside +$74 bits 2 / 3 and meaningful while bit 2 (human)
+	## is set - it moves with control as the second-pad bit does. -1 in the
+	## original's set-ups, whose bits 2 / 3 and the team's two slots say it.
+	var pad := -1
 
 	const STATE_WEAPON := 4
 	const STATE_IMPALED := 0x11
@@ -118,6 +163,9 @@ class Marker:
 	var health := 0xFF       ## +7 (0-32 with Reserves, $FF none)
 
 
+## A team object (docs/re/rink.md, Objects): flags, roster health, pads, its six on-ice
+## [MwRinkState.Player] slots (5 the goalie), arrows, [MwRinkState.Marker]s, statistics
+## and score.
 class Team:
 	var record := 0          ## +0: the team record in the ROM
 	var flags4 := 0          ## +4: bit 1 attacks downwards (y+), 2 has a pad, 5 confused, 7 armed force
@@ -126,6 +174,17 @@ class Team:
 	var pads := [0xFF, 0xFF] ## +$66, +$67: pad of control slot 0 / 1 ($FF none)
 	var pad_held := [0, 0]   ## +$68, +$6A: the controlled players' pads, held (`$19B8`)
 	var pad_new := [0, 0]    ## +$69, +$6B: newly pressed (& $8F)
+	## Plan 34, an extended set-up: the team's pad slots - its players' match
+	## pads in number order (up to six; MwHumans.match_pads) - beside the
+	## original's two slot bytes, which keep the nearest original mode's
+	## values (the AI reads one as its gate byte). [member pad_held] /
+	## [member pad_new] then hold a copy per slot. Empty in the original's
+	## set-ups (and for a team without players).
+	var port_pads := PackedInt32Array()
+	## Plan 34: which of [member port_pads] takes control at the next pick-up
+	## by a CPU team-mate (the original's co-op alternation, `$FFBDB8`, for
+	## more than two players).
+	var port_turn := 0
 	var players: Array[Player] = []
 	var x330 := PackedByteArray()      ## +$330..+$339 (+$336: under-the-ice bits); raw
 	var arrows: Array[MwAnimState] = []   ## +$33A, +$34E
@@ -149,6 +208,22 @@ class Team:
 	func goalie() -> Player:
 		return players[5]
 
+	## The control slot of human [param p] (the team's pad copy, its marker
+	## and arrow): the second-pad bit in the original's set-ups; in an
+	## extended one the slot of its [member Player.pad] in [member port_pads].
+	func control_slot(p: Player) -> int:
+		if port_pads.is_empty():
+			return 1 if p.flags & Player.SECOND_PAD else 0
+		return maxi(port_pads.find(p.pad), 0)
+
+	## The marker [param p] shows: a human's its control slot's; the CPU
+	## carrier's the first (the original's) - in an extended set-up one of
+	## its own after the players' ([method MwRinkState.extend]).
+	func marker_of(p: Player) -> int:
+		if p.flags & Player.HUMAN:
+			return control_slot(p)
+		return port_pads.size()
+
 	func stat(off: int, size := 2) -> int:
 		var v := 0
 		for i in size:
@@ -161,6 +236,8 @@ class Team:
 			stats[off - STATS_AT + size - 1 - i] = (v >> (8 * i)) & 0xFF
 
 
+## The puck (`$FFB3C2`; docs/re/rink.md, Objects): an [MwRinkState.Actor] with its
+## carrier, pass receiver and state flags (the constants below).
 class Puck extends Actor:
 	var carrier: Player = null   ## +$24: the carrier while +$3D bit 0, else the last carrier
 	var take_tick := 0           ## +$26: tick of the last take / poke / release / drop set-up
@@ -190,11 +267,14 @@ class Puck extends Actor:
 		return carrier if flags & CARRIED else null
 
 
+## A net (rink state +`$18` top, +`$3E` bottom): an [MwRinkState.Actor] with its style
+## (0 Demon Net, 1 standard, 2 Battle Net) and its end ([member bottom]).
 class Net extends Actor:
 	var style := 1               ## +$24
 	var bottom := false          ## +$25 bit 0
 
 
+## An in-ice hazard slot (rink state +`$FC`): its point, kind and flags.
 class Hazard:
 	var x := 0
 	var y := 0
@@ -203,6 +283,9 @@ class Hazard:
 	var flags := 0               ## +9
 
 
+## A rink object slot (rink state +`$124`; [method MwRinkState.spawn]): an
+## [MwRinkState.Actor] with its kind (0 free; the [code]KIND_*[/code] constants),
+## flags and two per-kind words.
 class RinkObject extends Actor:
 	var kind := 0                ## +$28 (0 free)
 	var flags := 0               ## +$29: bit 3 mirrored
@@ -265,7 +348,7 @@ class ReplayRing:
 	## only screen points. Filled by the rink pass's draws when a
 	## presentation asks for it (MwRinkUpdate.replay_side), kept in step
 	## with the frames here (dropped, abandoned, reset). Presentation only,
-	## outside the comparisons (MwSimDict.SKIP).
+	## outside the comparisons (MwSimDict.skipped).
 	var side := {}
 
 	func _init() -> void:
@@ -425,7 +508,57 @@ var pads_held := PackedInt32Array([0, 0, 0, 0])
 var pads_new := PackedInt32Array([0, 0, 0, 0])
 var hold_bit := PackedInt32Array([0, 0, 0, 0])
 var hold_left := PackedInt32Array([0, 0, 0, 0])
+## The pads' analogue sticks (the port's, plan 22: MwInputFrame.stick; each
+## axis -256..256, x right, y down; ZERO: none - the D-pad as the original).
+var pad_sticks: Array[Vector2i] = [Vector2i.ZERO, Vector2i.ZERO, Vector2i.ZERO, Vector2i.ZERO]
+## The pads' shot heights (the port's: MwSettings.shot_heights,
+## MwInputFrame.height): 0 none (the middle height), 1 high, 2 low - the
+## lift table's entries for no direction, Up, Down -; -1 the D-pad lifts
+## the shot (the original).
+var pad_heights := PackedInt32Array([-1, -1, -1, -1])
 var pad_mode := 0                    ## `$FFB0E0`
+## Plan 34: an extended set-up (MwHumans: more players than the original's
+## pad modes allow) - the port's code paths for the players, twelve match
+## pads ([member pads_held] ... one per player 1-12: MwHumans.pad_index),
+## a pad slot per player a team ([member Team.port_pads]) and a marker,
+## arrow and info plate each ([method extend]). False: the original's.
+var extended := false
+## Plan 44: an EXTENDED match (the options' 2D EXTENDED / 3D EXTENDED;
+## online always; MwSettings.extended_play, MwMatchSetup.extended_play):
+## the players humans drive count as on the original's screen wherever
+## they are - `$6D02` meets their team-mates, opponents, the puck, rink
+## objects, the nets and hazards (MwSimCollide.counts_on_screen), as the
+## EXTENDED views keep them in sight; the CPU's players keep the original's
+## rule (owner) but for their bodies against the opponents humans drive (the
+## owner's one exception). False: the original's (off its screen, the boards
+## alone).
+var extended_play := false
+## Plan 44: EXTENDED PENALTIES (an EXTENDED match's option,
+## MwMatchSetup.extended_penalties): the referee stops play for an offender
+## anywhere on the rink (MwRinkPenalties.rule), not only on the original's
+## screen. False: the original's.
+var extended_penalties := false
+## Plan 44: EXTENDED CPU (an EXTENDED match's option,
+## MwMatchSetup.extended_cpu): the CPU's players count as on the original's
+## screen wherever they are too - every player meets the whole rink
+## (MwSimCollide.counts_on_screen). False: the original's for them.
+var extended_cpu := false
+## Plan 34 (section 7): the port's control layer - the players' seats,
+## owned positions, captains, own menus, QUIT GAME and REJOIN
+## ([MwRinkControl], run at each rink pass's start). Null: none (the
+## comparisons, the rehearsal, the attract demo) - the original's rules alone.
+var control: MwRinkControl = null
+## Port only: a spectated match (MwSession.spectated: the port's CPU v CPU
+## exhibition, nobody on a team; not the attract demo) - every player's
+## Start pauses (the spectators' pause menu, MwRinkPhases) and any player's
+## Start / A / B / C skips a coach's speech. [member watch_held] /
+## [member watch_new]: players 1-12's pad bytes this pass (held, newly
+## pressed: the rink scene reads them from every player's verbs, MwRink);
+## they reach nothing else - the pads the simulation reads stay the pad
+## mode's (5: none drives a skater).
+var spectated := false
+var watch_held := PackedInt32Array()
+var watch_new := PackedInt32Array()
 var death_index := 0                 ## `$FFB0E7` (0-4)
 var clock := 0                       ## `$FFB06A`: game clock seconds left
 ## The game clock's timer object (`$FFB066`, `$16B0`..`$1736`) and widget
@@ -454,6 +587,24 @@ var stadium_objects := 0
 var shark_osc: Array[Oscillator] = []
 ## The instant replay's recording (`$FFC2BE`).
 var replay := ReplayRing.new()
+## The whole match's replay (plan 28, MwFullReplay; null: not kept).
+var full_replay: MwFullReplay = null
+## The crowd's life (plan 31, MwCrowdLife: the 3D crowd's movement and,
+## with ENHANCE AUDIO, its noise; null: none - the original's noise).
+var crowd_life: MwCrowdLife = null
+## The benches' life (plan 32, MwBenchLife: the 3D benches' and boxes'
+## figures; null: none).
+var bench_life: MwBenchLife = null
+## Blood and oil on the 3D arena (plan 37, MwSplatter: the paint atlas and the
+## particles in flight; null: none).
+var splatter: MwSplatter = null
+## Plan 36 with plan 35: the rink's pass pacer's state after the latest
+## pass (MwPassPacer.snapshot: TICK RATE APPROXIMATED or ORIGINAL; empty:
+## OVERCLOCKED's fixed passes). It decides when the next passes come, so
+## the rink's hash takes it (MwNetHash.port_layers): two machines whose
+## pacing parted differ at that pass. Not the original's (MwSimDict skips
+## it); the pacer itself is the rink scene's, made anew at each rink entry.
+var pace := PackedInt32Array()
 ## `$FFC608` (word): the phase handler turns the replay recording on (phase
 ## 0) and off (stoppages, entries).
 var replay_on := 0
@@ -531,6 +682,11 @@ var referee := Actor.new()           ## $FFBD92 (Waste the Ref only)
 ## position, health], $FF = never drawn. Slots are shared (a CPU team's
 ## markers all use slot 3), so a plate shows the last values written to it.
 var plates: Array = [[0xFF, 0xFF, 0xFF], [0xFF, 0xFF, 0xFF], [0xFF, 0xFF, 0xFF], [0xFF, 0xFF, 0xFF]]
+## Plan 34, extended set-ups: plates 0-11 are players 1-12's (a player's
+## match pad), 12 and 13 the CPU carriers' of teams A and B (the original
+## gives a CPU team's markers slot 3, a player's in these set-ups).
+const PLATES_EXTENDED := 14
+const CARRIER_PLATE := 12
 
 # --- the match flow (MwRinkPhases, plan 09; docs/re/phases.md) ---------------------------------
 ## `$FFC602` (long): the phase stamp - every open-play pass, the coach
@@ -538,7 +694,8 @@ var plates: Array = [[0xFF, 0xFF, 0xFF], [0xFF, 0xFF, 0xFF], [0xFF, 0xFF, 0xFF],
 var phase_tick := 0
 var play_mode := 0                   ## `$FFB0E1`: 0 a regular game, 1-2 the playoffs
 var period_minutes := 5              ## `$FFB0E3`: a period's length (minutes)
-var period_row := 1                  ## `$FFB0E2`: the menu's period length row (0 3:00, 1 5:00, 2 8:00; penalty lengths)
+## `$FFB0E2`: the menu's period length row (0 3:00, 1 5:00, 2 8:00; penalty lengths)
+var period_row := 1
 ## The pause menu (`$48FC`): `$FFB092` the pad that paused x 2, `$FFB08E`
 ## its team (the team's address word), `$FFB090` the texts' attr (the
 ## team's palette line, priority), `$FFB094` "B - TIMEOUT" offered.
@@ -546,6 +703,13 @@ var pause_pad := 0
 var pause_team := 0
 var pause_attr := 0
 var pause_offer := 0
+## Port only (plan 26; nothing in the original's RAM): this match's forfeit
+## came from the port's pause menu (FORFEIT, then YES:
+## [method MwRinkPhases._forfeit]), not from the original's rule (too few
+## players left, `$F7C8`). Screen 17's referee then says one of the port's
+## own lines ([constant MwQuotes.MANUAL_FORFEIT]) instead of the ROM's
+## forfeit set. A new match gets a new state, so it never carries over.
+var forfeit_manual := false
 ## The goal sequence (`$928C`): `$FFC2B0` stamp (long), `$FFC2BA` the Demon
 ## Net that swallowed the puck (its address word, 0 none) and `$FFC2BC`
 ## the swallow animation's last frame seen.
@@ -621,21 +785,29 @@ func _init() -> void:
 			team.markers.append(Marker.new())
 		teams.append(team)
 	for i in 2:
-		var n := Net.new()
-		n.bottom = i == 1
-		nets.append(n)
+		var net := Net.new()
+		net.bottom = i == 1
+		nets.append(net)
 		lamps.append(Actor.new())
-	for i in 4:
-		hazards.append(Hazard.new())
-	for i in 8:
-		objects.append(RinkObject.new())
+	_slots(HAZARD_SLOTS, OBJECT_SLOTS)
 	for i in 2:
 		shark_osc.append(Oscillator.new())
 
 
-## The stadium record of stadium [param s] (`docs/re/rinks.md`).
-static func stadium_record(rom: PackedByteArray, s: int) -> int:
-	return MwGfx.u32(rom, STADIUMS + s * TEAM_SIZE)
+## [param h] in-ice hazard slots and [param o] rink object slots (the
+## original's 4 and 8; more for a custom rink, plan 38).
+func _slots(h: int, o: int) -> void:
+	while hazards.size() < h:
+		hazards.append(Hazard.new())
+	hazards.resize(h)
+	while objects.size() < o:
+		objects.append(RinkObject.new())
+	objects.resize(o)
+
+
+## The stadium record of stadium [param stadium_number] (`docs/re/rinks.md`).
+static func stadium_record(rom: PackedByteArray, stadium_number: int) -> int:
+	return MwGfx.u32(rom, MwTeams.record(stadium_number) + 0x10)
 
 
 ## The stadium part of `rink_setup` ($5572): camera at centre ice, both
@@ -652,32 +824,40 @@ func setup(rom: PackedByteArray, stadium_: int) -> void:
 	camera.amp = 0
 	camera.shake_16 = 0
 	for i in 2:
-		var n := nets[i]
-		n.style = rom[rec + 5]
-		n.bottom = i == 1
-		n.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, NET_ANIMS + 4 * n.style), 0 if n.bottom else 1)
-		n.motion.init(0, NET_Y if n.bottom else -NET_Y, 0)
+		var net := nets[i]
+		net.style = rom[rec + 5]
+		net.bottom = i == 1
+		net.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, NET_ANIMS + 4 * net.style), 0 if net.bottom else 1)
+		net.motion.init(0, NET_Y if net.bottom else -NET_Y, 0)
+	# `$5594`: the stadium's gravity (+8; -24 in all the original's) for players and the puck
+	player_params = MwMotion.Params.new(MwGfx.s8(rom, rec + 8), 0, 3, 0)
+	puck_params = MwMotion.Params.new(MwGfx.s8(rom, rec + 8), 0x80, 3, 3)
+	# Port only (plan 38): a custom rink with more than the original's 4
+	# in-ice hazards gets slots for them, and with more rink objects than
+	# the original's 4 as many slots again beside the 4 spare for thrown
+	# items, corpses and bombs; the original's stadiums keep 4 and 8.
+	_slots(maxi(HAZARD_SLOTS, rom[rec + 9]), maxi(OBJECT_SLOTS, rom[rec + 0xA] + 4))
 	var a := rec + 0xC
-	for i in 4:
-		var h := hazards[i]
-		h.kind = 0
+	for i in hazards.size():
+		var hazard := hazards[i]
+		hazard.kind = 0
 		if i < rom[rec + 9]:
-			h.x = MwGfx.s16(rom, a)
-			h.y = MwGfx.s16(rom, a + 2)
-			h.kind = rom[a + 4]
-			h.flags = rom[a + 5]
+			hazard.x = MwGfx.s16(rom, a)
+			hazard.y = MwGfx.s16(rom, a + 2)
+			hazard.kind = rom[a + 4]
+			hazard.flags = rom[a + 5]
 			a += 6
 	stadium_objects = rom[rec + 0xA]
-	for i in 8:
+	for i in objects.size():
 		objects[i].kind = 0
 		if i < rom[rec + 0xA]:
 			spawn(rom, objects[i], MwGfx.s16(rom, a), MwGfx.s16(rom, a + 2), rom[a + 4], rom[a + 5])
 			a += 6
 	for i in 2:
-		var l := lamps[i]
+		var actor := lamps[i]
 		var p: int = LAMPS[i]
-		l.motion.init(MwGfx.s16(rom, p), MwGfx.s16(rom, p + 2), 0)
-		l.anim = MwAnimState.from_record(rom, LAMP_ANIM)
+		actor.motion.init(MwGfx.s16(rom, p), MwGfx.s16(rom, p + 2), 0)
+		actor.anim = MwAnimState.from_record(rom, LAMP_ANIM)
 	impale = MwAnimState.from_record(rom, IMPALE_ANIM)
 	impale.flags |= MwAnimState.PLAYING
 	puck.anim = MwAnimState.from_record(rom, PUCK_ANIM)
@@ -688,21 +868,21 @@ func setup(rom: PackedByteArray, stadium_: int) -> void:
 ## the visible part of the kind's spawn hook (`$67B2`): a shark sets the
 ## target oscillators (`$686C`), fire starts playing, spikes stand 16 px
 ## up. ([method MwRinkSim.spawn] adds the hooks' sounds and draws.)
-func spawn(rom: PackedByteArray, o: RinkObject, x: int, y: int, kind: int, flags: int) -> void:
-	o.kind = kind
-	o.flags = flags
-	o.t24 = 0
-	o.t26 = 0
-	o.motion.init(x, y, 0)
+func spawn(rom: PackedByteArray, rink_object: RinkObject, x: int, y: int, kind: int, flags: int) -> void:
+	rink_object.kind = kind
+	rink_object.flags = flags
+	rink_object.t24 = 0
+	rink_object.t26 = 0
+	rink_object.motion.init(x, y, 0)
 	if kind == 0:
 		return
-	o.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, OBJECT_KINDS + 6 * (kind - 1)))
+	rink_object.anim = MwAnimState.from_record(rom, MwGfx.u32(rom, OBJECT_KINDS + 6 * (kind - 1)))
 	match kind:
 		KIND_FIRE, KIND_EXPLOSION:
 			if kind == KIND_FIRE:
-				o.anim.flags |= MwAnimState.PLAYING
+				rink_object.anim.flags |= MwAnimState.PLAYING
 		KIND_SPIKES:
-			o.motion.pos[2] = 0x1000
+			rink_object.motion.pos[2] = 0x1000
 		KIND_SHARK:
 			shark_oscillators(rom, x, y)
 
@@ -713,46 +893,102 @@ func spawn(rom: PackedByteArray, o: RinkObject, x: int, y: int, kind: int, flags
 ## overwrites the first one's.
 func shark_oscillators(rom: PackedByteArray, x: int, y: int) -> void:
 	for i in 2:
-		var o := shark_osc[i]
+		var oscillator := shark_osc[i]
 		var t := SHARK_OSC + 6 * i
-		o.start = tick & 0xFFFFFFFF
-		o.base = MwMotion.s16(x if i == 0 else y)
-		o.amp = MwGfx.s16(rom, t)
-		o.rate = MwGfx.u16(rom, t + 2)
-		o.phase = MwGfx.u16(rom, t + 4)
+		oscillator.start = tick & 0xFFFFFFFF
+		oscillator.base = MwRinkSim.s16(x if i == 0 else y)
+		oscillator.amp = MwGfx.s16(rom, t)
+		oscillator.rate = MwGfx.u16(rom, t + 2)
+		oscillator.phase = MwGfx.u16(rom, t + 4)
 
 
-## `$6146`: marker [param k] of team [param t] on plate slot [param slot]
+## Plan 34: makes this an extended set-up's state for the teams' match pads
+## [param pads] (MwMatchSetup.extended: team A's, team B's, in number
+## order): twelve pads and their tap / hold timers and sticks, fourteen info
+## plates, each team's pad slots ([member Team.port_pads]) with a pad copy,
+## marker (plate = the player's pad) and off-screen arrow each (players 1-4
+## the original's pad's arrow, 5-12 pad 1's: drawn in their colour,
+## MwRinkDraw), the CPU carrier's marker after them (plate
+## [constant CARRIER_PLATE] + team); at least the original's two markers
+## and arrows a team, which the replay ring keeps. The has-a-pad bit (team
+## +4 bit 2) says whether the team has players. Run by the team set-up
+## (MwRinkMatch.team_setup) after the original's.
+func extend(rom: PackedByteArray, t: int, pads: PackedInt32Array) -> void:
+	if not extended:
+		extended = true
+		pads_held.resize(MwVerbs.PLAYERS)
+		pads_new.resize(MwVerbs.PLAYERS)
+		hold_bit.resize(MwVerbs.PLAYERS)
+		hold_left.resize(MwVerbs.PLAYERS)
+		while pad_sticks.size() < MwVerbs.PLAYERS:
+			pad_sticks.append(Vector2i.ZERO)
+		while pad_heights.size() < MwVerbs.PLAYERS:
+			pad_heights.append(-1)
+		while plates.size() < PLATES_EXTENDED:
+			plates.append([0xFF, 0xFF, 0xFF])
+	var team := teams[t]
+	team.port_pads = pads.duplicate()
+	team.port_turn = 0
+	team.flags4 = (team.flags4 | 4) if not pads.is_empty() else (team.flags4 & ~4)
+	var n := pads.size()
+	team.pad_held.resize(maxi(n, 2))
+	team.pad_held.fill(0)
+	team.pad_new.resize(maxi(n, 2))
+	team.pad_new.fill(0)
+	while team.markers.size() < maxi(n + 1, 2):
+		team.markers.append(Marker.new())
+	while team.arrows.size() < maxi(n, 2):
+		team.arrows.append(MwAnimState.new())
+	for k in n:
+		init_marker(team, k, pads[k])
+		var arrow := MwGfx.u32(rom, MwRinkMatch.ARROWS + 4 * (pads[k] if pads[k] < 4 else 0))
+		team.arrows[k] = MwAnimState.from_record(rom, arrow)
+	init_marker(team, n, CARRIER_PLATE + t)
+
+
+## Plan 34: whether [param team] has players to decide for it - the
+## original's "has a pad" (+4 bit 2), unless all its players are gone
+## ([method MwRinkControl.anyone_in]: left with QUIT GAME, or online their
+## machine away): then the CPU team's decisions (line changes, special
+## plays, speeches, the fight) until someone is back. The bit itself stays
+## (the replay ring's frames read it).
+func has_players(team: Team) -> bool:
+	if team.flags4 & 4 == 0:
+		return false
+	return control == null or control.anyone_in(teams.find(team))
+
+
+## `$6146`: marker [param k] of team [param marker_team] on plate slot [param slot]
 ## (pad & 3; 3 for a CPU team), its values and plate cleared.
-func init_marker(t: Team, k: int, slot: int) -> void:
-	var m := t.markers[k]
-	m.plate = slot
-	m.number = 0xFF
-	m.position = 0xFF
-	m.health = 0xFF
+func init_marker(marker_team: Team, k: int, slot: int) -> void:
+	var marker := marker_team.markers[k]
+	marker.plate = slot
+	marker.number = 0xFF
+	marker.position = 0xFF
+	marker.health = 0xFF
 	plates[slot] = [0xFF, 0xFF, 0xFF]
 
 
 ## `$6166` (the team update, for a human player's marker or the CPU
 ## carrier's): redraw what changed on the plate, then follow the player.
-func update_marker(rom: PackedByteArray, t: Team, k: int, p: Player) -> void:
-	var m := t.markers[k]
-	var plate: Array = plates[m.plate]
+func update_marker(rom: PackedByteArray, marker_team: Team, k: int, p: Player) -> void:
+	var marker := marker_team.markers[k]
+	var plate: Array = plates[marker.plate]
 	if reserves:
-		var h := ((t.health[p.slot] >> 16) & 0xFF) >> 2
-		if h != m.health:
-			m.health = h
+		var h := ((marker_team.health[p.slot] >> 16) & 0xFF) >> 2
+		if h != marker.health:
+			marker.health = h
 			plate[2] = h
 	var number := rom[p.record + 4]
-	if number != m.number:
-		m.number = number
+	if number != marker.number:
+		marker.number = number
 		plate[0] = number
-	if p.position != m.position:
-		m.position = p.position
+	if p.position != marker.position:
+		marker.position = p.position
 		plate[1] = p.position
 	var px := p.motion.pixels()
-	m.x = px.x
-	m.y = px.y
+	marker.x = px.x
+	marker.y = px.y
 
 
 ## `$F9DA`: what the camera follows this pass (phases 9 and 1 keep the
@@ -774,9 +1010,9 @@ func choose_camera_target() -> void:
 	elif phase == PHASE_REF:
 		camera_target = referee
 	else:
-		var c := puck.carried_by()
-		if c != null:
-			camera_target = c
+		var player := puck.carried_by()
+		if player != null:
+			camera_target = player
 		else:
 			camera_target = puck
 
@@ -787,22 +1023,35 @@ func camera_pass(rom: PackedByteArray, elapsed: int) -> Vector2i:
 	choose_camera_target()
 	var lead: Variant = null
 	if puck.flags & Puck.CARRIED:
-		var t := teams[1] if puck.flags & Puck.BY_TEAM_B else teams[0]
-		lead = MwRinkCamera.LEAD if t.flags4 & 2 else -MwRinkCamera.LEAD
+		var carrier_team := teams[1] if puck.flags & Puck.BY_TEAM_B else teams[0]
+		lead = MwRinkCamera.LEAD if carrier_team.flags4 & 2 else -MwRinkCamera.LEAD
 	return camera.update(rom, elapsed, camera_target.motion if camera_target else null, lead)
+
+
+## Plan 45: a match's state the game is done with (a new match took its
+## place): its reference cycles broken - the control layer keeps the state it
+## worked on, two players can be each other's victims - so the state, its full
+## replay and its paint are freed once nothing else holds them. The state
+## isn't played after it.
+func retire() -> void:
+	if control != null:
+		control.release()
+	for team in teams:
+		for p in team.players:
+			p.victim = null
 
 
 # --- recorded passes ---------------------------------------------------------------
 
-static func _motion(m: MwMotion, f: Array) -> void:
-	m.pos = PackedInt32Array([int(f[0]), int(f[1]), int(f[2])])
-	m.vel = PackedInt32Array([int(f[3]), int(f[4]), int(f[5])])
-	m.acc = PackedInt32Array([int(f[6]), int(f[7]), int(f[8])])
+static func _motion(motion_object: MwMotion, f: Array) -> void:
+	motion_object.pos = PackedInt32Array([int(f[0]), int(f[1]), int(f[2])])
+	motion_object.vel = PackedInt32Array([int(f[3]), int(f[4]), int(f[5])])
+	motion_object.acc = PackedInt32Array([int(f[6]), int(f[7]), int(f[8])])
 
 
-func _actor(rom: PackedByteArray, a: Actor, d: Dictionary) -> void:
-	_motion(a.motion, d["motion"])
-	a.anim = MwAnimState.from_fields(rom, d["anim"])
+func _actor(rom: PackedByteArray, actor: Actor, d: Dictionary) -> void:
+	_motion(actor.motion, d["motion"])
+	actor.anim = MwAnimState.from_fields(rom, d["anim"])
 
 
 func _ref(d: Variant) -> Actor:
@@ -815,13 +1064,13 @@ func _ref(d: Variant) -> Actor:
 	return null
 
 
-func _overlay(rom: PackedByteArray, o: Overlay, d: Dictionary) -> void:
-	o.anim = MwAnimState.from_fields(rom, d["anim"])
-	o.x = int(d["x"])
-	o.y = int(d["y"])
-	o.depth = int(d["depth"])
-	o.attr = int(d["attr"])
-	o.flags = int(d["flags"])
+func _overlay(rom: PackedByteArray, overlay: Overlay, d: Dictionary) -> void:
+	overlay.anim = MwAnimState.from_fields(rom, d["anim"])
+	overlay.x = int(d["x"])
+	overlay.y = int(d["y"])
+	overlay.depth = int(d["depth"])
+	overlay.attr = int(d["attr"])
+	overlay.flags = int(d["flags"])
 
 
 ## A pass recorded from the original (the fields of
@@ -870,17 +1119,17 @@ static func from_dict(rom: PackedByteArray, d: Dictionary) -> MwRinkState:
 		for i in 2:
 			team.arrows[i] = MwAnimState.from_fields(rom, td["arrows"][i])
 			var md: Array = td["markers"][i]
-			var m := team.markers[i]
-			m.x = int(md[0])
-			m.y = int(md[1])
-			m.plate = int(md[2])
-			m.number = int(md[3])
-			m.position = int(md[4])
-			m.health = int(md[5])
-	var pk: Dictionary = d["puck"]
-	s._actor(rom, s.puck, pk)
-	s.puck.flags = int(pk["flags"])
-	s.puck.carrier = s._ref(pk["carrier"]) as Player
+			var marker := team.markers[i]
+			marker.x = int(md[0])
+			marker.y = int(md[1])
+			marker.plate = int(md[2])
+			marker.number = int(md[3])
+			marker.position = int(md[4])
+			marker.health = int(md[5])
+	var puck_fields: Dictionary = d["puck"]
+	s._actor(rom, s.puck, puck_fields)
+	s.puck.flags = int(puck_fields["flags"])
+	s.puck.carrier = s._ref(puck_fields["carrier"]) as Player
 	for i in 2:
 		var nd: Dictionary = d["nets"][i]
 		s._actor(rom, s.nets[i], nd)
@@ -889,19 +1138,19 @@ static func from_dict(rom: PackedByteArray, d: Dictionary) -> MwRinkState:
 		s._actor(rom, s.lamps[i], d["lamps"][i])
 	for i in 4:
 		var hd: Array = d["hazards"][i]
-		var h := s.hazards[i]
-		h.x = int(hd[0])
-		h.y = int(hd[1])
-		h.kind = int(hd[2])
-		h.flags = int(hd[3])
+		var hazard := s.hazards[i]
+		hazard.x = int(hd[0])
+		hazard.y = int(hd[1])
+		hazard.kind = int(hd[2])
+		hazard.flags = int(hd[3])
 	for i in 8:
 		var od: Dictionary = d["objects"][i]
-		var o := s.objects[i]
-		s._actor(rom, o, od)
-		o.kind = int(od["kind"])
-		o.flags = int(od["flags"])
-		o.t24 = int(od["t24"])
-		o.t26 = int(od["t26"])
+		var rink_object := s.objects[i]
+		s._actor(rom, rink_object, od)
+		rink_object.kind = int(od["kind"])
+		rink_object.flags = int(od["flags"])
+		rink_object.t24 = int(od["t24"])
+		rink_object.t26 = int(od["t26"])
 	var ov: Dictionary = d["overlays"]
 	s._overlay(rom, s.faceoff, ov["faceoff"])
 	s._overlay(rom, s.penalty, ov["penalty"])

@@ -10,7 +10,7 @@ extends "res://test/rom/rom_test_base.gd"
 ## hold).
 
 const ScreenVisit := preload("res://test/sim/screen_visit.gd")
-const RomText := preload("res://test/sim/rom_text.gd")
+const FixtureText := preload("res://test/sim/rom_text.gd")
 
 var fx: Dictionary
 var paths: Array
@@ -22,10 +22,10 @@ func before_all() -> void:
 	paths = fx["paths"]
 	# the quote buffer's text is stored as ROM pieces (rom_text.gd)
 	if MwRom.available():
-		var idx := RomText.text_indices(paths)
+		var text_index := FixtureText.text_indices(paths)
 		for c in fx["visits"]:
-			RomText.values_in(MwRom.data(), c, "start", idx)
-			RomText.changes_in(MwRom.data(), c, "end", idx)
+			FixtureText.values_in(MwRom.data(), c, "start", text_index)
+			FixtureText.changes_in(MwRom.data(), c, "end", text_index)
 
 
 ## A state from leaf values along the fixture's path list.
@@ -49,15 +49,15 @@ func test_fixture_covers_the_screens() -> void:
 func test_visits_play_as_the_original() -> void:
 	if not need_rom():
 		return
-	var rom := MwRom.data()
+	var rom_bytes := MwRom.data()
 	for c in fx["visits"]:
 		var what := "%s visit %d (screen %d)" % [c["run"], int(c["visit"]), int(c["screen"])]
-		var problem := _play(rom, c)
+		var problem := _play(rom_bytes, c)
 		assert_eq(problem, "", what)
 
 
 ## One visit: "" when it plays as the original, else the first difference.
-func _play(rom: PackedByteArray, c: Dictionary) -> String:
+func _play(rom_bytes: PackedByteArray, c: Dictionary) -> String:
 	var scr := int(c["screen"])
 	var s := _state(c["start"])
 	var entry: Array = c["entry"]
@@ -66,7 +66,7 @@ func _play(rom: PackedByteArray, c: Dictionary) -> String:
 	for p in 4:
 		s.pads_held[p] = int(pads[2 * p])
 		s.pads_new[p] = int(pads[2 * p + 1])
-	var sim := MwScreenSims.make(scr, rom)
+	var sim := MwScreenSims.make(scr, rom_bytes)
 	sim.hooks = ScreenVisit.Replayed.new(c["answers"])
 	sim.enter(s, scr, int(c["from"]))
 	var rngs: Array = c["rng"]
@@ -75,15 +75,15 @@ func _play(rom: PackedByteArray, c: Dictionary) -> String:
 	var to := -1
 	var passes: Array = c["passes"]
 	for i in passes.size():
-		var p: Array = passes[i]
-		s.tick = int(p[0])
+		var pass_record: Array = passes[i]
+		s.tick = int(pass_record[0])
 		var held := []
 		var new := []
 		for k in 4:
-			held.append(int(p[2][k]))
-			new.append(int(p[3][k]))
+			held.append(int(pass_record[2][k]))
+			new.append(int(pass_record[3][k]))
 		sim.begin_pass()
-		to = sim.step(int(p[1]), held, new)
+		to = sim.step(int(pass_record[1]), held, new)
 		if s.rng.state != int(rngs[i + 1]):
 			return "pass %d: rng %08X, the original's %08X" % [i, s.rng.state, int(rngs[i + 1])]
 		if to >= 0:

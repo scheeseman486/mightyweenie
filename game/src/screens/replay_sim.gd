@@ -44,6 +44,7 @@ extends MwScreenSim
 ## window cleared (["fill", 0, 0, 40, 28, $8000]: rink_load's `$146D6`) and the
 ## widget's map (["map", `$49136`, 9, 9, 5, 2, 2], `$1C9EE`'s copy).
 ## Events: ["crowd", 50] (set-up), ["crowd_off"] and ["fade_out", 32] (exit).
+## Short names: d a difference found (MwScoreboardSim.Diff).
 
 const LOCALS := 0xFFFFF4             ## a6 of `$9DD0`'s frame
 const CROWD := 50                    ## `$13E52`'s level
@@ -53,7 +54,7 @@ const WINDOW_VRAM := 0xF000
 ## The window plane object's size (+8, +$A: what `$146D6` fills).
 const WINDOW_CELLS := Vector2i(40, 28)
 const ROW_BYTES := 0x80
-const TEXT_FONT := 0x447F4
+const TEXT_FONT := MwFonts.LIGHT
 const TEXTS := [0x5062B, 0x50631]    ## `$A04A`: "A_B_C", "{_|_}"
 const TEXT_AT := Vector2i(4, 4)      ## the first text's cell; the second one row lower
 const TEXT_ATTR := 0xE0
@@ -70,8 +71,16 @@ var last_tick := 0
 var elapsed_ticks := -1
 ## The plate slots the drawn frames wrote (compared tile for tile).
 var _plates_drawn := {}
+## Plan 34: a saved replay's frames ([MwReplayFile]; the screen's scene
+## sets them before the set-up): played from the match's first frame, by
+## player 1; null: the match's (the original's ring, or plan 28's store).
+var saved: MwFullReplay = null
+## Where Start leaves for (-1: the original's - 6, or the scoreboard).
+var leave_to := -1
 
 
+## True: this sim ports the screen (the screen checks tell it from the stubs, which keep
+## [MwScreenSim]'s step; called by name).
 func ported() -> bool:
 	return true
 
@@ -105,8 +114,15 @@ func enter(state: MwRinkState, screen_id: int, from_screen: int) -> void:
 	window_ops.append(widget_map(rom))
 	_plates_drawn.clear()
 	elapsed_ticks = -1
-	replay = MwInstantReplay.new(s, rom)
-	replay.start(MwInstantReplay.control_pad(from, s.pads_new))
+	# plan 28: the whole match (REPLAY LENGTH: FULL GAME), else the ring
+	if saved != null:
+		var fp := MwFullReplayPlayback.new(s, rom, saved)
+		fp.start_first(0)
+		replay = fp
+	else:
+		replay = MwFullReplayPlayback.new(s, rom, s.full_replay) if MwFullReplayPlayback.wanted(s) \
+				else MwInstantReplay.new(s, rom)
+		replay.start(MwInstantReplay.control_pad(from, s.pads_new))
 	_frame_drawn()
 	last_tick = MwScoreboardSim.setup_tick(self)
 	crowd_level(CROWD)                                # `$9E5A`
@@ -138,6 +154,8 @@ func step(elapsed: int, held: Array, new: Array) -> int:
 		return -1
 	crowd_off()                                       # `$9F72`
 	fade_out(FADE_OUT)
+	if leave_to >= 0:
+		return leave_to
 	return 6 if (from & 0xFFFF) <= 6 else from
 
 
@@ -153,30 +171,37 @@ func _frame_drawn() -> void:
 		var kind: int = hz[i][0]
 		if kind == 0:
 			continue
-		var h := s.hazards[i]
-		var p := MwScoreboardSim.project(s, h.x, h.y, 0)
-		_pieces(p.x - cam.x + SPRITE_ORIGIN, p.y - cam.y + SPRITE_ORIGIN, HAZARD_DEPTH, 0,
+		var hazard := s.hazards[i]
+		var point := MwScoreboardSim.project(s, hazard.x, hazard.y, 0)
+		_pieces(point.x - cam.x + SPRITE_ORIGIN, point.y - cam.y + SPRITE_ORIGIN, HAZARD_DEPTH, 0,
 				MwGfx.u32(rom, HAZARD_FRAMES + 8 * (kind - 1)))
 	for r in f["sprites"]:
 		_pieces(int(r[0]), int(r[1]), int(r[2]), int(r[3]), int(r[4]))
+	for r in f.get("marks", []):                      # plan 34: an extended set-up's markers, as drawn
+		_pieces(int(r[0]), int(r[1]), int(r[2]), int(r[3]), int(r[4]), true)
 	for i in TEXTS.size():
 		window_ops.append(["text", TEXT_FONT, TEXT_AT.x, TEXT_AT.y + i, TEXT_ATTR, TEXTS[i]])
-	for t in s.teams:
-		_plates_drawn[t.markers[0].plate & 3] = true
-		if t.flags4 & 4:
-			_plates_drawn[t.markers[1].plate & 3] = true
+	if s.extended:
+		return
+	for team in s.teams:
+		_plates_drawn[team.markers[0].plate & 3] = true
+		if team.flags4 & 4:
+			_plates_drawn[team.markers[1].plate & 3] = true
 
 
 ## `draw_frame`'s piece loop (`$A0DC`) for [param frame] at the sprite
 ## point ([param x], [param y]): one "piece" operation per piece. (A frame
 ## in RAM - bank $FF - would be drawn from RAM; the rink records none.)
-func _pieces(x: int, y: int, depth: int, attr: int, frame: int) -> void:
+## [param port]: the attr's port bits kept (plan 34: a player's colour, a
+## plate's bank - MwRinkDraw.PORT_BITS).
+func _pieces(x: int, y: int, depth: int, attr: int, frame: int, port := false) -> void:
 	if frame >= 0xFF0000 or frame + 2 > rom.size():
 		push_warning("MwReplaySim: a sprite record's frame outside the ROM ($%06X)" % frame)
 		return
 	for i in MwGfx.u16(rom, frame):
-		sprite_ops.append(["piece", frame + 2 + 6 * i, MwRinkSim.s16(x - SPRITE_ORIGIN), MwRinkSim.s16(y - SPRITE_ORIGIN),
-				attr & 0xFF, depth & 0xFFFF])
+		sprite_ops.append(["piece", frame + 2 + 6 * i, MwRinkSim.s16(x - SPRITE_ORIGIN),
+				MwRinkSim.s16(y - SPRITE_ORIGIN),
+				attr & (0xFF | MwRinkDraw.PORT_BITS) if port else attr & 0xFF, depth & 0xFFFF])
 
 
 # --- comparisons -------------------------------------------------------------------------------

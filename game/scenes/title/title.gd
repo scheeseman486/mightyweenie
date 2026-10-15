@@ -154,11 +154,12 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 			_credits_pass(elapsed, pressed)
 
 
-## Any new press of Start, A, B or C (any pad: menu verbs are shared).
+## Any new press of Start, A, B or C (any pad: menu verbs are shared) -
+## accept or skip (MwVerbs.Context.TITLE).
 static func _pressed(input: MwInputFrame) -> bool:
 	if input == null:
 		return false
-	for a in ["ui_accept", "ui_option_a", "ui_option_b", "ui_option_c"]:
+	for a in ["ui_accept", "ui_skip"]:
 		if input.is_pressed(a):
 			return true
 	return false
@@ -173,10 +174,10 @@ func _title_start() -> void:
 	band_since = t
 	_show_band()
 	drip.restart()
-	for e in eyes:
-		e.restart()
-	for s in sparkles:
-		s.visible = false
+	for eye in eyes:
+		eye.restart()
+	for sprite in sparkles:
+		sprite.visible = false
 	milestone.emit("title_start", t)
 	_fade_in(FADE)                    # lines 0/1 -> $36C64 / $36C84
 	milestone.emit("title_fade_in", t)
@@ -198,12 +199,12 @@ func _title_animate(elapsed: int) -> void:
 		rng.next_state()
 	_spawn_sparkles(rng)
 	drip.advance(elapsed)
-	for e in eyes:
-		e.advance(elapsed)
-	for s in sparkles:
-		if s.visible:
-			s.advance(elapsed)
-			s.visible = s.is_running()
+	for eye in eyes:
+		eye.advance(elapsed)
+	for sprite in sparkles:
+		if sprite.visible:
+			sprite.advance(elapsed)
+			sprite.visible = sprite.is_running()
 	_step_band()
 	if rng:
 		rng.next_state()
@@ -213,13 +214,13 @@ func _title_animate(elapsed: int) -> void:
 func _spawn_sparkles(rng: MlhRng) -> void:
 	if rng == null:
 		return
-	for s in sparkles:
-		if s.visible:
+	for sprite in sparkles:
+		if sprite.visible:
 			continue
 		if rng.next_state() & SPARKLE_MASK == 0:
-			s.position = Vector2(sparkle_position(rng))
-			s.restart()
-			s.visible = true
+			sprite.position = Vector2(sparkle_position(rng))
+			sprite.restart()
+			sprite.visible = true
 
 
 ## `title_sparkle_position` ($130E): y in 24-104, x in 24-296, x re-rolled
@@ -339,21 +340,21 @@ func _page_start(index: int) -> void:
 		page_root.add_child(line)
 		text_fade.add(line)
 	if index == PAGE_COUNT - 1:
-		for s in last_page_sprites(rom):
-			page_root.add_child(s)
-			text_fade.add(s)
+		for sprite in last_page_sprites(rom):
+			page_root.add_child(sprite)
+			text_fade.add(sprite)
 
 
 ## The last page's sprites ($FB4), from the original's records.
 func last_page_sprites(rom: PackedByteArray) -> Array[RomSprite]:
 	var out: Array[RomSprite] = []
 	for a in [LAST_PAGE_SPRITES, LAST_PAGE_SECOND + MwGfx.u16(rom, LAST_PAGE_OFFSETS)]:
-		var s := RomSprite.new()
-		s.frame_addresses = PackedInt32Array([MwGfx.u32(rom, a + 8)])
-		s.attr_xor = MwGfx.u16(rom, a + 6)
-		s.palette = credits_palette
-		s.position = Vector2(MwGfx.s16(rom, a) - 128, MwGfx.s16(rom, a + 2) - 128)
-		out.append(s)
+		var sprite := RomSprite.new()
+		sprite.frame_addresses = PackedInt32Array([MwGfx.u32(rom, a + 8)])
+		sprite.attr_xor = MwGfx.u16(rom, a + 6)
+		sprite.palette = credits_palette
+		sprite.position = Vector2(MwGfx.s16(rom, a) - 128, MwGfx.s16(rom, a + 2) - 128)
+		out.append(sprite)
 	return out
 
 

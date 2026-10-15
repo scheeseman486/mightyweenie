@@ -57,9 +57,10 @@ func team_update(team: MwRinkState.Team, other: MwRinkState.Team, e: int) -> voi
 		update(p, team, other, e)
 		team.health[p.slot] |= 0x80000000          # on the ice this pass
 		if p.flags & MwRinkState.Player.HUMAN:
-			s.update_marker(rom, team, 1 if p.flags & MwRinkState.Player.SECOND_PAD else 0, p)
+			s.update_marker(rom, team, team.control_slot(p), p)
 		elif s.puck.flags & MwRinkState.Puck.CARRIED and s.puck.carrier == p:
-			s.update_marker(rom, team, 0, p)
+			# the original's first (plan 34: an extended team's own)
+			s.update_marker(rom, team, team.marker_of(p), p)
 	var add := (e & 0xFFFF) * REGEN
 	for i in range(23, -1, -1):
 		var h := team.health[i]
@@ -81,6 +82,10 @@ func formation(team: MwRinkState.Team) -> void:
 
 # --- `$86A`: one player ----------------------------------------------------------------
 
+## `$86A`: player [param p] of [param team] (against [param other]) over [param e] ticks: his
+## control (none in phase 9; a human's pads; a think every pass for the puck's last carrier
+## and the goalies, every 12 ticks for the other CPU skaters and everyone in phase 12), his
+## bones running out, his motion (a goalie's own, none impaled) and collisions.
 func update(p: MwRinkState.Player, team: MwRinkState.Team, other: MwRinkState.Team, e: int) -> void:
 	if s.phase != PHASE_START:
 		var gated := s.phase == PHASE_REF
@@ -109,15 +114,7 @@ func update(p: MwRinkState.Player, team: MwRinkState.Team, other: MwRinkState.Te
 		if (s.tick - p.bone_tick) & 0xFFFF >= BONE_TICKS:
 			p.flags &= ~(MwRinkState.Player.BLACK_BONE | MwRinkState.Player.WHITE_BONE)
 	if p.position == 5:
-		if in_crease(p):
-			var x := p.motion.pos[0]
-			var y := p.motion.pos[1]
-			move(p, e)
-			if not in_crease(p):           # a step out of the crease is undone (velocity kept)
-				p.motion.pos[0] = x
-				p.motion.pos[1] = y
-		else:
-			move(p, e)
+		goalie_move(p, e)
 	elif p.state == 0x11:
 		p.anim.advance(e)                  # impaled: no motion
 	else:
@@ -138,6 +135,21 @@ func _tick(p: MwRinkState.Player, e: int) -> void:
 func move(p: MwRinkState.Player, e: int) -> void:
 	p.motion.step(s.player_params, e)
 	p.anim.advance(e)
+
+
+## `$86A`'s goalie: [method move] - without the animation unless
+## [param anim] (the client's dead reckoning, MwNetReckoning, moves copies
+## so) - and a step out of his crease undone, his velocity kept.
+func goalie_move(p: MwRinkState.Player, e: int, anim := true) -> void:
+	var inside := in_crease(p)
+	var x := p.motion.pos[0]
+	var y := p.motion.pos[1]
+	p.motion.step(s.player_params, e)
+	if anim:
+		p.anim.advance(e)
+	if inside and not in_crease(p):
+		p.motion.pos[0] = x
+		p.motion.pos[1] = y
 
 
 ## `$9AE`: inside the goalie crease (x' = x - x / 4, y' = |y| - 322, length <= 55).
@@ -170,6 +182,7 @@ func stop(p: MwRinkState.Player) -> void:
 	p.anim.set_record(rom, anim_record(p, 0))
 
 
+## Whether [param p]'s animation is playing.
 func playing(p: MwRinkState.Player) -> bool:
 	return p.anim.flags & MwAnimState.PLAYING != 0
 
@@ -190,9 +203,9 @@ static func own_motion(p: MwRinkState.Player) -> Vector2i:
 	return Vector2i(p.mate_dist[p.index], p.mate_angle[p.index])
 
 
-## `$C7C`: [param p]'s geometry entry for opponent [param o]: (distance, angle).
-static func to_opponent(p: MwRinkState.Player, o: MwRinkState.Player) -> Vector2i:
-	return Vector2i(p.opp_dist[o.index], p.opp_angle[o.index])
+## `$C7C`: [param p]'s geometry entry for opponent [param player]: (distance, angle).
+static func to_opponent(p: MwRinkState.Player, player: MwRinkState.Player) -> Vector2i:
+	return Vector2i(p.opp_dist[player.index], p.opp_angle[player.index])
 
 
 ## `$6CA2`: the direction of [param angle] relative to [param facing]: 0
@@ -310,7 +323,7 @@ func forfeits(team: MwRinkState.Team) -> bool:
 func substitute(p: MwRinkState.Player) -> void:
 	var team := sim.team_of(p)
 	var pos := p.position
-	var pick := _best_substitute(team, pos)
+	var pick := best_substitute(team, pos)
 	if pick.y == 0:
 		return
 	var human := p.flags & MwRinkState.Player.HUMAN
@@ -332,22 +345,25 @@ func substitute(p: MwRinkState.Player) -> void:
 ## `$F72C`: (roster slot, record) of the best substitute for position
 ## [param pos] (record 0: none). Score = the position's rating (`$1121E`)
 ## x min(health / 65536, 64), doubled for a player of that position; not
-## in the penalty box, alive, not already on the ice.
-func _best_substitute(team: MwRinkState.Team, pos: int) -> Vector2i:
+## in the penalty box, alive, not already on the ice. [param exclude]: a
+## roster slot left out as well (the port's: the bench's next goalie up,
+## MwBenchLife.next_goalie, leaves out the one on the ice, whom the pick
+## itself leaves out only once he is dead; -1: none, the original's).
+func best_substitute(team: MwRinkState.Team, pos: int, exclude := -1) -> Vector2i:
 	var best := 0
 	var slot := 0
 	var rec := 0
 	var d5 := 0
 	for i in 24:
 		var ok := (d5 == 5) if pos == 5 else (d5 != 5)
-		if ok and not _in_box(team, i):
-			var r := MwGfx.u32(rom, team.record + 0x18 + 4 * i)
+		if ok and i != exclude and not in_box(team, i):
+			var r := MwTeams.roster_record(rom, team.record, i)
 			var on := false
 			for k in 5:
 				if team.players[k].original == r:
 					on = true
 			if not on:
-				var score := _position_rating(r, pos)
+				var score := position_rating(rom, r, pos)
 				var h := team.health[i]
 				if h != 0:
 					var hw := MwRinkSim.s16(h >> 16)
@@ -366,34 +382,95 @@ func _best_substitute(team: MwRinkState.Team, pos: int) -> Vector2i:
 	return Vector2i(slot, rec)
 
 
+## Plan 42 (speed, second round): [method best_substitute] of positions 0
+## to 4 (nothing left out) and of position 5 leaving out [param
+## goalie_exclude] - the benches' six questions every pass
+## (MwBenchLife) - from one sweep of the roster: the same answers.
+func best_substitutes(team: MwRinkState.Team, goalie_exclude := -1) -> Array[Vector2i]:
+	var ok_slot := PackedByteArray()          # alive or not, in the box or on the ice: may be picked
+	ok_slot.resize(24)
+	var recs := PackedInt32Array()
+	recs.resize(24)
+	var on0 := team.players[0].original
+	var on1 := team.players[1].original
+	var on2 := team.players[2].original
+	var on3 := team.players[3].original
+	var on4 := team.players[4].original
+	for i in 24:
+		if in_box(team, i):
+			continue
+		var r := MwTeams.roster_record(rom, team.record, i)
+		if r == on0 or r == on1 or r == on2 or r == on3 or r == on4:
+			continue
+		ok_slot[i] = 1
+		recs[i] = r
+	var out: Array[Vector2i] = []
+	for pos in 6:
+		var exclude := goalie_exclude if pos == 5 else -1
+		var best := 0
+		var slot := 0
+		var rec := 0
+		for i in 24:
+			var d5 := i % 6
+			if (d5 == 5) != (pos == 5) or i == exclude or ok_slot[i] == 0:
+				continue
+			var r := recs[i]
+			var score := position_rating(rom, r, pos)
+			var h := team.health[i]
+			if h != 0:
+				var hw := (((h >> 16) + 0x8000) & 0xFFFF) - 0x8000      # (s16)
+				if hw >= 0x40:
+					hw = 0x40
+				score = (score * (hw & 0xFFFF)) & 0xFFFF
+				if d5 == pos:
+					score = (score * 2) & 0xFFFF
+				if ((score + 0x8000) & 0xFFFF) - 0x8000 > ((best + 0x8000) & 0xFFFF) - 0x8000:
+					best = score
+					slot = i
+					rec = r
+		out.append(Vector2i(slot, rec))
+	return out
+
+
 ## `$A212`: roster slot [param i] sits in one of the 3 penalty box entries.
-func _in_box(team: MwRinkState.Team, i: int) -> bool:
+static func in_box(team: MwRinkState.Team, i: int) -> bool:
+	# (entry k at $362 + $14 k: its byte +$10 non-zero while in use, +$E the
+	# roster slot; team.stats starts at $362 - plan 42: read as bytes inline)
+	var st := team.stats
 	for k in 3:
-		var at := 0x362 + 0x14 * k
-		if team.stat(at + 0x10, 1) != 0 and team.stat(at + 0xE, 1) == i:
+		var at := 0x14 * k
+		if st[at + 0x10] != 0 and st[at + 0xE] == i:
 			return true
 	return false
 
 
-## `$1121E`: how well record [param r] plays position [param pos] (a byte sum
-## of weighted ratings; `$11044`-`$1113A`).
-func _position_rating(r: int, pos: int) -> int:
-	var b := func(off: int, high: bool) -> int: return (rom[r + off] >> 4) if high else (rom[r + off] & 0xF)
+## `$1121E`: how well record [param r] of [param bytes] plays position
+## [param pos] (a byte sum of weighted ratings; `$11044`-`$1113A`). The
+## line-ups, the special plays' Reserves page and CREATE-A-TEAM's FIT
+## (a record's bytes alone, at 0) read it too.
+static func position_rating(bytes: PackedByteArray, r: int, pos: int) -> int:
+	# (the record's rating nibbles: low = byte & $F, high = byte >> 4; plan 42,
+	# second round: read inline - a lambda made a call cost ~2 us, and the
+	# benches ask the pick a dozen times a pass)
 	var d := 0
 	match pos:
 		0:
-			d = 4 * b.call(8, false) + 4 * b.call(9, false) + 2 * b.call(0xA, false) + 2 * b.call(0xC, false) + 2 * b.call(0xB, true)
+			d = 4 * (bytes[r + 8] & 0xF) + 4 * (bytes[r + 9] & 0xF) + 2 * (bytes[r + 0xA] & 0xF) \
+					+ 2 * (bytes[r + 0xC] & 0xF) + 2 * (bytes[r + 0xB] >> 4)
 		1, 2:
-			if (rom[r + 7] >> 4) == pos - 1:
+			if (bytes[r + 7] >> 4) == pos - 1:
 				d = 0x14
-			d += 4 * b.call(8, false) + 4 * b.call(9, false) + b.call(0xA, false) + b.call(0xC, false) + 2 * b.call(0xB, true)
+			d += 4 * (bytes[r + 8] & 0xF) + 4 * (bytes[r + 9] & 0xF) + (bytes[r + 0xA] & 0xF) + (bytes[r + 0xC] & 0xF) \
+					+ 2 * (bytes[r + 0xB] >> 4)
 		3, 4:
-			if (rom[r + 7] >> 4) == pos - 3:
+			if (bytes[r + 7] >> 4) == pos - 3:
 				d = 0x14
-			d += 4 * b.call(8, false) + 2 * b.call(9, false) + 2 * b.call(0xA, true) + 2 * b.call(0xD, false) + 2 * b.call(0xB, false)
+			d += 4 * (bytes[r + 8] & 0xF) + 2 * (bytes[r + 9] & 0xF) + 2 * (bytes[r + 0xA] >> 4) \
+					+ 2 * (bytes[r + 0xD] & 0xF) \
+					+ 2 * (bytes[r + 0xB] & 0xF)
 		5:
-			if rom[r + 7] & 0xF == 4:
-				d = 4 * b.call(8, false)
+			if bytes[r + 7] & 0xF == 4:
+				d = 4 * (bytes[r + 8] & 0xF)
 	return d & 0xFF
 
 
@@ -662,10 +739,10 @@ func _pass_start(p: MwRinkState.Player) -> void:
 		return
 	var anim := 8
 	sim.puck.aim_pass(p)
-	var r := s.puck.receiver
+	var actor := s.puck.receiver
 	var side := -1
-	if r != null:
-		var rp := r.motion.pixels()
+	if actor != null:
+		var rp := actor.motion.pixels()
 		var me := p.motion.pixels()
 		var a := MwTrig.angle_of(rom, MwRinkSim.s16(rp.x - me.x), MwRinkSim.s16(rp.y - me.y))
 		side = MwGfx.s16(rom, PASS_ANIMS + direction(a, p.angle))      # byte offset = direction
@@ -699,15 +776,15 @@ func _weapon_start(p: MwRinkState.Player) -> void:
 
 ## `$97D6`: face the target (+$3A); its distance (no target: $50).
 func _face_target(p: MwRinkState.Player) -> int:
-	var t := p.victim
-	if t == null:
+	var actor := p.victim
+	if actor == null:
 		return 0x50
 	var da: Vector2i
-	if t == s.referee:
-		var rp := t.motion.pixels()
+	if actor == s.referee:
+		var rp := actor.motion.pixels()
 		da = sim.dist_angle_to(p, rp.x, rp.y)
 	else:
-		da = to_opponent(p, t as MwRinkState.Player)
+		da = to_opponent(p, actor as MwRinkState.Player)
 	p.angle = da.y
 	var v := (da.y + 0x50) & 0xFF
 	if s.projection != 0:
@@ -763,22 +840,22 @@ func _weapon_hit(p: MwRinkState.Player) -> void:
 ## x3/8 (nothing on a goalie), the attacker's white bone x2; the victim
 ## falls (state [param st]) unless already down; penalty rolls.
 func _hit(p: MwRinkState.Player, d: int, st: int) -> void:
-	var v := p.victim as MwRinkState.Player
+	var player := p.victim as MwRinkState.Player
 	if s.phase != 0:
 		d = ((d >> 1) + d) >> 2
-		if v.position == 5:
+		if player.position == 5:
 			d = 0
 	if p.flags & MwRinkState.Player.WHITE_BONE:
 		d *= 2
-	var alive := damage(v, d) != 0
+	var alive := damage(player, d) != 0
 	if not alive:
 		if (sim.rng_next() & 0xFFFF) < 0x51E:
 			sim.penalty(2, p)
 		p.substate += 1
 		return
-	if v.state < 0xF:
-		v.attacker = p.index
-		enter(v, st)
+	if player.state < 0xF:
+		player.attacker = p.index
+		enter(player, st)
 	if p.state == 4:
 		if (sim.rng_next() & 0xFFFF) <= 0x51E:
 			sim.penalty(-4, p)
@@ -802,8 +879,8 @@ func _hit_referee(p: MwRinkState.Player) -> void:
 ## [param d0] is 0, one of three animations `$F040` by `rng_range(1, 3)`);
 ## the animation starts playing.
 func _referee_hit(d0: int) -> void:
-	var r := s.referee
-	if r.anim.flags & MwAnimState.PLAYING:
+	var actor := s.referee
+	if actor.anim.flags & MwAnimState.PLAYING:
 		return
 	s.ref_flag = MwRinkSim.s8(s.ref_flag - 1) & 0xFF
 	var anim: int
@@ -819,8 +896,8 @@ func _referee_hit(d0: int) -> void:
 			s.ref_attr |= 8
 		var i := sim.rng_range(1, 3) & 0xFFFF
 		anim = MwGfx.u32(rom, REF_HURT + 4 * i)
-	r.anim.set_record(rom, anim)
-	r.anim.flags |= MwAnimState.PLAYING
+	actor.anim.set_record(rom, anim)
+	actor.anim.flags |= MwAnimState.PLAYING
 
 
 ## Weapon 3 (`$98D2`): at frame 2, a bomb (rink object 7) thrown 40 px up
@@ -829,15 +906,15 @@ func _throw_bomb(p: MwRinkState.Player, dist: int) -> void:
 	if MwRinkSim.s16(p.anim.position) < 0x200:
 		return
 	var a := p.angle
-	var t := p.victim
-	if t != null:
-		var tx := MwRinkSim.asr(t.motion.pos[0] + t.motion.vel[0] * 16, 8)
-		var ty := MwRinkSim.asr(t.motion.pos[1] + t.motion.vel[1] * 16, 8)
+	var actor := p.victim
+	if actor != null:
+		var tx := MwRinkSim.asr(actor.motion.pos[0] + actor.motion.vel[0] * 16, 8)
+		var ty := MwRinkSim.asr(actor.motion.pos[1] + actor.motion.vel[1] * 16, 8)
 		var da := sim.dist_angle_to(p, tx, ty)
 		a = da.y
 		dist = da.x
-	var o := sim.free_object()
-	if o == null:
+	var rink_object := sim.free_object()
+	if rink_object == null:
 		p.substate += 1
 		return
 	p.charges = (p.charges - 1) & 0xFF
@@ -847,12 +924,12 @@ func _throw_bomb(p: MwRinkState.Player, dist: int) -> void:
 		if p.flags & MwRinkState.Player.ENFORCER:
 			p.weapon = rom[p.original + 0xE] & 0xF
 	var px := p.motion.pixels()
-	sim.spawn(o, px.x, px.y, MwRinkState.KIND_BOMB, 0)
-	o.motion.pos[2] = ((px.z + 0x28) & 0xFFFF) << 8
+	sim.spawn(rink_object, px.x, px.y, MwRinkState.KIND_BOMB, 0)
+	rink_object.motion.pos[2] = ((px.z + 0x28) & 0xFFFF) << 8
 	var v := sim.polar(a, (dist << 4) & 0xFFFF)
-	o.motion.vel[0] = MwRinkSim.s16(v.x)
-	o.motion.vel[1] = MwRinkSim.s16(v.y)
-	o.motion.vel[2] = 0xC0
+	rink_object.motion.vel[0] = MwRinkSim.s16(v.x)
+	rink_object.motion.vel[1] = MwRinkSim.s16(v.y)
+	rink_object.motion.vel[2] = 0xC0
 	p.substate += 1
 
 
@@ -905,8 +982,8 @@ func _check_start(p: MwRinkState.Player) -> void:
 		p.substate = 2
 		play(p, 0xF)
 		return
-	var v := p.victim as MwRinkState.Player
-	var a := to_opponent(p, v).y if v != null else 0
+	var player := p.victim as MwRinkState.Player
+	var a := to_opponent(p, player).y if player != null else 0
 	var anim := MwGfx.s16(rom, CHECK_ANIMS + direction(a, p.angle))
 	if anim < 0:
 		done(p)
@@ -1027,11 +1104,11 @@ func _killed(p: MwRinkState.Player) -> void:
 func _corpse(p: MwRinkState.Player) -> void:
 	if playing(p):
 		return
-	var o := sim.free_object()
-	if o != null:
+	var rink_object := sim.free_object()
+	if rink_object != null:
 		var px := p.motion.pixels()
-		sim.spawn(o, px.x, px.y, MwRinkState.KIND_CORPSE, 0x20 if p.team == 0 else 0x40)
-		o.anim = p.anim.copy()
+		sim.spawn(rink_object, px.x, px.y, MwRinkState.KIND_CORPSE, 0x20 if p.team == 0 else 0x40)
+		rink_object.anim = p.anim.copy()
 	enter(p, 0)
 	died(p)
 	if p.team == 0:
@@ -1053,11 +1130,11 @@ func _fall_through(p: MwRinkState.Player) -> void:
 ## State 19 s2 (`$9C78`): under the ice until the period ends (an
 ## under-ice silhouette object by species, the team's +$336 bit, +$49E).
 func _under_ice(p: MwRinkState.Player) -> void:
-	var o := sim.free_object()
-	if o != null:
+	var rink_object := sim.free_object()
+	if rink_object != null:
 		var px := p.motion.pixels()
 		var species := rom[p.record + 7] & 0xF
-		sim.spawn(o, px.x, px.y, MwGfx.u16(rom, UNDER_ICE_KINDS + 2 * species) & 0xFF, 0)
+		sim.spawn(rink_object, px.x, px.y, MwGfx.u16(rom, UNDER_ICE_KINDS + 2 * species) & 0xFF, 0)
 	var team := sim.team_of(p)
 	var bits := (team.x330[6] << 24) | (team.x330[7] << 16) | (team.x330[8] << 8) | team.x330[9]
 	bits |= 1 << (p.slot & 31)
@@ -1074,12 +1151,14 @@ func _under_ice(p: MwRinkState.Player) -> void:
 ## tick), choose the skating / turning / hockey stop animation, write the
 ## acceleration (none when arrived or coasting, braking when arrived, else
 ## towards the target until the top speed). [param e] is the pass's ticks
-## (12 for CPU skaters that think every 12 ticks).
+## (12 for CPU skaters that think every 12 ticks). A human's stick (the
+## port's analogue control) sets the top speed by its travel ([method
+## stick_pace]).
 func skate(p: MwRinkState.Player, e: int) -> void:
 	if s.phase == PHASE_START or s.phase == PHASE_FACEOFF:
 		return
 	var goalie := p.position == 5
-	var P: int = SKATE_PARAMS[1 if goalie else 0]
+	var params: int = SKATE_PARAMS[1 if goalie else 0]
 	var team := sim.team_of(p)
 	if p.state != 0 or MwRinkSim.asr(p.motion.pos[2], 8) != 0:
 		p.motion.acc[0] = 0
@@ -1102,16 +1181,16 @@ func skate(p: MwRinkState.Player, e: int) -> void:
 		desired = ta
 	var anim: int
 	var acc := Vector2i.ZERO
-	if speed > MwGfx.u16(rom, P + 0xE) and ((desired - vang) & 0xFF) >= 0x70 and ((desired - vang) & 0xFF) <= 0x90:
+	if speed > MwGfx.u16(rom, params + 0xE) and ((desired - vang) & 0xFF) >= 0x70 and ((desired - vang) & 0xFF) <= 0x90:
 		# reversing at speed: hockey stop
 		p.angle = desired
 		newvar = variant_of(desired)
 		anim = 0x1F
-		acc = sim.polar(vang ^ 0x80, MwGfx.u16(rom, P + 0x10))
+		acc = sim.polar(vang ^ 0x80, MwGfx.u16(rom, params + 0x10))
 	else:
 		var base := p.puck_angle if p.puck_dist != 0 else p.angle
 		var d0 := desired
-		if s.phase != PHASE_FIGHT and not team.flags5 & 2 and not p.flags2 & 4 and td < MwGfx.u16(rom, P + 6) \
+		if s.phase != PHASE_FIGHT and not team.flags5 & 2 and not p.flags2 & 4 and td < MwGfx.u16(rom, params + 6) \
 				and not p.flags & MwRinkState.Player.HUMAN and s.puck.carrier != p:
 			# a CPU player near its target faces the puck
 			var d1 := (d0 - base) & 0xFF
@@ -1121,15 +1200,20 @@ func skate(p: MwRinkState.Player, e: int) -> void:
 				d0 = base
 		if goalie and d0 & 0x7F and (((d0 ^ MwRinkSim.asr(p.motion.pos[1], 24)) & 0x80) == 0):
 			d0 = (-d0) & 0xFF          # a goalie faces away from his net
-		anim = rom[P + 1]
+		anim = rom[params + 1]
 		var old := p.angle
 		var a := old
-		var reached := false
-		for i in 8 * e:
-			if a == d0:
-				reached = true
-				break
-			a = (a + (-1 if MwRinkSim.s8(d0 - a) < 0 else 1)) & 0xFF
+		# turned a step at a time towards d0, 8 a tick (the shorter way: the
+		# signed byte d0 - a keeps its sign until a gets there) - plan 42: at
+		# once. As the loop it was: reached when a met d0 before its last step
+		# (one met on the last step turns there, not reached).
+		var gap := (((d0 - a) & 0xFF) ^ 0x80) - 0x80
+		var steps := 8 * e
+		var reached := absi(gap) < steps
+		if absi(gap) <= steps:
+			a = d0 & 0xFF
+		elif steps > 0:
+			a = (a + (-steps if gap < 0 else steps)) & 0xFF
 		if not reached:
 			anim = p.anim_id
 		p.angle = a
@@ -1138,19 +1222,19 @@ func skate(p: MwRinkState.Player, e: int) -> void:
 			var tn: int
 			if MwRinkSim.s8(a - old) < 0:
 				v = ((a + 0x58) & 0xFF) >> 5
-				tn = MwGfx.u16(rom, P + 4)
+				tn = MwGfx.u16(rom, params + 4)
 			else:
 				v = ((a + 0x48) & 0xFF) >> 5
-				tn = MwGfx.u16(rom, P + 2)
+				tn = MwGfx.u16(rom, params + 2)
 			if v != p.anim.variant:
 				anim = tn & 0xFF
 				newvar = v
-		if td <= MwGfx.u16(rom, P + 0xA):
+		if td <= MwGfx.u16(rom, params + 0xA):
 			anim = 0xFF
-			var c := MwGfx.u16(rom, P + 0xC)
+			var c := MwGfx.u16(rom, params + 0xC)
 			var b := (speed >> 2) if speed < 4 * c else c
 			acc = sim.polar(vang ^ 0x80, b)
-		elif td <= MwGfx.u16(rom, P + 8):
+		elif td <= MwGfx.u16(rom, params + 8):
 			acc = Vector2i.ZERO
 		else:
 			var r := rom[p.record + 0xA] & 0xF
@@ -1167,6 +1251,7 @@ func skate(p: MwRinkState.Player, e: int) -> void:
 					var room := MwRinkSim.s16(top - speed)
 					if room >= 0:
 						a8 = (room / e) & 0xFFFF
+			top = stick_pace(top, sim.human.stick(p, team))
 			acc = Vector2i.ZERO if top <= speed else sim.polar(desired, a8)
 	p.motion.acc[0] = MwRinkSim.s16(acc.x)
 	p.motion.acc[1] = MwRinkSim.s16(acc.y)
@@ -1179,6 +1264,16 @@ func skate(p: MwRinkState.Player, e: int) -> void:
 	elif anim != p.anim_id:
 		play(p, anim)
 	_goalie_variant(p)
+
+
+## The top speed [param top] at stick [param st]'s travel (the port's
+## analogue control): a quarter at the dead zone's edge to all of it at
+## full travel; no stick: [param top].
+static func stick_pace(top: int, st: Vector2i) -> int:
+	if st == Vector2i.ZERO:
+		return top
+	var k := 0x40 + ((0xC0 * MwHumanControl.stick_length(st)) >> 8)
+	return (top * k) >> 8
 
 
 ## `$66B6`: a moving goalie's variant from his facing, mirrored by his end.

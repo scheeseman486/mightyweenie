@@ -20,12 +20,45 @@ extends MwBetweenPlays
 ## voices.
 
 
+## Port only (plan 38): a custom coach with colours of his own wears them:
+## page A's portrait (line 1, attr $20) on line 12, page B's (line 2, $40)
+## on line 13, the screen's palette with those lines (RomPalette
+## "coach_line"; plan 34's port lines).
+func _coach_colours() -> void:
+	palette.steps = MwCustomTeams.coach_lines(rom, palette.steps, palette.team_a, palette.team_b, [1, 2])
+	var lines := {}
+	for k in 2:
+		if MwCustomTeams.has_coach_colours(rom, [palette.team_a, palette.team_b][k]):
+			lines[1 + k] = MwRinkDraw.COACH_LINE + k
+	drawer.portrait_lines = lines
+
+
 ## The pictures of the pad mode's backdrop (`$23316` at tile 1, `$4A066`
 ## at tile 246: separate VRAM).
 func _banks() -> PackedStringArray:
 	var out := PackedStringArray()
-	for a in MwSpecialPlaysSim.pictures(rom, state.pad_mode):
+	for a in MwSpecialPlaysSim.pictures(rom, MwSpecialPlaysSim.layout_mode(state)):
 		out.append("picture_%06x" % a)
+	return out
+
+
+## The A / B / C buttons under the plays (sprite pieces `$1F0AC`) as the
+## glyphs of the verbs they stand for, in the STANDARD layout (plan 23).
+func _sprite_ops(ops: Array) -> Array:
+	if not MwPrompts.active():
+		return ops
+	var out := []
+	for op in ops:
+		var o: Array = op
+		var k := -1
+		if str(o[0]) == "piece":
+			k = [0, 6, 12].find(int(o[1]) - MwSpecialPlaysSim.BUTTONS)
+		if k < 0:
+			out.append(o)
+			continue
+		var verbs := MwVerbs.verbs_of(MwVerbs.Context.SPECIAL_PLAYS, ["A", "B", "C"][k])
+		var cells := MwGlyphs.live_cells(verbs[0]) if not verbs.is_empty() else PackedInt32Array()
+		out.append(["glyph", o[1], o[2], o[3], o[4], o[5], cells] if not cells.is_empty() else o)
 	return out
 
 

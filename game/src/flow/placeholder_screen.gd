@@ -18,6 +18,9 @@ extends MwScreen
 @export var back_remap := {}
 @export var auto_exit_ticks := 0
 @export var auto_exit: Variant = null
+## The data the auto exit's screen gets (the boot's, for a start straight
+## into an online game: MwRouterService's --join).
+var auto_exit_data := {}
 @export var label_position := Vector2(8, 8)
 ## Show the name / exits label (screens that draw something real hide it).
 @export var show_label := true
@@ -43,6 +46,8 @@ func _enter_screen(_data: Dictionary) -> void:
 	_label.text = describe()
 
 
+## The label's text: the screen's name, ID and entry variant, its visit and the screen before,
+## the attract demo's set-up, and its exits (action -> target, the auto exit).
 func describe() -> String:
 	var info := MwScreens.info(screen_id)
 	var lines := ["%s  #%d %s" % [str(info.get("name", "?")).to_upper(), screen_id, entry],
@@ -71,7 +76,7 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 				_follow(t)
 				return
 	if auto_exit_ticks > 0 and _ticks >= auto_exit_ticks:
-		_follow(_target(auto_exit))
+		_follow(_target(auto_exit), auto_exit_data)
 
 
 ## The attract demo's part of the pass; true when it decided the pass.
@@ -81,7 +86,7 @@ func _attract_pass(elapsed: int, input: MwInputFrame) -> bool:
 	match attract_role:
 		Attract.MAIN_MENU:
 			_idle = 0 if MwAttract.any_press(input) else _idle + elapsed
-			if _idle >= MwAttract.IDLE_TICKS:
+			if MwAttract.idle_out(_idle):
 				session.attract = true     # as if Start was pressed
 				exit_to(3)
 				return true
@@ -105,17 +110,17 @@ func _target(t: Variant) -> Variant:
 	return t
 
 
-func _follow(t: Variant) -> void:
+func _follow(t: Variant, data := {}) -> void:
 	if t == null:
 		return
 	if t is String:
-		var s: String = t
-		if s == "back":
+		var text: String = t
+		if text == "back":
 			exit_to(int(back_remap.get(previous, previous)))
-		elif s == "pop":
+		elif text == "pop":
 			pop()
-		elif s.begins_with("push:"):
-			var what := s.substr(5)
+		elif text.begins_with("push:"):
+			var what := text.substr(5)
 			push(int(what) if what.is_valid_int() else what)
 	else:
-		exit_to(int(t), {}, screen_id != MwScreens.BOOT)
+		exit_to(int(t), data, screen_id != MwScreens.BOOT)

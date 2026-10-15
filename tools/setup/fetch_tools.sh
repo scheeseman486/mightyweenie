@@ -4,10 +4,12 @@
 # skipped when the stamp already matches tools/versions.env.
 #
 # Usage: tools/setup/fetch_tools.sh [godot] [jdk] [ghidra] [blastem] [addons] [templates] [audio] [zig]
+#                                   [appimage]
 #        (no arguments = everything but the export templates, 1.3 GB download,
 #        and the audio extension's build dependencies, which tools/bin/build-audio
 #        fetches on first use: audio = godot-cpp + ymfm sources, zig = the
-#        Windows cross-compiler)
+#        Windows cross-compiler; appimage = appimagetool and the AppImage
+#        runtime, which tools/build/appimage.sh fetches on first use)
 #
 # Everything lands inside the repository, so every machine that shares the
 # folder (a desktop and a VM, say) uses the same toolchain.
@@ -163,6 +165,24 @@ do_zig() {
   unpack "$DL/$(basename "$ZIG_URL")" "$dir"
   echo "$ZIG_VERSION" > "$dir/.version"
   log "zig $ZIG_VERSION -> tools/zig"
+}
+
+# appimagetool, the type 2 runtime and its licence -> tools/appimage (tools/build/appimage.sh)
+do_appimage() {
+  local dir="$TOOLS/appimage" want="$APPIMAGETOOL_VERSION/$APPIMAGE_RUNTIME_VERSION"
+  stamped appimage "$dir" "$want" && { log "appimage tools $want already installed"; return; }
+  fetch "$APPIMAGETOOL_URL" "$DL/appimagetool-$APPIMAGETOOL_VERSION-x86_64.AppImage" sha256 "$APPIMAGETOOL_SHA256"
+  fetch "$APPIMAGE_RUNTIME_URL" "$DL/appimage-runtime-$APPIMAGE_RUNTIME_VERSION-x86_64" sha256 \
+    "$APPIMAGE_RUNTIME_SHA256"
+  fetch "$APPIMAGE_RUNTIME_LICENSE_URL" "$DL/appimage-runtime-$APPIMAGE_RUNTIME_VERSION-LICENSE" sha256 \
+    "$APPIMAGE_RUNTIME_LICENSE_SHA256"
+  rm -rf "$dir"; mkdir -p "$dir"
+  cp "$DL/appimagetool-$APPIMAGETOOL_VERSION-x86_64.AppImage" "$dir/appimagetool"
+  cp "$DL/appimage-runtime-$APPIMAGE_RUNTIME_VERSION-x86_64" "$dir/runtime-x86_64"
+  cp "$DL/appimage-runtime-$APPIMAGE_RUNTIME_VERSION-LICENSE" "$dir/RUNTIME_LICENSE.txt"
+  chmod +x "$dir/appimagetool"
+  echo "$want" > "$dir/.version"
+  log "appimagetool $APPIMAGETOOL_VERSION, runtime $APPIMAGE_RUNTIME_VERSION -> tools/appimage"
 }
 
 targets=("$@"); [[ ${#targets[@]} -eq 0 ]] && targets=(godot jdk ghidra blastem addons)

@@ -23,10 +23,10 @@ func test_next_state_matches_original() -> void:
 
 
 func test_range_value_matches_original() -> void:
-	for call in _fixture.range_calls:
-		var rng := MlhRng.new(int(call.state_before))
-		assert_eq(rng.range_value(int(call.lo), int(call.hi)), int(call.value),
-			"range %d..%d" % [int(call.lo), int(call.hi)])
+	for range_call in _fixture.range_calls:
+		var rng := MlhRng.new(int(range_call.state_before))
+		assert_eq(rng.range_value(int(range_call.lo), int(range_call.hi)), int(range_call.value),
+			"range %d..%d" % [int(range_call.lo), int(range_call.hi)])
 
 
 func test_state_stays_32_bit() -> void:

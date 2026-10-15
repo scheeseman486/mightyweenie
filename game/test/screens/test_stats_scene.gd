@@ -21,11 +21,11 @@ func _scene(exits: Array, session: MwSession, fader: MwScreenFader) -> MwBetween
 
 
 static func _frame(actions: Array) -> MwInputFrame:
-	var f := MwInputFrame.new()
+	var input := MwInputFrame.new()
 	for a in actions:
-		f.held[a] = true
-		f.pressed[a] = true
-	return f
+		input.held[a] = true
+		input.pressed[a] = true
+	return input
 
 
 static func _shown(layer: Node) -> int:
@@ -81,7 +81,7 @@ func test_stats_scene() -> void:
 	assert_eq(sim.scroll_a, -64)
 	assert_eq(plane_a.position.y, 64.0 - 72.0, "plane A scrolled up 16 px")
 	# A: 9 behind the fade, no passes while it covers
-	_tick(node, fader, _frame(["p2_ui_option_a"]))
+	_tick(node, fader, _frame(["p2_ui_stats_switch"]))
 	assert_eq(sim.shown, 9, "any pad")
 	assert_true(fader.busy(), "the fade out")
 	var drawn := _cells(plane_a)

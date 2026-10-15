@@ -21,6 +21,7 @@ func _demo_state() -> MwRinkState:
 	var s := super._demo_state()
 	var rink := MwRinkSim.new(rom, s)
 	MwRinkPhases.new(MwRinkUpdate.new(rink)).enter(5)
+	rink.dispose()                           # plan 45: done with it (its cycle would keep the state)
 	s.phase = 12
 	s.teams[0].flags5 |= 1
 	s.ref_flag = 5

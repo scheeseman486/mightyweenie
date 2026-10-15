@@ -26,7 +26,8 @@ func test_setup_matches_the_original() -> void:
 		for i in 2:
 			var n: Dictionary = st["nets"][i]
 			assert_eq(s.nets[i].style, int(n["style"]), tag + " net style")
-			assert_eq([s.nets[i].anim.address, s.nets[i].anim.variant], [int(n["anim"][0]), int(n["anim"][3])], tag + " net anim")
+			assert_eq([s.nets[i].anim.address, s.nets[i].anim.variant], [int(n["anim"][0]), int(n["anim"][3])],
+					tag + " net anim")
 			assert_eq(Array(s.nets[i].motion.pos), _ints(n["motion"]).slice(0, 3), tag + " net position")
 			var l: Dictionary = st["lamps"][i]
 			assert_eq(Array(s.lamps[i].motion.pos), _ints(l["motion"]).slice(0, 3), tag + " lamp")
@@ -46,8 +47,10 @@ func test_setup_matches_the_original() -> void:
 				continue
 			assert_eq(got.flags, int(o["flags"]), tag + " object %d flags" % i)
 			assert_eq(Array(got.motion.pos), _ints(o["motion"]).slice(0, 3), tag + " object %d position" % i)
-			assert_eq([got.anim.address, got.anim.variant], [int(o["anim"][0]), int(o["anim"][3])], tag + " object %d anim" % i)
-			assert_eq(got.anim.flags & MwAnimState.PLAYING, int(o["anim"][2]) & MwAnimState.PLAYING, tag + " object %d playing" % i)
+			assert_eq([got.anim.address, got.anim.variant], [int(o["anim"][0]), int(o["anim"][3])],
+					tag + " object %d anim" % i)
+			assert_eq(got.anim.flags & MwAnimState.PLAYING, int(o["anim"][2]) & MwAnimState.PLAYING,
+					tag + " object %d playing" % i)
 
 
 func test_every_stadium_sets_up() -> void:

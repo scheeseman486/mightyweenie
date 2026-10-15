@@ -1,6 +1,7 @@
 extends GutTest
 ## Fades take exactly their length in ticks (32 for the original's $20) and
 ## start from where the screen is.
+## Short names: f the MwScreenFader under test.
 
 
 func test_fade_out_and_in_take_32_ticks() -> void:

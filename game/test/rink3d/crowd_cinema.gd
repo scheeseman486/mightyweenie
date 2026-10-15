@@ -71,9 +71,9 @@ func _shots() -> Array:
 			return [Vector3(-345, clampf(f.y + 90, -250, 280), 185), f + Vector3(0, 0, 10), 55.0]],
 		[14.0, 0.0, "cable cam over the right boards", func(u: float, f: Vector3, _g: Vector3) -> Array:
 			return [Vector3(150, lerpf(330, -330, _ease(u)), 100), f + Vector3(-60, 0, 0), 50.0]],
-		# plan 16: the referee watching the play from his pen, then the far net
+		# plan 16: Satan watching the play from his pen, then the far net
 		# and its goalie from behind
-		[10.0, 0.0, "the referee's pen", func(u: float, f: Vector3, _g: Vector3) -> Array:
+		[10.0, 0.0, "Satan's pen", func(u: float, f: Vector3, _g: Vector3) -> Array:
 			return [Vector3(140, lerpf(150, -110, _ease(u)), 80), Vector3(232, 7, 40).lerp(f, 0.35), 45.0]],
 		[10.0, 0.0, "behind the far net", func(u: float, f: Vector3, _g: Vector3) -> Array:
 			return [Vector3(lerpf(-70, 70, _ease(u)), -366, 42), Vector3(f.x * 0.5, -180, 10), 55.0]],
@@ -83,7 +83,8 @@ func _shots() -> Array:
 			var e := _ease(u)
 			var a := deg_to_rad(lerpf(200, 160, e))
 			var r := lerpf(500, 1150, e)
-			return [Vector3(sin(a) * r, cos(a) * r, lerpf(350, 950, e)), f.lerp(Vector3(0, 20, 0), e), lerpf(46, 42, e)]],
+			return [Vector3(sin(a) * r, cos(a) * r, lerpf(350, 950, e)), f.lerp(Vector3(0, 20, 0), e), \
+					lerpf(46, 42, e)]],
 	]
 
 
@@ -113,9 +114,10 @@ func _run() -> void:
 		return
 	shots = _shots()
 	var total := 0.0
-	for s: Array in shots:
-		total += s[0]
-	print("crowd_cinema: ", name, " from ", start_s, " s, occupancy ", occupancy, ", ", shots.size(), " shots, ", total, " s")
+	for shot: Array in shots:
+		total += shot[0]
+	print("crowd_cinema: ", name, " from ", start_s, " s, occupancy ", occupancy, ", ", shots.size(), " shots, ", total,
+			" s")
 
 	root.title = "mightyweenie - plan 15 crowd cinema"
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
@@ -123,7 +125,7 @@ func _run() -> void:
 	drawer = MwRinkDraw3D.new(rom)
 	var first: Dictionary = passes[0]["state"]
 	var team_a := int(first.get("team_a", 0))
-	var palette := RomPalette.make(4, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), team_a, int(first.get("stadium", 0)))
+	var palette := RomPalette.make(4, PackedStringArray(MwScreenPalettes.RINK), team_a, int(first.get("stadium", 0)))
 	palette.team_b = int(first.get("team_b", 5))
 	view = load("res://src/rink3d/rink_view_3d.tscn").instantiate()
 	view.palette = palette
@@ -172,9 +174,9 @@ func _on_tick() -> void:
 
 ## Pass [member at] into the view, the players turned for the camera's heading.
 func _present(continuous: bool) -> void:
-	var p: Dictionary = passes[at]
-	var state := MwRinkState.from_dict(rom, p["state"])
-	drawer.build(state, p.get("phase_adds", []))
+	var pass_record: Dictionary = passes[at]
+	var state := MwRinkState.from_dict(rom, pass_record["state"])
+	drawer.build(state, pass_record.get("phase_adds", []))
 	var tiles := {}
 	for slot in 4:
 		var v: Array = state.plates[slot]
@@ -230,18 +232,19 @@ func _place(g: Vector3) -> void:
 	while i < shots.size() - 1 and film >= t0 + shots[i][0]:
 		t0 += shots[i][0]
 		i += 1
-	var s: Array = shots[i]
+	var shot: Array = shots[i]
 	var local := film - t0
-	var pose: Array = s[3].call(local / s[0], focus, g)
-	if i > 0 and s[1] > 0.0 and local < s[1]:
+	var pose: Array = shot[3].call(local / shot[0], focus, g)
+	if i > 0 and shot[1] > 0.0 and local < shot[1]:
 		var before: Array = shots[i - 1][3].call(1.0, focus, g)
-		var w := smoothstep(0.0, 1.0, local / s[1])
-		pose = [(before[0] as Vector3).lerp(pose[0], w), (before[1] as Vector3).lerp(pose[1], w), lerpf(before[2], pose[2], w)]
+		var w := smoothstep(0.0, 1.0, local / shot[1])
+		pose = [(before[0] as Vector3).lerp(pose[0], w), (before[1] as Vector3).lerp(pose[1], w),
+				lerpf(before[2], pose[2], w)]
 	if i != _shot_shown:
 		_shot_shown = i
-		print("shot %d: %s" % [i + 1, s[2]])
+		print("shot %d: %s" % [i + 1, shot[2]])
 	var from: Vector3 = pose[0]
 	var to: Vector3 = pose[1]
-	var p := MwRink3D.world(from.x, from.y, from.z)
+	var point := MwRink3D.world(from.x, from.y, from.z)
 	cam.fov = pose[2]
-	cam.transform = Transform3D(Basis.looking_at(MwRink3D.world(to.x, to.y, to.z) - p, Vector3.UP), p)
+	cam.transform = Transform3D(Basis.looking_at(MwRink3D.world(to.x, to.y, to.z) - point, Vector3.UP), point)

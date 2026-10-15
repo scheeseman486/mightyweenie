@@ -8,17 +8,29 @@ extends "res://test/rom/rom_test_base.gd"
 
 var sim: MwRinkSim
 var s: MwRinkState
+## The sound driver's model (plan 40, D6: the sims play live, so they ask
+## the driver whether a sound plays, as in the game).
+var audio: MwAudio
 const NONE := [0, 0, 0, 0]
 
 
-class Idle:
-	func think(_sim: MwRinkSim, _p: MwRinkState.Player, _team: MwRinkState.Team, _other: MwRinkState.Team) -> void:
-		pass
+func after_each() -> void:
+	MwSound.driver = null
+	if audio != null:
+		audio.free()
+		audio = null
+
+
+## CPU players that stay put (plan 40: test/support/idle_cpu.gd).
+const Idle := preload("res://test/support/idle_cpu.gd")
 
 
 func before_each() -> void:
 	if rom.is_empty():
 		return
+	audio = MwAudio.new()
+	audio.setup(rom, false, false)
+	MwSound.driver = audio
 	s = MwRinkState.new()
 	s.rng = MlhRng.new(1234)
 	sim = MwRinkSim.new(rom, s)
@@ -103,12 +115,12 @@ func test_goal_comment() -> void:
 			"a piece reaching below the boards")
 	var layer := MwSpriteLayer.new()
 	add_child_autofree(layer)
-	for e: Array in cut:
-		var w := 8 * (((int(e[2]) >> 2) & 3) + 1)
-		var img := layer._cut(e, []).get_image()
+	for entry: Array in cut:
+		var w := 8 * (((int(entry[2]) >> 2) & 3) + 1)
+		var img := layer._cut(entry, []).get_image()
 		for y in img.get_height():
 			for x in w:
-				if int(e[1]) + y >= row:
+				if int(entry[1]) + y >= row:
 					assert_eq(img.get_pixel(x, y).r8, 0, "nothing below the boards")
 	MwScreenDraw.cut_rows = false
 	assert_true(MwScreenDraw.new(rom).list(s, sb.sprite_ops).all(func(e: Array) -> bool: return e.size() == 6),
@@ -232,29 +244,30 @@ func test_zamboni() -> void:
 	s.phase = 5
 	var sb := MwScoreboardSim.new(rom)
 	sb.enter(s, 14, 5)
-	var z := sb.zamboni
+	var zamboni := sb.zamboni
 	assert_eq(sb.flag, 0)
 	assert_true(sb.music >= 0, "music from the entry")
-	assert_eq([z.x, z.target, z.attr, z.y, z.depth], [-92, 480, 0xA0, 0xD8, 0xF000])
+	assert_eq([zamboni.x, zamboni.target, zamboni.attr, zamboni.y, zamboni.depth], [-92, 480, 0xA0, 0xD8, 0xF000])
 	for i in 4:
-		assert_true(z.debris_x[i] >= 32 + 80 * i and z.debris_x[i] < 96 + 80 * i, "debris %d spread out" % i)
+		assert_true(zamboni.debris_x[i] >= 32 + 80 * i and zamboni.debris_x[i] < 96 + 80 * i,
+				"debris %d spread out" % i)
 	var turned := false
 	for i in 800:
 		_run_pass(sb, 1)
-		if z.target < 0:
+		if zamboni.target < 0:
 			turned = true
 			break
 	assert_true(turned, "turned at 480")
-	assert_eq(z.attr & 8, 8, "flipped")
+	assert_eq(zamboni.attr & 8, 8, "flipped")
 	for i in 4:
-		assert_eq(z.debris_x[i], MwScoreboardSim.Zamboni.GONE, "debris %d picked up" % i)
+		assert_eq(zamboni.debris_x[i], MwScoreboardSim.Zamboni.GONE, "debris %d picked up" % i)
 	# D-pad presses queue cracks
 	_run_pass(sb, 1, [0x01, 0, 0, 0])
 	_run_pass(sb, 1, [0, 0x08, 0, 0])
-	assert_eq(z.cracks, 2)
+	assert_eq(zamboni.cracks, 2)
 	for i in 400:
 		_run_pass(sb, 1)
-	assert_eq(z.cracks, 0, "the cracks played")
+	assert_eq(zamboni.cracks, 0, "the cracks played")
 
 
 # --- 17 ------------------------------------------------------------------------------------------
@@ -262,8 +275,8 @@ func test_zamboni() -> void:
 func _call(p: MwRinkState.Player, code: int) -> void:
 	p.flags |= MwRinkState.Player.IN_BOX
 	p.penalty = code & 0xFF
-	var t := sim.team_of(p)
-	MwRinkPenalties.set_byte(t, MwRinkPenalties.PENDING, MwRinkPenalties.byte(t, MwRinkPenalties.PENDING) + 1)
+	var team := sim.team_of(p)
+	MwRinkPenalties.set_byte(team, MwRinkPenalties.PENDING, MwRinkPenalties.byte(team, MwRinkPenalties.PENDING) + 1)
 
 
 func test_penalty_sequence() -> void:
@@ -271,20 +284,20 @@ func test_penalty_sequence() -> void:
 		return
 	s.penalties = 1
 	s.phase = 2
-	var a := s.teams[0].players[2]
-	var b := s.teams[1].players[1]
-	_call(b, -3)
-	_call(a, -4)
+	var team_a_player := s.teams[0].players[2]
+	var player := s.teams[1].players[1]
+	_call(player, -3)
+	_call(team_a_player, -4)
 	var sb := MwMessageScoreboardSim.new(rom)
 	sb.enter(s, 17, 5)
 	assert_eq(sb.state, 0)
 	assert_eq(sb.lockout, 0)
 	_run_pass(sb, 1)
-	assert_eq(sb.current, a, "team A's called player first")
+	assert_eq(sb.current, team_a_player, "team A's called player first")
 	assert_eq(sb.state, 1)
 	assert_eq(sb.panel.dir, 1, "the panel opens")
 	var states := [1]
-	var order := [a]
+	var order := [team_a_player]
 	for i in 3000:
 		_run_pass(sb, 1)
 		if states[states.size() - 1] != sb.state:
@@ -293,18 +306,18 @@ func test_penalty_sequence() -> void:
 			order.append(sb.current)
 		if sb.state == MwMessageScoreboardSim.MENU and sb.menu != 0:
 			break
-	assert_eq(order, [a, b], "then team B's")
+	assert_eq(order, [team_a_player, player], "then team B's")
 	assert_eq(sb.side, -1)
 	assert_eq(states.slice(0, 6), [1, 2, 3, 4, 5, 6], "(7 may end in 6's pass)")
 	assert_eq(sb.state, MwMessageScoreboardSim.MENU, "the menu by itself")
 	assert_eq(MwRinkPenalties.count(s.teams[0]), 1)
 	assert_eq(MwRinkPenalties.count(s.teams[1]), 1)
-	assert_false(a.present, "off the ice")
+	assert_false(team_a_player.present, "off the ice")
 	for t in 2:
 		assert_true(MwRinkPenalties.byte(s.teams[t], MwRinkPenalties.entry(0) + 6) & 0x80 != 0, "entry shown")
 	# the walker stopped level with his entry, in the box's column
-	assert_eq(b.motion.pixels().x, MwMessageScoreboardSim.BOX_DOOR)
-	assert_true(absi(b.motion.pixels().y) >= 52)
+	assert_eq(player.motion.pixels().x, MwMessageScoreboardSim.BOX_DOOR)
+	assert_true(absi(player.motion.pixels().y) >= 52)
 	for i in 30:
 		_run_pass(sb, 1)
 	assert_eq(_run_pass(sb, 1, [0, 0, 0x40, 0]), 8, "A (any pad) -> 8")
@@ -387,9 +400,9 @@ func test_box_display() -> void:
 	if not need_rom():
 		return
 	s.penalties = 1
-	var a := s.teams[0].players[2]
-	_call(a, -3)
-	var i := sim.penalties.put_in_box(a)
+	var player := s.teams[0].players[2]
+	_call(player, -3)
+	var i := sim.penalties.put_in_box(player)
 	var team := s.teams[0]
 	var at := MwRinkPenalties.entry(i)
 	var sb := MwMessageScoreboardSim.new(rom)
@@ -420,15 +433,17 @@ func test_human_sent_to_the_box_hands_control_on() -> void:
 	var sb := MwMessageScoreboardSim.new(rom)
 	sb.enter(s, 17, 5)
 	# `$1856` reads 17's stack frame as the puck: a neutral-zone point at (-77, 0)
-	var v := sb.rink.human.a6_view
-	assert_eq([MwRinkSim.asr(v.x, 8), v.y, v.vx, v.vy, v.flags & 1], [-0x4D, 0, 0, 0, 0])
+	var puck_view := sb.rink.human.a6_view
+	assert_eq([MwRinkSim.asr(puck_view.x, 8), puck_view.y, puck_view.vx, puck_view.vy, puck_view.flags & 1],
+			[-0x4D, 0, 0, 0, 0])
 	for i in 400:
 		_run_pass(sb, 1)
 		if not called.present:
 			break
 	assert_false(called.present, "in the box")
 	assert_eq(called.flags & MwRinkState.Player.HUMAN, 0, "control handed on")
-	var humans := team.players.filter(func(p: MwRinkState.Player) -> bool: return p.flags & MwRinkState.Player.HUMAN != 0)
+	var humans := team.players.filter(func(p: MwRinkState.Player) -> bool: return p.flags \
+			& MwRinkState.Player.HUMAN != 0)
 	assert_eq(humans.size(), 1, "to one team-mate")
 
 

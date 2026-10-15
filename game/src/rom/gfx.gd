@@ -10,28 +10,46 @@ extends RefCounted
 ## any line is transparent, so it stays 0.
 
 # --- big-endian reads ------------------------------------------------------------
+## The byte at [param a] of [param rom], unsigned.
 static func u8(rom: PackedByteArray, a: int) -> int:
 	return rom[a]
 
 
+## The byte at [param a] of [param rom], sign-extended (-128..127).
 static func s8(rom: PackedByteArray, a: int) -> int:
 	var v := rom[a]
 	return v - 256 if v >= 128 else v
 
 
+## The big-endian word at [param a] of [param rom], unsigned.
 static func u16(rom: PackedByteArray, a: int) -> int:
 	return (rom[a] << 8) | rom[a + 1]
 
 
+## The big-endian word at [param a] of [param rom], sign-extended.
 static func s16(rom: PackedByteArray, a: int) -> int:
 	var v := u16(rom, a)
 	return v - 0x10000 if v >= 0x8000 else v
 
 
+## The big-endian long at [param a] of [param rom], unsigned.
 static func u32(rom: PackedByteArray, a: int) -> int:
 	return (rom[a] << 24) | (rom[a + 1] << 16) | (rom[a + 2] << 8) | rom[a + 3]
 
 
+## Plan 40 (D8): [param v]'s low word into [param b] at [param a], big-endian.
+static func put_u16(b: PackedByteArray, a: int, v: int) -> void:
+	b[a] = (v >> 8) & 0xFF
+	b[a + 1] = v & 0xFF
+
+
+## [param v]'s low long into [param b] at [param a], big-endian.
+static func put_u32(b: PackedByteArray, a: int, v: int) -> void:
+	for k in 4:
+		b[a + k] = (v >> (24 - 8 * k)) & 0xFF
+
+
+## [param count] big-endian words from [param a] of [param rom], unsigned.
 static func words(rom: PackedByteArray, a: int, count: int) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	out.resize(count)
@@ -72,11 +90,14 @@ static func color_rgb8(word: int) -> PackedByteArray:
 	return PackedByteArray([r * 255 / 7, g * 255 / 7, b * 255 / 7])
 
 
+## Genesis colour word [param word] as a [Color] ([method color_rgb8]'s channels).
 static func color(word: int) -> Color:
 	var c := color_rgb8(word)
 	return Color8(c[0], c[1], c[2])
 
 
+## [param count] colour words from [param a] as 8-bit RGB, three bytes each
+## ([method color_rgb8]), concatenated.
 static func palette_rgb(rom: PackedByteArray, a: int, count := 16) -> PackedByteArray:
 	var out := PackedByteArray()
 	for w in words(rom, a, count):
@@ -147,6 +168,8 @@ static func piece(rom: PackedByteArray, a: int) -> Dictionary:
 			"attr": rom[a + 3], "tile": u16(rom, a + 4)}
 
 
+## A sprite frame's pieces: the count word at [param a], then that many 6-byte
+## pieces ([method piece]).
 static func frame_pieces(rom: PackedByteArray, a: int) -> Array:
 	var out := []
 	for i in u16(rom, a):
@@ -158,14 +181,83 @@ static func frame_pieces(rom: PackedByteArray, a: int) -> Array:
 static func flip_pieces(pieces: Array, flips: int) -> Array:
 	var out := []
 	for p in pieces:
-		var q: Dictionary = p.duplicate()
+		var mirrored: Dictionary = p.duplicate()
 		if flips & 1:
-			q["x"] = -p["x"] - 8 * p["w"]
-			q["attr"] = q["attr"] ^ 0x08
+			mirrored["x"] = mirror_offset(p["x"], 8 * p["w"], true)
+			mirrored["attr"] = mirrored["attr"] ^ 0x08
 		if flips & 2:
-			q["y"] = -p["y"] - 8 * p["h"]
-			q["attr"] = q["attr"] ^ 0x10
-		out.append(q)
+			mirrored["y"] = mirror_offset(p["y"], 8 * p["h"], true)
+			mirrored["attr"] = mirrored["attr"] ^ 0x10
+		out.append(mirrored)
+	return out
+
+
+## Plan 40 (R3): a piece's offset [param at] (frame px, one axis) as a
+## mirrored frame places it ([param flip]; `$156C6`): -(at + [param size_px]),
+## the piece's far edge now at the frame's point - the menus' frames, the
+## rink's sprite list and the 3D sprites mirror through this.
+static func mirror_offset(at: int, size_px: int, flip: bool) -> int:
+	return -at - size_px if flip else at
+
+
+## Plan 40 (R3): where a piece's tiles come from ([method blit_piece]) - the
+## ROM, the RAM tiles a screen built ([member ram]: tile -> 32 bytes of 4-bit
+## pixels: the info plates), the port's input glyphs ([member glyphs]: tiles
+## from MwGlyphs.KEY_BASE) and, for the rink's sprites, the original's sprite
+## tile cache bug ([member quirk], MwSpriteCacheQuirk).
+class TileSource:
+	var rom: PackedByteArray
+	var quirk := false
+	var ram := {}
+	var glyphs := false
+
+	func _init(rom_ := PackedByteArray(), quirk_ := false, ram_ := {}, glyphs_ := false) -> void:
+		rom = rom_
+		quirk = quirk_
+		ram = ram_
+		glyphs = glyphs_
+
+	## Tile [param n] (column-major) of the piece whose first tile is
+	## [param tile] (size byte [param size]): 64 colour indices; empty, none.
+	func indices(tile: int, size: int, n: int) -> PackedByteArray:
+		if tile < 0x800:
+			var raw: PackedByteArray = ram.get(tile + n, PackedByteArray())
+			return MwGfx.unpack4(raw) if raw.size() == 32 else PackedByteArray()
+		if glyphs and tile >= MwGlyphs.KEY_BASE:
+			return MwGlyphs.tiles().get(tile + n, PackedByteArray())
+		var shown := MwSpriteCacheQuirk.tile(tile, size, n) if quirk else tile + n
+		if shown < 0x800 or (shown << 5) + 32 > rom.size():
+			return PackedByteArray()
+		return MwGfx.tile_indices(rom, shown << 5)
+
+
+## Plan 40 (R3): one piece drawn into the indexed image [param img]
+## ([param stride] px a row): its tiles (from [param tile], size byte
+## [param size]: column-major cells, from [param source]) at ([param x],
+## [param y]) on palette line [param line], mirrored by [param hf] /
+## [param vf] - the one tile walk of the menus' frames ([method frame_image]),
+## the 2D sprite layer's pieces and the 3D sprites' frames.
+static func blit_piece(img: PackedByteArray, stride: int, x: int, y: int, tile: int, size: int, line: int,
+		hf: bool, vf: bool, source: TileSource) -> void:
+	var w := ((size >> 2) & 3) + 1
+	var h := (size & 3) + 1
+	for cx in w:
+		for cy in h:
+			var t := source.indices(tile, size, cx * h + cy)
+			if t.is_empty():
+				continue
+			var dx := w - 1 - cx if hf else cx
+			var dy := h - 1 - cy if vf else cy
+			blit_tile(img, stride, x + dx * 8, y + dy * 8, t, line, hf, vf)
+
+
+## 32 bytes of 4-bit pixels -> 64 colour indices (a tile built in RAM).
+static func unpack4(raw: PackedByteArray) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(64)
+	for i in 32:
+		out[2 * i] = raw[i] >> 4
+		out[2 * i + 1] = raw[i] & 15
 	return out
 
 
@@ -194,21 +286,15 @@ static func frame_image(rom: PackedByteArray, pieces: Array, flips := 0, bounds 
 	var h: int = b[3] - b[1]
 	var img := PackedByteArray()
 	img.resize(w * h)
-	for p: Dictionary in pieces:
-		if p["tile"] < 0x800:
+	var source := TileSource.new(rom)
+	for part: Dictionary in pieces:
+		if part["tile"] < 0x800:
 			continue
-		var base: int = p["tile"] << 5
-		if base + 32 * p["w"] * p["h"] > rom.size():
+		var base: int = part["tile"] << 5
+		if base + 32 * part["w"] * part["h"] > rom.size():
 			continue                      # not a frame (bad data): draw nothing
-		var hf: bool = (p["attr"] & 0x08) != 0
-		var vf: bool = (p["attr"] & 0x10) != 0
-		var line: int = (p["attr"] >> 5) & 3
-		for cx in p["w"]:
-			for cy in p["h"]:
-				var t := tile_indices(rom, base + 32 * (cx * p["h"] + cy))
-				var dx: int = p["w"] - 1 - cx if hf else cx
-				var dy: int = p["h"] - 1 - cy if vf else cy
-				blit_tile(img, w, p["x"] - b[0] + dx * 8, p["y"] - b[1] + dy * 8, t, line, hf, vf)
+		blit_piece(img, w, part["x"] - b[0], part["y"] - b[1], part["tile"], ((part["w"] - 1) << 2) | (part["h"] - 1),
+				(part["attr"] >> 5) & 3, (part["attr"] & 0x08) != 0, (part["attr"] & 0x10) != 0, source)
 	return {"ox": -b[0], "oy": -b[1], "w": w, "h": h, "px": img}
 
 
@@ -221,14 +307,16 @@ static func animation(rom: PackedByteArray, a: int) -> Dictionary:
 	var pos := a + 8
 	while end < 0 or pos < end:
 		var w := u16(rom, pos)
-		var lst := a + (w >> 2)
-		variants.append([lst, w & 3])
-		end = lst if end < 0 else mini(end, lst)
+		var list_at := a + (w >> 2)
+		variants.append([list_at, w & 3])
+		end = list_at if end < 0 else mini(end, list_at)
 		pos += 2
 	return {"address": a, "speed": u16(rom, a), "flags": rom[a + 2], "count": rom[a + 3],
 			"frames": u32(rom, a + 4), "variants": variants}
 
 
+## Variant [param variant]'s frame list of [param anim] ([method animation]): its
+## [code]count[/code] words, each a frame's offset from [code]frames[/code].
 static func anim_offsets(rom: PackedByteArray, anim: Dictionary, variant := 0) -> PackedInt32Array:
 	return words(rom, anim["variants"][variant][0], anim["count"])
 
@@ -247,7 +335,7 @@ static func anim_frame_addresses(rom: PackedByteArray, anim: Dictionary) -> Pack
 ## Frames per second of an animation: position advances speed/256 frames per
 ## 60 Hz tick ($143CA).
 static func anim_fps(anim: Dictionary) -> float:
-	return 60.0 * anim["speed"] / 256.0
+	return float(MwRouter.TICK_HZ) * anim["speed"] / 256.0
 
 
 # --- fonts -----------------------------------------------------------------------------------
@@ -319,9 +407,10 @@ static func text_glyphs(rom: PackedByteArray, font: int, text: PackedByteArray, 
 		var g := font_glyph(rom, font, c)
 		if g < 0:
 			continue
-		var p := piece(rom, font + 8 + 6 * g)
-		out.append({"x": x, "y": y + baseline - int(p["h"]), "w": p["w"], "h": p["h"], "tiles": int(p["tile"]) * 32})
-		x += int(p["w"])
+		var glyph := piece(rom, font + 8 + 6 * g)
+		out.append({"x": x, "y": y + baseline - int(glyph["h"]), "w": glyph["w"], "h": glyph["h"],
+				"tiles": int(glyph["tile"]) * 32})
+		x += int(glyph["w"])
 	return out
 
 
@@ -360,6 +449,7 @@ static func string_list(rom: PackedByteArray, a: int) -> PackedInt32Array:
 
 
 # --- hashes (compare/fixtures/gfx_hashes.json) ------------------------------------------------
+## SHA-1 of [param data] as lower-case hex.
 static func sha1(data: PackedByteArray) -> String:
 	var ctx := HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA1)
@@ -385,12 +475,12 @@ static func catalogue_hashes(rom: PackedByteArray, cat: Dictionary) -> Dictionar
 	var out := {}
 	var entries: Dictionary = cat["entries"]
 	for key in entries:
-		var e: Dictionary = entries[key]
-		var a := int(e["address"])
-		match e["kind"]:
+		var entry: Dictionary = entries[key]
+		var a := int(entry["address"])
+		match entry["kind"]:
 			"picture", "tilebank":
-				out[key + "/tiles"] = sha1(tiles(rom, int(e["tiles"]), int(e["count"])))
-				if e["kind"] == "picture":
+				out[key + "/tiles"] = sha1(tiles(rom, int(entry["tiles"]), int(entry["count"])))
+				if entry["kind"] == "picture":
 					var img := picture_image(rom, picture(rom, a))
 					out[key + "/image"] = sha1(_be16(img["w"]) + _be16(img["h"]) + img["px"])
 			"palette":
@@ -409,16 +499,16 @@ static func catalogue_hashes(rom: PackedByteArray, cat: Dictionary) -> Dictionar
 				var cmap := font_char_map(rom, a)
 				var chars := cmap.keys()
 				chars.sort()
-				var s := ""
+				var text := ""
 				for c in chars:
-					s += "%s%02x" % [c, cmap[c]]
-				data.append_array(s.to_utf8_buffer())
+					text += "%s%02x" % [c, cmap[c]]
+				data.append_array(text.to_utf8_buffer())
 				out[key] = sha1(data)
 			"map":
 				var data := PackedByteArray()
-				for r in int(e["rows"]):
-					for c in int(e["cols"]):
-						data.append_array(_be16(u16(rom, a + r * int(e["src_stride"]) + 2 * c)))
+				for r in int(entry["rows"]):
+					for c in int(entry["cols"]):
+						data.append_array(_be16(u16(rom, a + r * int(entry["src_stride"]) + 2 * c)))
 				out[key] = sha1(data)
 	for group in cat.get("frames", {}):
 		var data := PackedByteArray()
@@ -431,10 +521,10 @@ static func catalogue_hashes(rom: PackedByteArray, cat: Dictionary) -> Dictionar
 			data.append_array(frame_record(rom, [piece(rom, int(p))]))
 		out["pieces/" + caller] = sha1(data)
 	for key in entries:
-		var e: Dictionary = entries[key]
-		if e["kind"] == "font":
-			for sa in e.get("strings", []):
-				var img := text_image(rom, int(e["address"]), rom_string(rom, int(sa)))
+		var font_entry: Dictionary = entries[key]
+		if font_entry["kind"] == "font":
+			for sa in font_entry.get("strings", []):
+				var img := text_image(rom, int(font_entry["address"]), rom_string(rom, int(sa)))
 				var rec := _be16(int(img["top"]) & 0xFFFF) + _be16(img["w"]) + _be16(img["h"])
 				rec.append_array(img["px"])
 				out["text/%s/%06x" % [key, int(sa)]] = sha1(rec)

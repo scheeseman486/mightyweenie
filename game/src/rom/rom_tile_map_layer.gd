@@ -81,18 +81,20 @@ func _validate_property(property: Dictionary) -> void:
 
 ## Map words and size: {cols, rows, word(x, y)} for the map key.
 func _map_source() -> Dictionary:
-	var e := MwRom.entry(map)
-	if e.is_empty():
+	var asset := MwRom.entry(map)
+	if asset.is_empty():
 		return {}
-	var rom := MwRom.data()
-	if e["kind"] == "picture":
-		var w := int(e["width"])
-		var base := int(e["map"])
-		return {"cols": w, "rows": int(e["height"]), "addr": func(x: int, y: int) -> int: return base + 2 * (y * w + x)}
-	if e["kind"] == "map":
-		var base := int(e["address"])
-		var stride := int(e["src_stride"])
-		return {"cols": int(e["cols"]), "rows": int(e["rows"]), "addr": func(x: int, y: int) -> int: return base + y * stride + 2 * x}
+	MwRom.data()                  # (the ROM loaded first, as before)
+	if asset["kind"] == "picture":
+		var w := int(asset["width"])
+		var base := int(asset["map"])
+		return {"cols": w, "rows": int(asset["height"]), \
+				"addr": func(x: int, y: int) -> int: return base + 2 * (y * w + x)}
+	if asset["kind"] == "map":
+		var base := int(asset["address"])
+		var stride := int(asset["src_stride"])
+		return {"cols": int(asset["cols"]), "rows": int(asset["rows"]), \
+				"addr": func(x: int, y: int) -> int: return base + y * stride + 2 * x}
 	return {}
 
 

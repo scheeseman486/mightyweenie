@@ -29,25 +29,26 @@ const GROUP_ROUGH := 12.0               # ... with this much noise on the distan
 
 
 ## Every team's skulls (team record +$B; the playoffs' and the AI's
-## strength, 0-6).
+## strength, 0-6), custom teams' too (plan 38: their fans come to their
+## games; the random fans stay the original's teams, [method assign]).
 static func skulls(rom: PackedByteArray) -> PackedInt32Array:
 	var out := PackedInt32Array()
-	for t in TEAMS:
-		out.append(rom[MwTeams.record(t) + 0x0B])
+	for t in MwCustomTeams.readable():
+		out.append(MwTeams.skulls(rom, t))
 	return out
 
 
 ## A team's share factor by its [param skull_count]: 0.8 (none) .. 1.2 (six).
 static func ability(skull_count: int) -> float:
-	var s := clampf(skull_count, 0, MAX_SKULLS) / MAX_SKULLS
-	return 1.0 - ABILITY_MARGIN + 2.0 * ABILITY_MARGIN * s
+	var fraction := clampf(skull_count, 0, MAX_SKULLS) / MAX_SKULLS
+	return 1.0 - ABILITY_MARGIN + 2.0 * ABILITY_MARGIN * fraction
 
 
 ## The random numbers of a matchup: the same teams at the same stadium,
 ## the same crowd.
 static func rng_for(team_a: int, team_b: int, stadium: int) -> RandomNumberGenerator:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 0x4D4C48 + ((team_a * TEAMS + team_b) * TEAMS + stadium) * 2654435761
+	rng.seed = MwSeed.knuth((team_a * TEAMS + team_b) * TEAMS + stadium, 0x4D4C48)
 	return rng
 
 
@@ -86,8 +87,8 @@ static func assign(seats: Array, team_a: int, team_b: int, stadium: int,
 			left -= size
 	_shuffle(groups, rng)
 	var pos := PackedVector3Array()
-	for s: Dictionary in seats:
-		pos.append(s["pos"])
+	for seat: Dictionary in seats:
+		pos.append(seat["pos"])
 	var free := n
 	for g: Array in groups:
 		if free == 0:

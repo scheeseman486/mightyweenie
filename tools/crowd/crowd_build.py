@@ -105,7 +105,7 @@ def build(rom: bytes) -> tuple:
             "picture: the rink picture's address ($24CFC). Coordinates are the picture's.",
             "instances: [x, y, mirrored, team_brown, swap], window top-left; a line-1 (crowd) instance",
             "is on the left half and also stands mirrored in the right half (x' = 512 - x - w); a",
-            "figure on another line (the pen's referee) stands once, where given. team_brown: brown",
+            "figure on another line (Satan) stands once, where given. team_brown: brown",
             "drawn as colour 25; swap: 0 or 1 + index into swaps (colour pairs [from, to]).",
             "inventory: the left half's crowd pixels by owner (figure, seat, background, scrap).",
             "template_hash: crowd_lib.template_hash of the figure's template (parity test).",
@@ -417,7 +417,7 @@ def paint_sheet(rom: bytes, built, where: Path = PAINT) -> None:
         width = max(width, x)
         y += row_h + gap
     # every crowd figure as it is now, to look at (owner): the picture's and
-    # the made ones, fronts then backs (line 1: the pen's referee is not in
+    # the made ones, fronts then backs (line 1: Satan is not in
     # these colours)
     wrap = max(width, 480)
     section_y = y

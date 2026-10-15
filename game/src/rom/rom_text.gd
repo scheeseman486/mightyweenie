@@ -77,8 +77,8 @@ func _validate_property(property: Dictionary) -> void:
 
 ## Font record address.
 func font_address() -> int:
-	var e := MwRom.entry(font)
-	return int(e["address"]) if not e.is_empty() else font.hex_to_int()
+	var entry := MwRom.entry(font)
+	return int(entry["address"]) if not entry.is_empty() else font.hex_to_int()
 
 
 ## The string's bytes.
@@ -96,6 +96,8 @@ func start_cell() -> Vector2i:
 	return cell
 
 
+## The texture made again from the font, the string and the cell (and
+## [member width]); nothing drawn without a font or the ROM.
 func rebuild() -> void:
 	texture = null
 	width = 0

@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# A mock online game to play in (docs/net.md "The mock session"): you play
+# from the real game, in its window, as a client of a headless host; every
+# other player is a bot on a headless machine of its own
+# (game/test/net/mock_machine.gd: the host and its clients, real ENet with
+# DTLS on 127.0.0.1); your link to the host goes through the chaos proxy
+# (tools/net/chaos_proxy.py) at the ping you choose - and change as you play,
+# typing in this terminal. Your game joins by itself (-- --join); the host
+# starts once everyone is in and the bots play game after game. Your game's
+# options, bindings and pads are your own.
+#   tools/bin/net-mock [options]
+#     --ping MS         your round trip to the host (default 250: half each way)
+#     --jitter MS       up to this much more each way (default 0)
+#     --loss PCT        your link's loss each way (default 0)
+#     --players N       the players in the game, yours among them (default 12,
+#                       at most 12; odd numbers' bots go to team A, even to B;
+#                       your first player starts on their number's side -
+#                       change it if there is room; with --position any, you
+#                       choose)
+#     --machines N      the machines they play on, the host's and yours among
+#                       them (default 4; each bot machine is a Godot process)
+#     --you N           your machine's players (default 1; more: the bots
+#                       leave room, and the host waits, for your next players
+#                       to join in the lobby with a press of theirs)
+#     --position P      your position on the character selection: center
+#                       (the default; centre or C too), LW, RW, defence (LD),
+#                       RD, goalie (G), or any (none: wherever the bots leave
+#                       you, as before) - your cursor starts on it (the one
+#                       your first player last played) and your team's bots
+#                       take every other one first: accept, and it's yours
+#     --bots-ping MS    the bots' machines' round trip to the host (default 60)
+#     --start-after S   START GAME S seconds after everyone is in (default 8;
+#                       "start" in the terminal: at once)
+#     --minutes N       period length (default 2)
+#     --wait N          ticks before the bots press on a scoreboard (default 400)
+#     --port N          the host's port (default 42150); your proxy listens on
+#                       N+1, the bots' on N+2 ...
+#     --password P      (default MOCK)
+#     --seed N          the proxy's and the bots' seed (default 1)
+#     --no-launch       start no game: join 127.0.0.1:<port+1> with the
+#                       password yourself (from the editor's Run, say)
+#     --headless-you    (tests) a headless bot machine plays in your place
+#     --no-input-stamps the host merges each machine's input as it comes
+#                       (plan 41's merge), not at the tick each state is
+#                       stamped for (plan 43, the default) - to compare
+#     --game-args "A B" more arguments for your game (plan 41's switches:
+#                       --no-runahead, --runahead-budget=MS, --no-local-echo,
+#                       --no-sound-split; --net-feel=S, default 10)
+#   As it runs, type: ping MS, jitter MS, loss PCT, bots-ping MS, start,
+#   status, feel, help, quit (Ctrl+C or closing your game quits too). Your
+#   game prints a line on the online feel every 10 s in play (--net-feel:
+#   the run-ahead's rollbacks and time, the predicted sounds) to you.log;
+#   "feel" shows the last.
+# The logs: out/net/mock/<time>/ (the host's: host.log); the host keeps its
+# key in out/net/mock/host, so your game knows it from one run to the next.
+# MW_GODOT names another Godot binary.
+set -u
+here="$(dirname "${BASH_SOURCE[0]}")"
+source "$here/_common.sh"
+
+ping=250 jitter=0 loss=0 players=12 machines=4 you=1 bots_ping=60 start_after=8 minutes=2 wait_ticks=400
+port=42150 password=MOCK seed=1 launch=game game_args="" position=center stamps_args=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --ping) ping=$2; shift ;;
+    --jitter) jitter=$2; shift ;;
+    --loss) loss=$2; shift ;;
+    --players) players=$2; shift ;;
+    --machines) machines=$2; shift ;;
+    --you) you=$2; shift ;;
+    --position) position=$2; shift ;;
+    --bots-ping) bots_ping=$2; shift ;;
+    --start-after) start_after=$2; shift ;;
+    --minutes) minutes=$2; shift ;;
+    --wait) wait_ticks=$2; shift ;;
+    --port) port=$2; shift ;;
+    --password) password=$2; shift ;;
+    --seed) seed=$2; shift ;;
+    --no-launch) launch=none ;;
+    --headless-you) launch=headless ;;
+    --no-input-stamps) stamps_args=(--no-input-stamps 1) ;;   # (mock_machine.gd's options take a value)
+    --game-args) game_args=$2; shift ;;
+    -h|--help) sed -n '2,/^# MW_GODOT/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "net-mock: unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+case ${position,,} in                  # MwLineup's positions: C LW RW over LD RD G
+  center|centre|c) leave_free=0 ;; lw) leave_free=1 ;; rw) leave_free=2 ;; defence|defense|ld) leave_free=3 ;;
+  rd) leave_free=4 ;; goalie|g) leave_free=5 ;; any) leave_free=-1 ;;
+  *) echo "net-mock: --position is center, defence, goalie, C, LW, RW, LD, RD, G or any" >&2; exit 2 ;;
+esac
+bots=$((players - you))
+bot_machines=$((machines - 1))          # the host's and the bot clients
+if ((players > 12 || players < 2)); then echo "net-mock: --players is 2 to 12" >&2; exit 2; fi
+if ((you < 1 || bots < 1)); then echo "net-mock: --you leaves no bots (--players $players)" >&2; exit 2; fi
+if ((machines < 2 || bot_machines > bots)); then
+  echo "net-mock: --machines is 2 to $((bots + 1)) for $bots bot players" >&2; exit 2
+fi
+# the bots spread over their machines, the host first
+locals=()
+for ((m = 0; m < bot_machines; m++)); do
+  locals+=($((bots / bot_machines + (m < bots % bot_machines ? 1 : 0))))
+done
+
+godot_headless=("$here/godot-headless")
+base="$MW_ROOT/out/net/mock"
+run="$base/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$run" "$base"
+link="$run/link.json"                   # your proxy's control file
+bots_link="$run/bots-link.json"
+control="$run/host.control"
+: > "$control"
+
+pids=()
+cleanup() {
+  trap - EXIT INT TERM
+  for p in "${pids[@]}"; do pkill -TERM -P "$p" 2>/dev/null; kill -TERM "$p" 2>/dev/null; done
+  wait 2>/dev/null
+  echo "net-mock: stopped (logs: ${run#"$MW_ROOT"/})"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+write_link() {  # write_link FILE ROUND_TRIP JITTER LOSS
+  printf '{"delay": %d, "jitter": %d, "loss": %s}\n' "$(($2 / 2))" "$3" "$4" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+write_link "$link" "$ping" "$jitter" "$loss"
+write_link "$bots_link" "$bots_ping" 0 0
+python3 "$MW_TOOLS/net/chaos_proxy.py" --listen "127.0.0.1:$((port + 1))" --upstream "127.0.0.1:$port" \
+  --delay $((ping / 2)) --jitter "$jitter" --loss "$loss" --control "$link" --seed "$seed" \
+  > "$run/you-proxy.log" 2>&1 &
+pids+=($!)
+if ((bot_machines > 1)); then
+  listen=()
+  for ((k = 1; k < bot_machines; k++)); do listen+=(--listen "127.0.0.1:$((port + 1 + k))"); done
+  # (each bot machine reaches the host from an address of its own, 127.0.0.2 ...: the host's
+  # per-address limits would take them for one machine's tries)
+  python3 "$MW_TOOLS/net/chaos_proxy.py" "${listen[@]}" --upstream "127.0.0.1:$port" --spread \
+    --delay $((bots_ping / 2)) --control "$bots_link" --seed "$seed" > "$run/bots-proxy.log" 2>&1 &
+  pids+=($!)
+fi
+
+common=(--dir "$base" --password "$password" --players "$players" --wait "$wait_ticks" --seed "$seed"
+  --leave-free "$leave_free")
+# (--person-from: your machine reaches the host through your proxy from 127.0.0.1, the bots'
+# clients from 127.0.0.2 on - the host seats your first player on --position)
+"${godot_headless[@]}" -s res://test/net/mock_machine.gd -- --role host --port "$port" --locals "${locals[0]}" \
+  --machines "$machines" --start-after "$start_after" --control "$control" --minutes "$minutes" "${common[@]}" \
+  --person-from 127.0.0.1 "${stamps_args[@]}" > "$run/host.log" 2>&1 &
+pids+=($!)
+for _ in $(seq 1 300); do grep -q '^mock host: listening' "$run/host.log" 2>/dev/null && break; sleep 0.2; done
+if ! grep -q '^mock host: listening' "$run/host.log"; then
+  echo "net-mock: the host didn't start:" >&2; tail -5 "$run/host.log" >&2; exit 1
+fi
+for ((k = 1; k < bot_machines; k++)); do
+  "${godot_headless[@]}" -s res://test/net/mock_machine.gd -- --role client --name "$k" \
+    --port "$((port + 1 + k))" --locals "${locals[$k]}" "${common[@]}" > "$run/client$k.log" 2>&1 &
+  pids+=($!)
+done
+status="$base/status.txt"
+in_lobby() { sed -n '1s/.*; \([0-9]*\) machines.*/\1/p' "$status" 2>/dev/null; }
+for _ in $(seq 1 600); do [[ "$(in_lobby)" == "$bot_machines" ]] && break; sleep 0.2; done
+echo "net-mock: $players players on $machines machines - the host's ${locals[0]} bot(s) and $((bot_machines - 1))" \
+  "bot machine(s) (${locals[*]:1}) in; the bots' ping $bots_ping ms"
+you_at="127.0.0.1:$((port + 1))"
+case $launch in
+  game)
+    game=$(mw_godot) || exit 1
+    # shellcheck disable=SC2086
+    "$game" --path "$MW_ROOT/game" -- --join "$you_at" --password "$password" --net-feel=10 $game_args \
+      > "$run/you.log" 2>&1 &
+    game_pid=$!
+    pids+=("$game_pid")
+    echo "net-mock: your game is joining $you_at at $ping ms (jitter $jitter, loss $loss %)" ;;
+  headless)
+    "${godot_headless[@]}" -s res://test/net/mock_machine.gd -- --role client --name you --port "$((port + 1))" \
+      --locals "$you" "${common[@]}" --leave-free -1 --net-feel=10 $game_args > "$run/you.log" 2>&1 &   # (its bot takes what its cursor starts on)
+    game_pid=$!
+    pids+=("$game_pid")
+    echo "net-mock: a headless bot machine joins in your place at $ping ms" ;;
+  none)
+    game_pid=""
+    echo "net-mock: join $you_at with password $password (your link: $ping ms)" ;;
+esac
+echo "net-mock: type help for the commands"
+tail -n 0 -F "$run/host.log" "$run/you-proxy.log" 2>/dev/null \
+  | grep --line-buffered -e '^mock host: \(START\|lobby\|the match\)' -e '^chaos_proxy: now' &
+pids+=($!)
+
+help() {
+  echo "  ping MS      your round trip to the host       jitter MS   up to MS more each way"
+  echo "  loss PCT     your link's loss each way         bots-ping MS  the bots' round trip"
+  echo "  start        START GAME now                    status      the lobby, pings, your link"
+  echo "  feel         your game's last line on the online feel (every 10 s in play: run-ahead, sounds)"
+  echo "  quit         everything stopped"
+}
+while true; do
+  if [[ -n $game_pid ]] && ! kill -0 "$game_pid" 2>/dev/null; then
+    echo "net-mock: your game has quit"; break
+  fi
+  read -r -t 1 cmd arg
+  rc=$?
+  if ((rc > 128)); then continue; fi     # (no line within a second)
+  if ((rc != 0)); then                   # no more input (none was a terminal): until stopped, or the game quits
+    if [[ -z $game_pid ]]; then sleep 1; else wait "$game_pid" 2>/dev/null; echo "net-mock: your game has quit"; break; fi
+    continue
+  fi
+  case $cmd in
+    ping) ping=$arg; write_link "$link" "$ping" "$jitter" "$loss" ;;
+    jitter) jitter=$arg; write_link "$link" "$ping" "$jitter" "$loss" ;;
+    loss) loss=$arg; write_link "$link" "$ping" "$jitter" "$loss" ;;
+    bots-ping) bots_ping=$arg; write_link "$bots_link" "$bots_ping" 0 0 ;;
+    start) echo start > "$control" ;;
+    status) cat "$status" 2>/dev/null; echo "  your link: $ping ms round trip, jitter $jitter ms, loss $loss %" ;;
+    feel) grep '^feel:' "$run/you.log" 2>/dev/null | tail -1 | fold -s -w 110 || true ;;
+    help|"?") help ;;
+    quit|exit|q) break ;;
+    "") ;;
+    *) echo "net-mock: unknown command $cmd (help)" ;;
+  esac
+done

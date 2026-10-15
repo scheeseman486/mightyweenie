@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Nothing ROM-derived in what is about to be committed: every file changed
+# since REF (default main) - committed, modified or new - scanned for the
+# ROM's text and bytes (tools/public/public.py check-files); the files the
+# public mirror publishes (tools/public/manifest.txt) also against its path
+# and text rules. Works in a plan's worktree, from the VM too (tools/bin/git-ro).
+#   tools/bin/public-check [--since REF] [FILE ...]
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+since=main
+if [[ "${1:-}" == --since ]]; then since="$2"; shift 2; fi
+files=("$@")
+if [[ ${#files[@]} -eq 0 ]]; then
+  mapfile -t files < <( { "$here/git-ro" diff --name-only "$since"; "$here/git-ro" ls-files --others --exclude-standard; } \
+    | sort -u)
+fi
+rom="$MW_ROOT/game/rom/mlh.gen"
+[[ -f "$rom" ]] || rom="$MW_MAIN/game/rom/mlh.gen"
+[[ -f "$rom" ]] || { echo "public-check: no ROM (game/rom/mlh.gen) to scan against" >&2; exit 2; }
+exec python3 "$MW_ROOT/tools/public/public.py" check-files --root "$MW_MAIN" --rom "$rom" --tree "$MW_ROOT" "${files[@]}"

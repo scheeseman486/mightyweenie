@@ -58,8 +58,9 @@ func _sim_made() -> void:
 	var st := sim as MwStatsSim
 	if st == null:
 		return
-	st.aux = session.rng_aux if session != null else MlhRng.new((randi() & 0x7FFFFFFF) | 1)
+	st.aux = session.rng_aux if session != null else MlhRng.new(1)     # (plan 35: no randi())
 	painter_a = MwWindowPainter.new(plane_a, rom)
+	painter_a.prompt_ctx = MwPrompts.context_for(MwScreens.contexts(screen_id))   # the footers' "PRESS A"
 	plane_a.wipe()
 
 

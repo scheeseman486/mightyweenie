@@ -1,0 +1,33 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/rink_editor/rink_editor.gd" id="1_re"]
+[ext_resource type="Script" path="res://src/rom/rom_palette.gd" id="3_pal"]
+[ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="4_pl"]
+[ext_resource type="Script" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
+[ext_resource type="Script" path="res://src/rom/rom_sprite.gd" id="6_spr"]
+
+[sub_resource type="Resource" id="pal_re"]
+script = ExtResource("3_pal")
+screen = 1
+steps = PackedStringArray("screen_palette", "black 0")
+
+[sub_resource type="Resource" id="tiles_re"]
+script = ExtResource("5_ts")
+banks = PackedStringArray("picture_041bf2")
+fonts = PackedStringArray("font_01f958", "font_0447f4", "font_022bec")
+
+[node name="RinkEditor" type="Node2D"]
+script = ExtResource("1_re")
+screen_id = 138
+
+[node name="Plane" type="TileMapLayer" parent="."]
+script = ExtResource("4_pl")
+tiles = SubResource("tiles_re")
+palette = SubResource("pal_re")
+
+[node name="Swatches" type="Node2D" parent="."]
+
+[node name="Cursor" type="AnimatedSprite2D" parent="."]
+script = ExtResource("6_spr")
+palette = SubResource("pal_re")
+tick_driven = true

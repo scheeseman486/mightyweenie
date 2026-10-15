@@ -35,6 +35,10 @@ func _init() -> void:
 	quit(code)
 
 
+## Our side of a comparison: [param records] (the original's pass record) replayed from screen
+## [param from_screen] (-1: its start) - its screen flow, MwPassClock's pass timing - with
+## [param input_script] played and our pass record written to [param out_path]. The exit code:
+## 0, or 2 without a screen or an end in the record or when the file can't be written.
 static func run(input_script: MwInputScript, records: Array, from_screen: int, out_path: String) -> int:
 	# The stub screen flow: screen entries and resumes from the original record.
 	var flow: Array = []

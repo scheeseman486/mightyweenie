@@ -7,14 +7,20 @@ extends RefCounted
 var lines: PackedStringArray = []
 
 
+## The record's first line: format and side, the input script [param script_name], the probe
+## sets [param probes] and the [param tool] that wrote it.
 func header(script_name: String, probes: Array, tool := "godot") -> void:
 	_add({"format": "mw-pass/1", "side": "godot", "script": script_name, "probes": probes, "tool": tool})
 
 
+## A screen event: visit [param visit] of screen [param screen_id] entered at [param tick], from
+## screen [param prev].
 func screen(screen_id: int, visit: int, tick: int, prev: int) -> void:
 	_add({"event": "screen", "screen": screen_id, "visit": visit, "tick": tick, "prev": prev})
 
 
+## A resume event: screen [param screen_id]'s visit [param visit] going on at [param tick]
+## (screen 8 after the player stats).
 func resume(screen_id: int, visit: int, tick: int) -> void:
 	_add({"event": "resume", "screen": screen_id, "visit": visit, "tick": tick})
 
@@ -28,10 +34,12 @@ func pass_line(b: Dictionary, pads: Array, fields: Dictionary = {}) -> void:
 	_add(d)
 
 
+## The end event, at [param tick].
 func end(tick: int) -> void:
 	_add({"event": "end", "tick": tick})
 
 
+## Writes the lines to [param path] (its folder made first): OK, or the error opening it.
 func save(path: String) -> Error:
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var f := FileAccess.open(path, FileAccess.WRITE)

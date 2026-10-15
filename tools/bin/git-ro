@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Read-only git on this checkout or a plan's worktree, from any machine that
+# shares the folder: a worktree's .git names the desktop's path, so git run
+# elsewhere (the VM) can't find its repository - this points it at the main
+# checkout's .git/worktrees/<name>. Never writes: no optional locks (no index
+# refresh), and only the reading commands.
+#   tools/bin/git-ro status --short
+#   tools/bin/git-ro log --oneline -5
+#   tools/bin/git-ro diff --stat main
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+case "${1:-}" in
+  status|log|diff|show|rev-parse|ls-files|ls-tree|blame|grep|cat-file|merge-base|describe|shortlog|branch|for-each-ref|name-rev) ;;
+  *) echo "git-ro: '${1:-}' is not a reading command (status, log, diff, show, rev-parse, ls-files, ...)" >&2; exit 2 ;;
+esac
+if [[ "${1}" == branch && $# -gt 1 && "$2" != --list && "$2" != -a && "$2" != -r && "$2" != -v && "$2" != --contains ]]; then
+  echo "git-ro: branch only lists" >&2; exit 2
+fi
+export GIT_OPTIONAL_LOCKS=0
+if [[ -f "$MW_ROOT/.git" ]]; then
+  name="$(basename "$(sed -n 's/^gitdir: //p' "$MW_ROOT/.git")")"
+  exec git --git-dir="$MW_MAIN/.git/worktrees/$name" --work-tree="$MW_ROOT" "$@"
+fi
+exec git -C "$MW_ROOT" "$@"

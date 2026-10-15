@@ -19,7 +19,23 @@ const REFS := ["victim", "nearest", "carrier", "receiver", "camera_target", "spe
 ## (`$FF0000`: outside the RAM snapshots; the ring's control fields stay)
 ## and its 3D side-store (plan 20: presentation), and the playoff run
 ## (MwPlayoffs: the session's, not the rink's).
-const SKIP := ["present", "ring_bytes", "side", "playoffs"]
+const INTRINSIC := ["present", "ring_bytes", "side", "playoffs"]
+## Plan 45 (M3): the most objects an owned array grows to from a form (an
+## extended set-up's markers and a custom rink's hazard and object slots stay
+## far below).
+const GROW_MAX := 64
+## What is left out, by name in every class: [constant INTRINSIC] and the
+## rink state's port fields outside this form (plan 40, S1: MwRinkState
+## .PORT_FIELDS - the control layer, the sticks, the paint ...: all but
+## IN_DICT).
+static var skipped: Array = _skip()
+
+
+static func _skip() -> Array:
+	var out := INTRINSIC.duplicate()
+	for layer in [MwRinkState.Port.HASHED, MwRinkState.Port.CARRIED, MwRinkState.Port.LOCAL]:
+		out.append_array(Array(MwRinkState.port_fields(layer)))
+	return out
 
 
 ## [param s] as a dictionary.
@@ -47,8 +63,8 @@ static func apply(s: MwRinkState, d: Dictionary) -> void:
 static func diff(a: Variant, b: Variant, path := "", out := {}) -> Dictionary:
 	if a is Dictionary and b is Dictionary:
 		for k in b:
-			var p: String = k if path == "" else path + "/" + k
-			diff(a.get(k), b[k], p, out)
+			var text: String = k if path == "" else path + "/" + k
+			diff(a.get(k), b[k], text, out)
 	elif a is Array and b is Array and a.size() == b.size():
 		for i in b.size():
 			diff(a[i], b[i], "%s/%d" % [path, i], out)
@@ -76,16 +92,16 @@ static func patch(s: MwRinkState, changes: Dictionary) -> void:
 			(owner as Object).set(key, _cast((owner as Object).get(key), value))
 		else:
 			# a leaf in an array (packed arrays are values: write them back)
-			var arr: Variant = owner
-			arr[int(key)] = _cast(arr[int(key)], value)
+			var container: Variant = owner
+			container[int(key)] = _cast(container[int(key)], value)
 			for i in range(trail.size() - 1, -1, -1):
 				var c: Variant = trail[i][0]
 				var k: String = trail[i][1]
 				if c is Object:
-					(c as Object).set(k, arr)
+					(c as Object).set(k, container)
 					break
-				c[int(k)] = arr
-				arr = c
+				c[int(k)] = container
+				container = c
 	_resolve(s, refs)
 
 
@@ -118,12 +134,22 @@ static func patch_dict(d: Dictionary, changes: Dictionary) -> void:
 
 # --- internals ---------------------------------------------------------------------------------
 
+## The script variables of [param o] that are kept (not [member skipped]),
+## once per script (plan 35: the net hash reads a state every pass).
 static func _props(o: Object) -> Array[String]:
+	var script: Variant = o.get_script()
+	if script != null and _prop_cache.has(script):
+		return _prop_cache[script]
 	var out: Array[String] = []
-	for p in o.get_property_list():
-		if p["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE and not (p["name"] in SKIP):
-			out.append(p["name"])
+	for property in o.get_property_list():
+		if property["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE and not (property["name"] in skipped):
+			out.append(property["name"])
+	if script != null:
+		_prop_cache[script] = out
 	return out
+
+
+static var _prop_cache := {}
 
 
 ## Paths of the owned objects (references are not followed).
@@ -160,21 +186,88 @@ static func _encode(v: Variant, paths: Dictionary) -> Variant:
 	return v
 
 
+## Fills [param o] from [param d] (its part of a [method to_dict] form; plan
+## 45, M3: a saved replay's body is a shared file, so any values): only the
+## object's own script variables are set - not "script" (the class's
+## GDScript, whose static variables a key could set), not an engine property
+## - each from a value of a type it can take (others are left as they are),
+## and an owned array of objects grows to at most [constant GROW_MAX].
 static func _decode(o: Object, d: Dictionary, path: String, refs: Array) -> void:
+	var settable := _script_variables(o)
 	for k in d:
+		if not k is String or not settable.has(k):
+			continue
 		var key: String = k
+		var v: Variant = d[k]
 		if key in REFS:
-			refs.append([o, key, d[k]])
+			if v == null or v is String:
+				refs.append([o, key, v])
 			continue
 		var cur: Variant = o.get(key)
 		if cur is Object:
-			_decode(cur, d[k], path + "/" + key, refs)
+			if v is Dictionary:
+				_decode(cur, v, path + "/" + key, refs)
 		elif cur is Array and not (cur as Array).is_empty() and cur[0] is Object:
-			var src: Array = d[k]
+			if not v is Array or (v as Array).size() > maxi(GROW_MAX, (cur as Array).size()):
+				continue
+			var src: Array = v
+			while (cur as Array).size() < src.size():
+				# plan 34: an extended set-up's teams have more markers and arrows
+				(cur as Array).append((cur[0] as Object).get_script().new())
 			for i in src.size():
-				_decode(cur[i], src[i], "%s/%s/%d" % [path, key, i], refs)
-		else:
-			o.set(key, _cast(cur, d[k]))
+				if src[i] is Dictionary:
+					_decode(cur[i], src[i], "%s/%s/%d" % [path, key, i], refs)
+		elif _fits(cur, v):
+			o.set(key, _cast(cur, v))
+
+
+## Plan 45: every script variable of [param o] (the skipped ones too: a form
+## from before a field was skipped still sets it), as a set; once per script.
+static func _script_variables(o: Object) -> Dictionary:
+	var script: Variant = o.get_script()
+	if script != null and _variables_cache.has(script):
+		return _variables_cache[script]
+	var out := {}
+	for property in o.get_property_list():
+		if property["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE:
+			out[property["name"]] = true
+	if script != null:
+		_variables_cache[script] = out
+	return out
+
+
+static var _variables_cache := {}
+
+
+## Plan 45: whether [method _cast] can make [param v] the type of [param like]
+## (a number for a number or a flag, numbers for a packed array or a
+## vector, a list for a list - for a typed one, of its type -, the same type
+## for anything else; anything for a variable holding null, as before).
+static func _fits(like: Variant, v: Variant) -> bool:
+	if like == null:
+		return true
+	if like is int or like is bool or like is float:
+		return v is int or v is float or v is bool
+	if like is PackedInt32Array or like is PackedInt64Array or like is PackedByteArray or like is Vector2i:
+		var values := MwPlain.array(v)
+		if not (v is Array or v is PackedInt32Array or v is PackedInt64Array or v is PackedByteArray):
+			return false
+		for x: Variant in values:
+			if not (x is int or x is float or x is bool):
+				return false
+		return values.size() >= 2 if like is Vector2i else true
+	if like is Array:
+		if not v is Array:
+			return false
+		var typed := (like as Array).get_typed_builtin()
+		if typed == TYPE_NIL:
+			return true
+		for x: Variant in v:
+			var t := TYPE_INT if x is float else typeof(x)          # (_cast makes a float an int)
+			if t != typed and not (typed == TYPE_FLOAT and t == TYPE_INT):
+				return false
+		return true
+	return typeof(like) == typeof(v)
 
 
 ## [param v] (from JSON: numbers are floats) as the type of [param like].
@@ -186,10 +279,10 @@ static func _cast(like: Variant, v: Variant) -> Variant:
 	if like is PackedInt32Array:
 		return PackedInt32Array(v)
 	if like is PackedInt64Array:
-		var p := PackedInt64Array()
+		var values := PackedInt64Array()
 		for x in v:
-			p.append(int(x))
-		return p
+			values.append(int(x))
+		return values
 	if like is PackedByteArray:
 		var b := PackedByteArray()
 		for x in v:

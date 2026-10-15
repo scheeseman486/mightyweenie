@@ -9,9 +9,9 @@ extends RefCounted
 
 
 ## `$F3CC`: [pieces, x after the string].
-static func pieces(rom: PackedByteArray, font: int, s: PackedByteArray, attr: int, x := 0) -> Array:
+static func pieces(rom: PackedByteArray, font: int, bytes: PackedByteArray, attr: int, x := 0) -> Array:
 	var out := []
-	for c in s:
+	for c in bytes:
 		if c != 0x20:
 			var g := MwGfx.font_glyph(rom, font, c)
 			if g >= 0:
@@ -21,10 +21,11 @@ static func pieces(rom: PackedByteArray, font: int, s: PackedByteArray, attr: in
 
 
 ## `$B772`: [pieces, x after the string] with a fixed [param advance].
-static func fixed(rom: PackedByteArray, font: int, s: PackedByteArray, attr: int, advance := 0x18, space := 8) -> Array:
+static func fixed(rom: PackedByteArray, font: int, bytes: PackedByteArray, attr: int, advance := 0x18,
+		space := 8) -> Array:
 	var out := []
 	var x := 0
-	for c in s:
+	for c in bytes:
 		if c == 0x20:
 			x += space
 			continue
@@ -36,7 +37,7 @@ static func fixed(rom: PackedByteArray, font: int, s: PackedByteArray, attr: int
 
 
 static func _piece(rom: PackedByteArray, font: int, g: int, x: int, attr: int) -> Dictionary:
-	var p := MwGfx.piece(rom, font + 8 + 6 * g)
-	p["x"] = int(p["x"]) + x
-	p["attr"] = int(p["attr"]) ^ (attr & 0x60)
-	return p
+	var glyph_piece := MwGfx.piece(rom, font + 8 + 6 * g)
+	glyph_piece["x"] = int(glyph_piece["x"]) + x
+	glyph_piece["attr"] = int(glyph_piece["attr"]) ^ (attr & 0x60)
+	return glyph_piece

@@ -21,56 +21,62 @@ var name := ""
 var error := ""
 
 
+## Parses [param text] into a script named [param script_name]: its events, or at the first bad
+## line none and [member error] set.
 static func parse(text: String, script_name := "") -> MwInputScript:
-	var s := MwInputScript.new()
-	s.name = script_name
+	var input_script := MwInputScript.new()
+	input_script.name = script_name
 	var no := 0
 	for raw in text.split("\n"):
 		no += 1
 		var line := _strip_comment(raw.strip_edges())
 		if line.is_empty():
 			continue
-		var e := _parse_line(line, no)
-		if e.has("error"):
-			s.error = e.error
-			s.events.clear()
-			return s
-		s.events.append(e)
-	return s
+		var event := _parse_line(line, no)
+		if event.has("error"):
+			input_script.error = event.error
+			input_script.events.clear()
+			return input_script
+		input_script.events.append(event)
+	return input_script
 
 
+## Parses the script file at [param path], named for the file without its extension.
 static func load_file(path: String) -> MwInputScript:
 	return parse(FileAccess.get_file_as_string(path), path.get_file().get_basename())
 
 
+## The script's [member events] as text, a line each ([method event_to_text]).
 func to_text() -> String:
 	var out := ""
-	for e in events:
-		out += event_to_text(e) + "\n"
+	for event in events:
+		out += event_to_text(event) + "\n"
 	return out
 
 
-static func event_to_text(e: Dictionary) -> String:
+## One of [member events] as a script line: its anchor, then END or the player, buttons and
+## mode.
+static func event_to_text(event: Dictionary) -> String:
 	var when := ""
-	if e.anchor == "tick":
-		when = "@tick %d" % e.start + ("" if e.end == null else "..%d" % e.end)
+	if event.anchor == "tick":
+		when = "@tick %d" % event.start + ("" if event.end == null else "..%d" % event.end)
 	else:
-		when = "@screen %d" % e.screen + ("" if e.visit == 1 else " #%d" % e.visit)
-		if e.unit == "pass":
-			when += " @pass %d" % e.start + ("" if e.end == null else "..%d" % e.end)
+		when = "@screen %d" % event.screen + ("" if event.visit == 1 else " #%d" % event.visit)
+		if event.unit == "pass":
+			when += " @pass %d" % event.start + ("" if event.end == null else "..%d" % event.end)
 		else:
-			when += " +%d" % e.start + ("" if e.end == null else "..+%d" % e.end)
-	if e.mode == "end":
+			when += " +%d" % event.start + ("" if event.end == null else "..+%d" % event.end)
+	if event.mode == "end":
 		return when + " END"
 	var names: PackedStringArray = []
 	for n in BUTTON_ORDER:
-		if e.buttons & PAD_BITS[n]:
+		if event.buttons & PAD_BITS[n]:
 			names.append(n)
-	var what := "P%d %s" % [e.player, "+".join(names)]
-	if e.mode == "hold":
+	var what := "P%d %s" % [event.player, "+".join(names)]
+	if event.mode == "hold":
 		what += " hold"
-	elif e.repeat > 1:
-		what += " x%d" % e.repeat
+	elif event.repeat > 1:
+		what += " x%d" % event.repeat
 	return when + " " + what
 
 
@@ -99,81 +105,81 @@ static func _parse_line(line: String, no: int) -> Dictionary:
 	for t in line.split(" ", false):
 		for u in t.split("\t", false):
 			toks.append(u)
-	var e := {"line": no, "anchor": "", "screen": -1, "visit": 1, "unit": "tick",
+	var event := {"line": no, "anchor": "", "screen": -1, "visit": 1, "unit": "tick",
 		"start": 0, "end": null, "player": 0, "buttons": 0, "mode": "tap", "repeat": 1}
 	var i := 0
 	if toks[0] == "@tick":
 		if toks.size() < 2:
 			return _err(no, "expected a tick")
-		e.anchor = "tick"
+		event.anchor = "tick"
 		var r := _range(toks[1], false)
 		if r.is_empty():
 			return _err(no, "expected tick")
-		e.start = r[0]
-		e.end = r[1]
+		event.start = r[0]
+		event.end = r[1]
 		i = 2
 	elif toks[0] == "@screen":
-		e.anchor = "screen"
+		event.anchor = "screen"
 		if toks.size() < 2 or _num(toks[1]) == null:
 			return _err(no, "expected screen ID")
-		e.screen = int(toks[1])
+		event.screen = int(toks[1])
 		i = 2
 		if i < toks.size() and toks[i].begins_with("#"):
 			if _num(toks[i].substr(1)) == null:
 				return _err(no, "expected visit")
-			e.visit = int(toks[i].substr(1))
+			event.visit = int(toks[i].substr(1))
 			i += 1
 		if i + 1 < toks.size() and toks[i] == "@pass":
-			e.unit = "pass"
+			event.unit = "pass"
 			var r := _range(toks[i + 1], false)
 			if r.is_empty():
 				return _err(no, "expected pass")
-			e.start = r[0]
-			e.end = r[1]
+			event.start = r[0]
+			event.end = r[1]
 			i += 2
 		elif i < toks.size() and toks[i].begins_with("+"):
 			var r := _range(toks[i], true)
 			if r.is_empty():
 				return _err(no, "expected +ticks")
-			e.start = r[0]
-			e.end = r[1]
+			event.start = r[0]
+			event.end = r[1]
 			i += 1
 		else:
 			return _err(no, "expected +ticks or @pass after the screen")
 	else:
 		return _err(no, "a line starts with @screen or @tick")
-	if e.end != null and int(e.end) <= int(e.start) - (1 if e.unit == "pass" else 0):
+	if event.end != null and int(event.end) <= int(event.start) - (1 if event.unit == "pass" else 0):
 		return _err(no, "empty range")
 	var rest := toks.slice(i)
 	if rest.is_empty():
 		return _err(no, "missing action")
 	if rest[0] == "END":
-		if rest.size() != 1 or e.end != null:
+		if rest.size() != 1 or event.end != null:
 			return _err(no, "END takes a single anchor")
-		e.mode = "end"
-		return e
+		event.mode = "end"
+		return event
 	if rest.size() < 2 or not (rest[0].length() == 2 and rest[0][0] == "P" and rest[0][1] in ["1", "2", "3", "4"]):
 		return _err(no, "expected P1-P4 and buttons")
-	e.player = int(rest[0].substr(1))
+	event.player = int(rest[0].substr(1))
 	for n in rest[1].split("+"):
 		if not PAD_BITS.has(n):
 			return _err(no, "unknown button '%s'" % n)
-		e.buttons |= PAD_BITS[n]
-	e.mode = "hold" if e.end != null else "tap"
+		event.buttons |= PAD_BITS[n]
+	event.mode = "hold" if event.end != null else "tap"
 	for tok in rest.slice(2):
 		if tok == "tap" or tok == "hold":
-			e.mode = tok
+			event.mode = tok
 		elif tok.begins_with("x") and _num(tok.substr(1)) != null and int(tok.substr(1)) >= 1:
-			e.repeat = int(tok.substr(1))
+			event.repeat = int(tok.substr(1))
 		else:
 			return _err(no, "unknown word '%s'" % tok)
-	if e.mode == "hold" and e.end == null:
+	if event.mode == "hold" and event.end == null:
 		return _err(no, "hold needs a range")
-	if e.mode == "tap" and e.end != null:
+	if event.mode == "tap" and event.end != null:
 		return _err(no, "a range is a hold")
-	if e.repeat > 1 and e.mode != "tap":
+	if event.repeat > 1 and event.mode != "tap":
 		return _err(no, "xN repeats taps only")
-	return e
+	return event
 
 
 # "a" or "a..b"; with plus=true both need a leading "+". [] when malformed.
@@ -182,12 +188,12 @@ static func _range(tok: String, plus: bool) -> Array:
 	if parts.size() > 2:
 		return []
 	var vals := []
-	for p in parts:
+	for text in parts:
 		if plus:
-			if not p.begins_with("+"):
+			if not text.begins_with("+"):
 				return []
-			p = p.substr(1)
-		if _num(p) == null:
+			text = text.substr(1)
+		if _num(text) == null:
 			return []
-		vals.append(int(p))
+		vals.append(int(text))
 	return [vals[0], vals[1] if vals.size() == 2 else null]

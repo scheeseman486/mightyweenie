@@ -42,22 +42,22 @@ func _run() -> void:
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	root.add_child(vp)
 	var view: MwRinkView3D = VIEW.instantiate()
-	view.palette = RomPalette.make(4, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), stadium, stadium)
+	view.palette = RomPalette.make(4, PackedStringArray(MwScreenPalettes.RINK), stadium, stadium)
 	vp.add_child(view)
 	await process_frame
 	var cam := view.camera
 	for occ: float in OCCUPANCY:
 		view.stands.occupancy = occ
 		for name: String in SHOTS:
-			var s = SHOTS[name]
-			if s is Vector2:
+			var spec: Variant = SHOTS[name]
+			if spec is Vector2:
 				cam.mode = MwRinkCamera3D.Mode.FOLLOW
-				cam.follow(MwRink3D.map_point(s.x, s.y, 0) - Vector2(MwRink3D.SCREEN) / 2.0)
+				cam.follow(MwRink3D.map_point(spec.x, spec.y, 0) - Vector2(MwRink3D.SCREEN) / 2.0)
 			else:
-				var at: Vector3 = s[0]
-				var to: Vector3 = s[1]
+				var at: Vector3 = spec[0]
+				var to: Vector3 = spec[1]
 				cam.projection = Camera3D.PROJECTION_PERSPECTIVE
-				cam.fov = s[2]
+				cam.fov = spec[2]
 				cam.near = 0.05
 				cam.far = 400.0
 				var from := MwRink3D.world(at.x, at.y, at.z)

@@ -27,9 +27,8 @@ var ring_before: Array = []
 var record_frame := 0
 
 
-class Idle:
-	func think(_sim: MwRinkSim, _p: MwRinkState.Player, _team: MwRinkState.Team, _other: MwRinkState.Team) -> void:
-		pass
+## CPU players that stay put (plan 40: test/support/idle_cpu.gd).
+const Idle := preload("res://test/support/idle_cpu.gd")
 
 
 func before_each() -> void:
@@ -52,8 +51,8 @@ func before_each() -> void:
 	s.camera.shown = Vector2i(7, 9)
 	s.scroll_b = Vector2i(1, 2)
 	s.hazards[0].kind = 0
-	for t in s.teams:
-		for m in t.markers:
+	for team in s.teams:
+		for m in team.markers:
 			m.x = 999
 			m.y = 999
 
@@ -64,8 +63,8 @@ func _record_frame(k: int) -> void:
 	s.camera.x = _cam(k).x << 8
 	s.camera.y = _cam(k).y << 8
 	s.camera.amp = 0
-	for h in s.hazards:
-		h.kind = 0
+	for hazard in s.hazards:
+		hazard.kind = 0
 	s.hazards[0].kind = HAZARD_KIND
 	s.hazards[0].flags = 0x80
 	for t in 2:
@@ -86,8 +85,8 @@ static func _cam(k: int) -> Vector2i:
 
 
 func _ring_state() -> Array:
-	var r := s.replay
-	return [r.write, r.read, r.used, r.frames, r.open, r.pan, r.ring_bytes.duplicate()]
+	var ring := s.replay
+	return [ring.write, ring.read, ring.used, ring.frames, ring.open, ring.pan, ring.ring_bytes.duplicate()]
 
 
 ## A pass of [param e] ticks with [param held] / [param new] on pad [param pad].
@@ -163,12 +162,12 @@ func test_setup_draws() -> void:
 			["text", MwReplaySim.TEXT_FONT, 4, 5, 0xE0, MwReplaySim.TEXTS[1]]], "the widget's texts")
 	# the hazard (its frame at the live slot's point, depth 1), then the one record's pieces
 	var hz := MwGfx.u32(rom, MwReplaySim.HAZARD_FRAMES + 8 * (HAZARD_KIND - 1))
-	var h := s.hazards[0]
-	var p := MwScoreboardSim.project(s, h.x, h.y, 0)
+	var hazard := s.hazards[0]
+	var point := MwScoreboardSim.project(s, hazard.x, hazard.y, 0)
 	var n_hz := MwGfx.u16(rom, hz)
 	var n_rec := MwGfx.u16(rom, record_frame)
 	assert_eq(rp.sprite_ops.size(), n_hz + n_rec)
-	assert_eq(rp.sprite_ops[0], ["piece", hz + 2, p.x - _cam(0).x, p.y - _cam(0).y, 0, 1])
+	assert_eq(rp.sprite_ops[0], ["piece", hz + 2, point.x - _cam(0).x, point.y - _cam(0).y, 0, 1])
 	assert_eq(rp.sprite_ops[n_hz], ["piece", record_frame + 2, 0, 0x10, 0x08, 0x100], "the record: screen pixels")
 
 

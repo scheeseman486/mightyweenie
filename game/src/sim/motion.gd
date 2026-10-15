@@ -14,6 +14,15 @@ var vel := PackedInt32Array([0, 0, 0])
 var acc := PackedInt32Array([0, 0, 0])
 
 
+## A copy (plan 40: the client's dead reckoning steps copies, MwNetReckoning).
+func copy() -> MwMotion:
+	var motion := MwMotion.new()
+	motion.pos = pos.duplicate()
+	motion.vel = vel.duplicate()
+	motion.acc = acc.duplicate()
+	return motion
+
+
 ## Motion parameters (`$15554`): gravity on z, restitution (/256) of a
 ## bounce, friction on the ground and in the air (/256 per tick); the decay
 ## factors for 1-8 ticks are tabulated like the original's.
@@ -50,9 +59,10 @@ func init(x: int, y: int, z := 0) -> void:
 	acc = PackedInt32Array([0, 0, 0])
 
 
-## Position in pixels (`asr.l #8`).
+## Position in pixels (`asr.l #8`; plan 42: `>>` inline - arithmetic on
+## a negative int as the 68000's asr, [method asr]).
 func pixels() -> Vector3i:
-	return Vector3i(asr(pos[0], 8), asr(pos[1], 8), asr(pos[2], 8))
+	return Vector3i(pos[0] >> 8, pos[1] >> 8, pos[2] >> 8)
 
 
 ## `motion_step`: [param ticks] ticks, at most 8 at a time.
@@ -64,68 +74,67 @@ func step(params: Params, ticks: int) -> void:
 		_chunk(params, ticks)
 
 
-func _chunk(p: Params, t: int) -> void:
+func _chunk(params: Params, t: int) -> void:
 	var on_ground := pos[2] == 0
-	var factor := p.ground[t - 1] if on_ground else p.air[t - 1]
-	var friction := p.friction_ground if on_ground else p.friction_air
+	var factor := params.ground[t - 1] if on_ground else params.air[t - 1]
+	var friction := params.friction_ground if on_ground else params.friction_air
 	_axis(0, t, factor, friction, 0)
 	_axis(1, t, factor, friction, 0)
 	if pos[2] == 0 and vel[2] == 0 and acc[2] == 0:
 		return
 	for i in t:
-		_axis(2, 1, 0, 0, p.gravity)
+		_axis(2, 1, 0, 0, params.gravity)
 		if pos[2] < 0x100:
 			pos[2] = 0
 			if vel[2] < 0:
-				vel[2] = s16(((-vel[2]) * p.restitution) >> 8)
+				vel[2] = ((((-vel[2]) * params.restitution >> 8) + 0x8000) & 0xFFFF) - 0x8000
 
 
 ## `motion_axis` for axis [param a]: [param t] ticks, decay [param factor],
 ## friction [param friction] (0: none), extra acceleration [param extra].
+## Plan 42 (speed): the 68000's words inline - `((v + $8000) & $FFFF) -
+## $8000` is MwRinkSim.s16(v), muls.w the two words multiplied (the motion
+## step runs ~50 times a pass).
 func _axis(a: int, t: int, factor: int, friction: int, extra: int) -> void:
+	var ts := ((t + 0x8000) & 0xFFFF) - 0x8000
 	if friction == 0:
 		var v := vel[a]
 		if v != 0:
-			pos[a] += muls(v, t)
-		var acceleration := s16(acc[a] + extra)
+			pos[a] += (((v + 0x8000) & 0xFFFF) - 0x8000) * ts
+		var acceleration := ((acc[a] + extra + 0x8000) & 0xFFFF) - 0x8000
 		if acceleration != 0:
-			var d := muls(acceleration, t)
-			vel[a] = s16(vel[a] + d)
-			d = muls(s16(d), t - 1)
-			pos[a] += asr(d, 1)
+			var d := acceleration * ts
+			vel[a] = ((vel[a] + d + 0x8000) & 0xFFFF) - 0x8000
+			d = (((d + 0x8000) & 0xFFFF) - 0x8000) * ((((t - 1) + 0x8000) & 0xFFFF) - 0x8000)
+			pos[a] += d >> 1
 		return
 	var v4 := vel[a]
-	var a3 := s16(acc[a] + extra)
+	var a3 := ((acc[a] + extra + 0x8000) & 0xFFFF) - 0x8000
 	var d0: int
 	var d1: int
 	if a3 == 0:
 		d0 = 0
 		d1 = 0
 	else:
-		d1 = muls(s16(0x100 - factor), a3)
+		d1 = (((0x100 - factor + 0x8000) & 0xFFFF) - 0x8000) * a3
 		d1 = divs(d1, friction)
-		d0 = muls(t, a3)
-	d0 = s16(d0 + v4)
+		d0 = ts * a3
+	d0 = ((d0 + v4 + 0x8000) & 0xFFFF) - 0x8000
 	var d3: int
 	if v4 < 0:
 		d3 = -(((-v4) * factor) >> 8)
 	else:
 		d3 = (v4 * factor) >> 8
-	d1 = s16(d1 + d3)
+	d1 = ((d1 + d3 + 0x8000) & 0xFFFF) - 0x8000
 	vel[a] = d1
-	d0 = s16(d0 - d1)
+	d0 = ((d0 - d1 + 0x8000) & 0xFFFF) - 0x8000
 	if d0 != 0:
 		pos[a] += divs(d0 << 8, friction)
 
 
-static func s16(v: int) -> int:
-	v &= 0xFFFF
-	return v - 0x10000 if v >= 0x8000 else v
-
-
 ## 68000 muls.w: 16 x 16 -> 32 bits, signed.
 static func muls(a: int, b: int) -> int:
-	return s16(a) * s16(b)
+	return MwRinkSim.s16(a) * MwRinkSim.s16(b)
 
 
 ## 68000 divs.w: 32 / 16 -> 16-bit quotient, truncated toward zero.
@@ -133,9 +142,10 @@ static func divs(a: int, b: int) -> int:
 	if b == 0:
 		return 0
 	var q := absi(a) / absi(b)
-	return s16(-q if (a < 0) != (b < 0) else q)
+	return (((-q if (a < 0) != (b < 0) else q) + 0x8000) & 0xFFFF) - 0x8000       # (s16 inline: plan 42)
 
 
-## Arithmetic shift right (GDScript refuses `>>` on negative numbers).
+## Arithmetic shift right. (GDScript refuses `>>` on a negative constant
+## when it parses; at run time `>>` on an int is arithmetic - plan 42.)
 static func asr(v: int, n: int) -> int:
-	return v >> n if v >= 0 else ~((~v) >> n)
+	return v >> n

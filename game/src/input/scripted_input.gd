@@ -13,25 +13,21 @@ func _init(script_player: MwScriptPlayer) -> void:
 	player = script_player
 
 
+## Hooks [member player] to [param router]: its ticks, screen entries and resumes and pass
+## boundaries reach the script as in plan 02's comparison runs.
 func attach(router: MwRouter) -> void:
 	router.tick_started.connect(player.tick_start)
-	router.screen_entered.connect(func(id: int, _visit: int, tick: int, _prev: int) -> void: player.screen_entered(id, tick))
+	router.screen_entered.connect(func(id: int, _visit: int, at: int, _prev: int) -> void: player.screen_entered(id, \
+			at))
 	router.screen_resumed.connect(func(id: int, visit: int, _tick: int) -> void: player.resume(id, visit))
 	router.pass_ended.connect(func(b: Dictionary) -> void:
 		player.boundary(int(b.screen), int(b.visit), int(b.pass), int(b.tick)))
 
 
+## The actions held now: each player's pad mask from [member player] as the verbs it means
+## in [param contexts] ([method MwVerbs.pad_actions]).
 func sample(contexts: Array) -> Dictionary:
 	var out := {}
 	for p in range(1, MwVerbs.PLAYERS + 1):
-		var mask := player.held(p)
-		if mask == 0:
-			continue
-		for button in MwInputScript.PAD_BITS:
-			if mask & MwInputScript.PAD_BITS[button]:
-				for ctx in contexts:
-					for verb in MwVerbs.verbs_of(ctx, button):
-						out[MwVerbs.action(p, verb)] = true
-						if ctx == MwVerbs.Context.MENU:
-							out[MwVerbs.menu_action(p, verb)] = true
+		out.merge(MwVerbs.pad_actions(p, player.held(p), contexts))
 	return out

@@ -611,7 +611,8 @@ def record(name: str, setup: dict[int, int], passes: int, out_dir: Path, seed: i
            late: dict[int, int] | None = None, attract: bool = False,
            attract_press: tuple[int, ...] = (900, 250), draws: bool = False,
            coverage: Iterable[int] = (), lean_until_visit: int = 0, rng_poke: int | None = None,
-           visits: int = 0, tour: dict | None = None, screens: bool = False) -> Path:
+           visits: int = 0, tour: dict | None = None, screens: bool = False,
+           extra_logs: dict | None = None) -> Path:
     """Record up to ``passes`` rink passes (stops early after ``budget``
     seconds, or at a screen of ``stop_screens``) into ``out_dir`` (meta.json
     + gzipped snapshots).
@@ -662,8 +663,14 @@ def record(name: str, setup: dict[int, int], passes: int, out_dir: Path, seed: i
     screens.bin.gz, ``meta["screen_passes"]`` [rink passes so far, screen,
     tick, site (SCREEN_CALL: the entry), d0], and the logs split per
     screen pass (``meta["screen_log_data"]``; sprite draws logged
-    throughout the screens)."""
+    throughout the screens).
+
+    Plan 36: ``extra_logs``: more debugger arrays, each filled from several
+    addresses in the order they are reached: name -> (width, [(address,
+    expressions), ...]), every expression list ``width`` long (the load
+    recorder's cycle stamps, :mod:`load_record`)."""
     t0 = time.monotonic()
+    extra = dict(extra_logs or {})
     rom = Path(rom) if rom else default_rom_path()
     rng = random.Random(seed)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -674,7 +681,7 @@ def record(name: str, setup: dict[int, int], passes: int, out_dir: Path, seed: i
     mode = setup.get(0xFFB0E0, menu.get(2, 0))      # gen 2 soak runs set the pad mode in the menu
     kind = DRIVERS[driver]
     drivers = [] if attract else [kind(p, random.Random(seed * 31 + p)) for p in PADS_IN_MODE[mode]]
-    arrays = {**{k: len(v[1]) for k, v in LOGS.items()}, TICK_LOG: 2}
+    arrays = {**{k: len(v[1]) for k, v in LOGS.items()}, TICK_LOG: 2, **{k: w for k, (w, _) in extra.items()}}
     if draws:
         arrays.update({k: w for k, (w, _) in DRAW_LOGS.items()})
     assert draws or not screens, "screen recordings need the draw logs"
@@ -685,6 +692,7 @@ def record(name: str, setup: dict[int, int], passes: int, out_dir: Path, seed: i
                               "late": {hex(k): v for k, v in (late or {}).items()}},
                   "snap": list(SNAP), "ai_snap": list(AI_SNAP),
                   "logs": {**{k: [v[0], len(v[1])] for k, v in LOGS.items()}, TICK_LOG: [0, 2],
+                           **{k: [0, w] for k, (w, _) in extra.items()},
                            **({k: [0, w] for k, (w, _) in DRAW_LOGS.items()} if draws else {})},
                   "tick_sites": {hex(a): t for a, t in TICK_SITES.items()},
                   "passes": [], "screens": [], "pauses": [], "pokes": [], "presses": []}
@@ -787,6 +795,10 @@ def record(name: str, setup: dict[int, int], passes: int, out_dir: Path, seed: i
                     cov_ids[ca] = max(k for k, v in bl.breakpoints.items() if v == ca)
             for k, (addr, ex, *cond) in LOGS.items():
                 bl.log_at(addr, k, *ex, condition=cond[0] if cond else None)
+            for k, (w, probes) in extra.items():
+                for addr, ex in probes:
+                    assert len(ex) == w, (k, hex(addr), ex)
+                    bl.log_at(addr, k, *ex)
             bl.command(f"array {TICK_LOG}")
             for addr, tag in TICK_SITES.items():
                 bl.on_hit(addr, [f"append {TICK_LOG} {tag}", f"append {TICK_LOG} [0xffca56].l"])

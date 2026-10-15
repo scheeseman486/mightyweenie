@@ -17,6 +17,7 @@ extends SceneTree
 ##       (title music, each voice id `$12-$3A` played at tick 90): the ticks
 ##       until sound_busy answers 0, against the GPGX measurements
 ##       (out/plan12/portz80/measured.json, written by busy.py)
+## Short names: z the MwSoundZ80 checked.
 
 
 ## Records the calls as "ym,port,reg,value" ... strings.
@@ -74,28 +75,29 @@ static func _abs(rel: String) -> String:
 
 
 static func _samples(rom: PackedByteArray, path: String) -> bool:
-	var s := MwSoundSamples.new(rom)
+	var samples := MwSoundSamples.new(rom)
 	var lines := PackedStringArray()
 	var t0 := Time.get_ticks_usec()
-	for i in s.count():
-		var d := s.desc(i)
-		var v := s.decode(i)
-		var w := s.stream(i)
+	for i in samples.count():
+		var desc := samples.desc(i)
+		var v := samples.decode(i)
+		var w := samples.stream(i)
 		var copies := PackedStringArray()
-		for c in d.copies:
+		for c in desc.copies:
 			copies.append("%X" % c)
 		var ids := PackedStringArray()
-		for sid in d.sound_ids:
+		for sid in desc.sound_ids:
 			ids.append("%X" % sid)
 		var loop := "%d-%d" % [w.loop_begin, w.loop_end] if w.loop_mode == AudioStreamWAV.LOOP_FORWARD else "-"
 		lines.append("%d inst %d kind %d codec %d len %d out %d copies %s ids %s loop %s rate %d dec %s pcm %s" % [
-			i, d.instrument, d.kind, d.codec, d.length, d.output_samples(), ",".join(copies),
+			i, desc.instrument, desc.kind, desc.codec, desc.length, desc.output_samples(), ",".join(copies),
 			",".join(ids), loop, w.mix_rate, _md5(v), _md5(w.data)])
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string("\n".join(lines) + "\n")
 	f.close()
-	print("%d samples -> %s (%.0f ms to decode and build the streams)" % [s.count(), path, (Time.get_ticks_usec() - t0) / 1000.0])
-	return s.count() > 0
+	print("%d samples -> %s (%.0f ms to decode and build the streams)"
+			% [samples.count(), path, (Time.get_ticks_usec() - t0) / 1000.0])
+	return samples.count() > 0
 
 
 static func _md5(b: PackedByteArray) -> String:
@@ -137,8 +139,9 @@ static func _replay(rom: PackedByteArray, path: String) -> bool:
 			usec += dt
 			max_usec = maxi(max_usec, dt)
 			var want := PackedStringArray()
-			for e: Array in tk["out"]:
-				want.append(",".join(e.map(func(x: Variant) -> String: return str(x) if x is String else str(int(x)))))
+			for expected: Array in tk["out"]:
+				want.append(",".join(expected.map(func(x: Variant) -> String: return str(x) if x is String \
+						else str(int(x)))))
 			n_calls += want.size()
 			var st := PackedInt32Array()
 			var pos := PackedInt32Array()
@@ -180,17 +183,17 @@ static func _busy(rom: PackedByteArray, opts: PackedStringArray) -> bool:
 				z.bus_wait_t = int(o.trim_prefix("wait="))
 			elif o.begins_with("holds="):
 				z.bus_holds = o.trim_prefix("holds=") == "1"
-		var s := MwSound68k.new(rom)
-		s.reset()
+		var driver := MwSound68k.new(rom)
+		driver.reset()
 		z.reset()
-		s.music_title()
+		driver.music_title()
 		for i in 90:
-			_tick(s, z)
-		var h := s.sound_play(sid)
+			_tick(driver, z)
+		var h := driver.sound_play(sid)
 		var busy := -1
 		for f in 400:
-			_tick(s, z)
-			if not s.sound_busy(h):
+			_tick(driver, z)
+			if not driver.sound_busy(h):
 				busy = f + 1
 				break
 		var want := int(measured.get(str(sid), -1))
@@ -202,12 +205,13 @@ static func _busy(rom: PackedByteArray, opts: PackedStringArray) -> bool:
 			row += " %+d" % (busy - want)
 		rows.append(row)
 	print("\n".join(rows))
-	print("busy lengths, MwSound68k + MwSoundZ80 (%s): %d ids, %d exact, %d within 1 tick" % [" ".join(opts), n, exact, near])
+	print("busy lengths, MwSound68k + MwSoundZ80 (%s): %d ids, %d exact, %d within 1 tick"
+			% [" ".join(opts), n, exact, near])
 	return near == n and n > 0
 
 
-static func _tick(s: MwSound68k, z: MwSoundZ80) -> void:
-	var batch := s.vblank(z)
+static func _tick(driver: MwSound68k, z: MwSoundZ80) -> void:
+	var batch := driver.vblank(z)
 	if not batch.is_empty():
 		z.apply_batch(batch)
 	z.advance(not batch.is_empty())

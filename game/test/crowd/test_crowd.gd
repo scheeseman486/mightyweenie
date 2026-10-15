@@ -81,3 +81,27 @@ func test_every_character_view_is_a_figure() -> void:
 				assert_false(crowd.template(c[side]).is_empty(), "%s: %s" % [c["name"], side])
 		if not MwStands.complete(c) and c.get("back") != null:
 			assert_true(c.has("standin"), "%s: a stand-in until its view is drawn" % c["name"])
+
+
+func test_a_kept_cut_reads_back_the_same() -> void:
+	if not need_rom():
+		return
+	var was := [MwCache.enabled, MwCache.root]
+	MwCache.enabled = true
+	MwCache.root = "user://test-cache-crowd"
+	MwCache.clear()
+	var first := MwCrowd.new()
+	first.build(rom)                     # cut and kept (plan 27)
+	var again := MwCrowd.new()
+	again.build(rom)                     # read back
+	MwCache.clear()
+	MwCache.enabled = was[0]
+	MwCache.root = was[1]
+	assert_eq(again.pic_w, crowd.pic_w)
+	assert_eq(again.picture, crowd.picture)
+	assert_eq(again.crowd, crowd.crowd)
+	assert_eq(again.templates.size(), crowd.templates.size())
+	for key in crowd.templates:
+		assert_eq(MwCrowd.template_hash(again.template(key)["t"]), MwCrowd.template_hash(crowd.template(key)["t"]),
+				key)
+	assert_eq(again.figures.size(), crowd.figures.size())

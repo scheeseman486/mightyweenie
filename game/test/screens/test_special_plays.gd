@@ -5,6 +5,7 @@ extends "res://test/rom/rom_test_base.gd"
 ## positions and substitution lists, line changes (`player_create`), the
 ## refusals, the Demon Net, the done page and the exit, the idle page's
 ## players. The original pass for pass: `tools/bin/screen-check` (out/sim/scr_*).
+## Short names: a the MwSpecialPlaysSim.Page under test, b the MwSpecialPlaysSim.Page under test.
 
 const NONE := [0, 0, 0, 0]
 const UP := 0x01
@@ -18,9 +19,8 @@ var sim: MwRinkSim
 var s: MwRinkState
 
 
-class Idle:
-	func think(_sim: MwRinkSim, _p: MwRinkState.Player, _team: MwRinkState.Team, _other: MwRinkState.Team) -> void:
-		pass
+## CPU players that stay put (plan 40: test/support/idle_cpu.gd).
+const Idle := preload("res://test/support/idle_cpu.gd")
 
 
 func _match(pad_mode: int, reserves: bool) -> void:
@@ -67,7 +67,8 @@ func test_setup_one_pad_team() -> void:
 	assert_eq(a.handler, MwSpecialPlaysSim.PLAYS_PASS, "team A's special plays (set up in the first pass)")
 	assert_eq(a.cursor, 1)
 	for i in 3:
-		assert_eq(a.items[1 + 2 * i], MwGfx.u32(rom, MwSpecialPlaysSim.PLAYS + 4 * (9 + i)), "Bribe / Waste the Ref / Jail Break")
+		assert_eq(a.items[1 + 2 * i], MwGfx.u32(rom, MwSpecialPlaysSim.PLAYS + 4 * (9 + i)),
+				"Bribe / Waste the Ref / Jail Break")
 	assert_eq([a.attr, a.row, a.done], [0x20, 0, 0])
 	assert_eq(b.handler, MwSpecialPlaysSim.IDLE_PASS, "team B has no pad: the idle page")
 	assert_eq([b.attr, b.row, b.done], [0x40, 0xE, 1])
@@ -205,7 +206,8 @@ func test_line_change() -> void:
 	assert_eq(_sounds(sp), [MwSpecialPlaysSim.SND_CHANGE])
 	assert_eq(sp.refresh, 1, "the idle page told")
 	assert_eq([a.cursor, a.records[1]], [1, _roster(0, 7)], "the list made again")
-	assert_true(_roster(0, 1) in [a.records[3], a.records[4], a.records[5], a.records[6]], "the old one a candidate now")
+	assert_true(_roster(0, 1) in [a.records[3], a.records[4], a.records[5], a.records[6]],
+			"the old one a candidate now")
 
 
 func test_refusals() -> void:
@@ -229,7 +231,8 @@ func test_refusals() -> void:
 	_open_slot(sp, 1)
 	_run_pass(sp, DOWN)
 	assert_eq(sp.pages[0].comment, MwGfx.u32(rom, MwSpecialPlaysSim.T_DEAD))
-	assert_true(sp.sprite_ops.any(func(x: Array) -> bool: return x[0] == "frame" and x[1] == MwSpecialPlaysSim.FIGURE_DEAD))
+	assert_true(sp.sprite_ops.any(func(x: Array) -> bool: return x[0] == "frame" \
+			and x[1] == MwSpecialPlaysSim.FIGURE_DEAD))
 	_run_pass(sp, A)
 	assert_eq(team.players[1].record, _roster(0, 1))
 	assert_eq(_sounds(sp), [MwSpecialPlaysSim.SND_REFUSED])
@@ -252,7 +255,7 @@ func test_comments() -> void:
 	var a: MwSpecialPlaysSim.Page = sp.pages[0]
 	_run_pass(sp, DOWN)
 	var rec := _roster(0, 7)
-	var t := MwGfx.u32(rom, MwGfx.u32(rom, MwGfx.u32(rom, MwSpecialPlaysSim.QUOTES + 4 * 9) + 4 * 1) + 4 * a.quote_set)
+	var t := MwQuotes.set_at(rom, 9, 1, a.quote_set)
 	var count := MwGfx.u16(rom, t + 2)
 	var want := MwGfx.u32(rom, t + 4 + 4 * (MwGfx.u16(rom, rec + 4) % count))
 	if rom[rec + 0xD] >> 4 != 0:
@@ -288,16 +291,16 @@ func test_demon_net() -> void:
 	assert_eq(b.cursor, 6, "items 3-5: the other lines' goalies")
 	assert_eq(b.comment, MwGfx.u32(rom, MwSpecialPlaysSim.T_EVIL))
 	_run_pass(sp, 0, A)
-	var g := s.teams[1].players[5]
+	var player := s.teams[1].players[5]
 	assert_eq(s.nets[0].style, 0, "the Demon Net in")
-	assert_eq(g.record, 0, "the goalie's slot empty")
+	assert_eq(player.record, 0, "the goalie's slot empty")
 	assert_eq(b.records[1], MwSpecialPlaysSim.DEMON_NET, "shown in the slot")
 	assert_eq([b.records[3], b.records[6], b.records[7]], [_roster(1, 5), _roster(1, 23), 0],
 			"the four goalies, no second Demon Net")
 	_run_pass(sp, 0, DOWN)
 	_run_pass(sp, 0, DOWN)
 	_run_pass(sp, 0, A)
-	assert_eq(g.record, _roster(1, 11), "the line-2 goalie in")
+	assert_eq(player.record, _roster(1, 11), "the line-2 goalie in")
 	assert_eq(s.nets[0].style, rom[MwRinkState.stadium_record(rom, s.stadium) + 5], "the stadium's net back")
 
 
@@ -341,5 +344,6 @@ func test_idle_page_players() -> void:
 	_run_pass(sp, DOWN)
 	_run_pass(sp, A)
 	assert_eq(sp.refresh, 0, "the idle page set up again")
-	assert_false(sp.sprite_ops.any(func(x: Array) -> bool: return x[0] == "anim" and x[5] == 0xA4), "no line-up that pass")
+	assert_false(sp.sprite_ops.any(func(x: Array) -> bool: return x[0] == "anim" and x[5] == 0xA4), \
+			"no line-up that pass")
 	assert_eq(s.teams[0].players[1].anim_id, 0xFF, "the new left wing stopped")

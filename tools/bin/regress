@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# The regression checks a merge needs, in parallel (a desktop's cores), one
+# summary line each (plan 40: the scratch checks.sh each merge used to write):
+#   GUT - every test directory, a process each -, sim-check, pass-check,
+#   visit-check (plain, and --draws over the draw-log recordings),
+#   screen-check, a live_match matrix (2D and the 3D follow view: CPU v CPU,
+#   P1 v CPU, other teams), net-determinism (plain, and with a custom team),
+#   picture-check.
+# Logs: out/regress/<stamp>/<check>.log (and summary.txt); exits 1 if any
+# check failed. Works in a plan's worktree. Known on main (2026-10-11):
+# pass-check's p1p2_s4 reports one entry (object 0 +$24 at 1462 -> 1463);
+# the DTLS rejoin of test_online_resync can time out under a full load
+# (alone it passes).
+#   tools/bin/regress [--quick] [-j N]
+#     --quick   GUT, sim-check, screen-check and net-determinism only
+#     -j N      checks at once (default: half the cores)
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_recordings.sh"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+quick=0
+par=$(( $(nproc) / 2 )); (( par >= 1 )) || par=1
+while (( $# )); do
+  case "$1" in
+    --quick) quick=1; shift ;;
+    -j) par="$2"; shift 2 ;;
+    *) echo "usage: regress [--quick] [-j N]" >&2; exit 2 ;;
+  esac
+done
+out="$MW_ROOT/out/regress/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$out"
+# the class caches first (new class_name scripts), once for every process
+"$here/godot-headless" --import >/dev/null 2>&1 || true
+
+names=(); cmds=()
+job() { names+=("$1"); cmds+=("$2"); }
+for d in "$MW_ROOT"/game/test/*/; do
+  compgen -G "$d/test_*.gd" > /dev/null || compgen -G "$d/*/test_*.gd" > /dev/null || continue   # (support/: none)
+  d="$(basename "$d")"
+  job "gut/$d" "'$here/godot-headless' -s res://addons/gut/gut_cmdln.gd -gconfig=res://.gutconfig.json \
+    -gdir=res://test/$d -ginclude_subdirs -gjunit_xml_file=res://reports/gut_junit_$d.xml -gexit"
+done
+job sim-check "'$here/sim-check'"
+job screen-check "'$here/screen-check'"
+job net-determinism "'$here/net-determinism' 8000 && '$here/net-determinism' 8000 --humans 1+2.3 --custom 9 --teams 23,8"
+if (( ! quick )); then
+  job pass-check "'$here/pass-check'"
+  job visit-check "'$here/visit-check'"
+  job visit-check-draws "'$here/visit-check' ${MW_REC_DRAWS[*]} --draws"
+  for v in 0 7; do
+    lm="'$here/godot-headless' -s res://test/screens/live_match.gd -- --view $v"
+    job "live/cpu_v$v" "$lm"
+    job "live/p1_s2_v$v" "$lm --humans 1. --seed 2"         # (P1 driven by a gameplay bot: an idle P1 never scores)
+    job "live/t39_s4_v$v" "$lm --teams 3,9 --seed 4 --minutes 2"
+  done
+  job picture-check "'$here/picture-check' -j 2"
+fi
+
+echo "regress: ${#names[@]} checks, $par at once -> ${out#"$MW_ROOT"/}"
+for i in "${!names[@]}"; do
+  log="$out/${names[$i]//\//_}.log"
+  ( bash -c "${cmds[$i]}" > "$log" 2>&1; echo $? > "$log.rc" ) &
+  while (( $(jobs -rp | wc -l) >= par )); do wait -n; done
+done
+wait
+
+status=0
+for i in "${!names[@]}"; do
+  n="${names[$i]}"; log="$out/${n//\//_}.log"; rc="$(cat "$log.rc" 2>/dev/null || echo 1)"
+  case "$n" in
+    gut/*)
+      t="$(grep -E '^Tests ' "$log" | awk '{print $2}')"; p="$(grep -E '^Passing Tests' "$log" | awk '{print $3}')"
+      f="$(grep -E '^Failing Tests' "$log" | awk '{print $3}')"; r="$(grep -E '^Risky' "$log" | awk '{print $NF}')"
+      what="${p:-0}/${t:-?} passed${f:+, $f FAILED}${r:+, $r pending}"
+      [[ -z "$f" && -n "$t" ]] || rc=1 ;;
+    live/*)
+      what="$(grep -E '^RESULT' "$log" | tail -n 1)"; [[ "$what" == "RESULT ok" ]] || rc=1 ;;
+    net-determinism)
+      what="$(grep -E '^RESULT' "$log" | tr '\n' ' ')"; [[ "$(grep -c '^RESULT equal' "$log")" == 2 ]] || rc=1 ;;
+    *)
+      what="$(grep -v '^\s*$' "$log" | tail -n 1)" ;;
+  esac
+  if [[ "$rc" == 0 ]]; then line="ok      $n: $what"; else line="FAILED  $n: $what"; status=1; fi
+  echo "$line" | tee -a "$out/summary.txt"
+done
+exit $status

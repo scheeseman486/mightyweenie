@@ -145,7 +145,8 @@ func _visit(rom: PackedByteArray, rec: MwSimRecording, v: Array, sim: MwScreenSi
 				# what the screen leaves: the next screen's entry record, or the rink's next segment start
 				var n := int(rec.screen_passes[j][0])
 				var rink_next := not ScreenVisit.contiguous(rec, j)
-				var left := rec.screen_ram(j + 1) if not rink_next else (rec.start(n) if n < rec.count() else PackedByteArray())
+				var left := rec.screen_ram(j + 1) if not rink_next \
+						else (rec.start(n) if n < rec.count() else PackedByteArray())
 				if not left.is_empty():
 					var dx: Array = sim.call("compare_exit", left, rink_next)
 					if not dx.is_empty() and acc["note"] == "":
@@ -191,9 +192,9 @@ func _ring_at(rom: PackedByteArray, rec: MwSimRecording, n: int) -> PackedByteAr
 		_rings_logs = PassCheck._tick_logs(rec)
 	while _rings_done < mini(n, rec.count()) - 1:
 		var k := _rings_done
-		var p: Dictionary = rec.passes[k]
-		var q: Dictionary = rec.passes[k + 1]
-		if int(p["visit"]) != int(q["visit"]) or int(p["screen"]) != int(q["screen"]):
+		var this_pass: Dictionary = rec.passes[k]
+		var next_pass: Dictionary = rec.passes[k + 1]
+		if int(this_pass["visit"]) != int(next_pass["visit"]) or int(this_pass["screen"]) != int(next_pass["screen"]):
 			_rings.check_entry(rom, rec, k, _rings_logs)
 		else:
 			_rings.check_pair(rom, rec, k, _rings_logs)
@@ -227,16 +228,19 @@ static func _draw_diffs(rom: PackedByteArray, rec: MwSimRecording, j: int, sim: 
 		var vram := int(e[4]) & 0xFFFF
 		if int(e[0]) == 5 and vram >= PassCheck.WINDOW_VRAM:
 			var at := vram - PassCheck.WINDOW_VRAM
-			maps.append("map %X %dx%d (%d,%d) stride %d" % [int(e[2]) & 0xFFFFFF, (int(e[3]) & 0xFFFF) / 2, int(e[7]) & 0xFFFF,
+			maps.append("map %X %dx%d (%d,%d) stride %d"
+					% [int(e[2]) & 0xFFFFFF, (int(e[3]) & 0xFFFF) / 2, int(e[7]) & 0xFFFF,
 					(at % 0x80) / 2, at / 0x80, (int(e[6]) & 0xFFFF) / 2])
 	var ours_maps: Array[String] = []
 	var ops := []
 	for op in sim.window_ops:
 		if str(op[0]) == "map":
-			ours_maps.append("map %X %dx%d (%d,%d) stride %d" % [int(op[1]), int(op[3]), int(op[4]), int(op[5]), int(op[6]), int(op[2])])
+			ours_maps.append("map %X %dx%d (%d,%d) stride %d"
+					% [int(op[1]), int(op[3]), int(op[4]), int(op[5]), int(op[6]), int(op[2])])
 		else:
 			ops.append(op)
-	_list_diff(out, "window", PassCheck.window_list(rom, ops), PassCheck.recorded_window(rom, logged, rec.screen_ram(j), other))
+	_list_diff(out, "window", PassCheck.window_list(rom, ops),
+			PassCheck.recorded_window(rom, logged, rec.screen_ram(j), other))
 	_list_diff(out, "window maps", ours_maps, maps)
 	return out
 

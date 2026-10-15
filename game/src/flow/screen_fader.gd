@@ -74,8 +74,34 @@ func uncover() -> void:
 	_set_idle(0.0)
 
 
+## Whether a fade is running, in or out.
 func busy() -> bool:
 	return direction != 0
+
+
+## Plan 35 work item 6: where the fade is - a resync snapshot carries it,
+## so the next screen change waits for the same fade-out on every machine.
+func snapshot_state() -> Dictionary:
+	return {"length": length, "progress": progress, "direction": direction, "from": _from, "cov": _cov,
+			"from_kind": _from_kind, "to_kind": _to_kind, "mid_from": _mid_from, "mid_p": _mid_p, "p": _p,
+			"color": rect.color}
+
+
+## [method snapshot_state]'s [param d] back.
+func restore_state(d: Dictionary) -> void:
+	length = int(d.get("length", 0))
+	progress = int(d.get("progress", 0))
+	direction = clampi(int(d.get("direction", 0)), -1, 1)
+	_from = float(d.get("from", 0.0))
+	_cov = float(d.get("cov", 0.0))
+	_from_kind = int(d.get("from_kind", COVER))
+	_to_kind = int(d.get("to_kind", COVER))
+	_mid_from = int(d.get("mid_from", SCREEN))
+	_mid_p = int(d.get("mid_p", 0))
+	_p = int(d.get("p", DONE))
+	var c: Variant = d.get("color", Color.BLACK)
+	rect.color = c if c is Color else Color.BLACK
+	_apply()
 
 
 ## The share of the fade done: 0 = screen fully visible, 1 = fully covered.
@@ -102,8 +128,8 @@ func step() -> void:
 static func progress_at(k: int, ticks: int) -> int:
 	if ticks < 2:
 		return DONE
-	var step_ := 0x10000 / ticks
-	var p := 0x10000 % ticks + k * step_
+	var fade_step := 0x10000 / ticks
+	var p := 0x10000 % ticks + k * fade_step
 	return mini(p, DONE)
 
 
@@ -122,11 +148,11 @@ static func faded_level(a: int, b: int, p: int) -> int:
 ## screen] (the shader's arithmetic, for the tests).
 func level_shown(screen: int) -> int:
 	var c := rect.color
-	var cover_ := roundi(c.r * 7.0)
-	var a := screen if _from_kind == SCREEN else cover_
+	var level := roundi(c.r * 7.0)
+	var a := screen if _from_kind == SCREEN else level
 	if _from_kind == MID:
-		a = faded_level(screen, cover_, _mid_p) if _mid_from == SCREEN else faded_level(cover_, screen, _mid_p)
-	var b := screen if _to_kind == SCREEN else cover_
+		a = faded_level(screen, level, _mid_p) if _mid_from == SCREEN else faded_level(level, screen, _mid_p)
+	var b := screen if _to_kind == SCREEN else level
 	return faded_level(a, b, _p)
 
 

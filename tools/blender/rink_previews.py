@@ -11,7 +11,7 @@ the same colour rules as the game's material (game/src/rink3d/rink3d_picture.gds
 * ``rink_boards.png``  the same picture for the boards: colour 0 transparent,
   the glass rows translucent
 * ``signs.png``        ``picture_04a066`` (the boards with signs), glass rows translucent
-* ``fence.png``        ``picture_03c264`` (the referee side's fence), colour 0 transparent
+* ``fence.png``        ``picture_03c264`` (the penalty-box side's fence), colour 0 transparent
 
 They go to ``out/plan3d/preview/`` (gitignored): they are ROM-derived and only
 for previews. The ``.blend`` references them by relative path and never packs
@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 
 from mw_harness import palettes  # noqa: E402
-from mw_harness.gfx import color_rgb8  # noqa: E402
+from mw_harness.gfx import Picture, color_rgb8, picture_image  # noqa: E402
 
 RINK_PICTURE = 0x24CFC
 SIGNS_PICTURE = 0x4A066
@@ -62,29 +62,10 @@ def post_columns(w: int, idx: bytearray, ref_row: int) -> set[int]:
 
 
 def picture_indices(rom: bytes, a: int) -> tuple[int, int, bytearray]:
-    """The picture's map as line * 16 + colour indices (0 where nothing is drawn)."""
-    tiles, base, count, w, h = struct.unpack(">IHHHH", rom[a:a + 12])
-    img = bytearray(w * 8 * h * 8)
-    stride = w * 8
-    for i in range(w * h):
-        word = struct.unpack(">H", rom[a + 12 + 2 * i:a + 14 + 2 * i])[0]
-        t = (word & 0x7FF) - base
-        if t < 0 or t >= count:
-            continue
-        line = (word >> 13) & 3
-        hf, vf = word & 0x800, word & 0x1000
-        tb = rom[tiles + 32 * t:tiles + 32 * t + 32]
-        cx, cy = (i % w) * 8, (i // w) * 8
-        for py in range(8):
-            for px in range(8):
-                b = tb[py * 4 + px // 2]
-                c = (b >> 4) if px % 2 == 0 else b & 15
-                if c == 0:
-                    continue
-                x = 7 - px if hf else px
-                y = 7 - py if vf else py
-                img[(cy + y) * stride + cx + x] = line * 16 + c
-    return w * 8, h * 8, img
+    """The picture's map as line * 16 + colour indices (0 where nothing is
+    drawn): the harness's decoder (plan 40: this was a copy of it)."""
+    w, h, img = picture_image(rom, Picture.parse(rom, a))
+    return w, h, bytearray(img)
 
 
 def render(rom: bytes, a: int, pal: list[int], floor: bool) -> Image.Image:

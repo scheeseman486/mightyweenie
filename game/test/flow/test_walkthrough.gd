@@ -16,15 +16,19 @@ const SCRIPT := """
 
 var host: Node
 var _front_menu := true
+var _layouts := {}
 
 
 func before_all() -> void:
 	_front_menu = MwSettings.front_menu
 	MwSettings.front_menu = false         # the original's flow (title -> credits -> main menu)
+	_layouts = MwSettings.layouts
+	MwSettings.layouts = {1: "GENESIS"}   # ... and its lettered pause menu (A - REPLAY)
 
 
 func after_all() -> void:
 	MwSettings.front_menu = _front_menu
+	MwSettings.layouts = _layouts
 
 
 func after_each() -> void:

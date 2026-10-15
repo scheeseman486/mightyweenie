@@ -5,12 +5,20 @@ extends Node3D
 ## model stands at each net's point instead (the sim's nets can move). The
 ## calibration camera keeps the drawings (it checks the 3D view against the
 ## original's pixels). Presentation only.
+## Short names: n a net's model (MwNet3D).
 
 var palette: RomPalette:
 	set(v):
 		palette = v
 		for n: MwNet3D in _nets.values():
 			n.palette = v
+
+## Whether the nets' reflections in the ice show (plan 37, MwNet3D).
+var reflections := true:
+	set(v):
+		reflections = v
+		for n: MwNet3D in _nets.values() + _warm:
+			n.reflection = v
 
 var _nets := {}          # item key -> MwNet3D
 var _warm: Array[MwNet3D] = []
@@ -23,7 +31,7 @@ var _warm: Array[MwNet3D] = []
 func take(items: Array, drawings := false) -> Array:
 	var rom := MwRom.data() if MwRom.available() else PackedByteArray()
 	var rest: Array = []
-	var shown := {}
+	var standing_keys := {}
 	for it: Dictionary in items:
 		var style := MwNet3D.model_style(rom, int(it["net"]["anim"])) if it.has("net") and not rom.is_empty() else -1
 		if drawings or style < 0:
@@ -39,12 +47,13 @@ func take(items: Array, drawings := false) -> Array:
 			n.style = style
 			n.name = key.replace("/", "_")
 			n.palette = palette
+			n.reflection = reflections
 			add_child(n)
 			_nets[key] = n
 		n.place(it["at"], int(it["net"]["mouth"]))
-		shown[key] = true
+		standing_keys[key] = true
 	for key: String in _nets:
-		_nets[key].visible = shown.has(key)
+		_nets[key].visible = standing_keys.has(key)
 	return rest
 
 
@@ -70,6 +79,7 @@ func warm_up(on: bool) -> void:
 		n.style = style
 		n.name = "Warm%d" % style
 		n.palette = palette
+		n.reflection = reflections
 		add_child(n)
 		n.place(Vector3(0, 40, 0), 1)
 		_warm.append(n)

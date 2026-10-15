@@ -62,16 +62,12 @@ const TALK_QUIET := -400             ## the comment's talk is over below this ti
 ## in the original. Ours cuts them there (owner: they look like a bug): the
 ## standing players' operations carry this row ([MwScreenDraw]).
 const BOARDS_BOTTOM := 203
-const NAME_FONT := 0x447F4
-const SPEECH_FONT := 0x1F958
+const NAME_FONT := MwFonts.LIGHT
+const SPEECH_FONT := MwFonts.DARK
 const BUBBLE_TAIL := 0x1FB02
 const TAIL_AT := Vector2i(0xB8, 0x39)
 const WINDOW := 0xFFFFB0CA           ## the window's plane object (the sprites' camera)
-const QUOTES := 0x1D404
-const NO_QUOTE := 0x50D2D
-const STAR_PORTRAITS := 0x1CC2C      ## 6 x (player record.l, portrait data.l, quote set.w)
-const SPECIES_PORTRAITS := 0x1CC68   ## by species: portrait data.l, quote set.w
-const NO_PORTRAIT := 0x1CC20         ## a portrait of no record (the referee's face)
+const NO_PORTRAIT := MwPortrait.DEFAULT   ## a portrait of no record (the referee's face)
 const TEAM_WORDS := [0xB402, 0xB8AC]
 
 ## -$32: 1 on 12 / 15 / 16 (the event team lined up), 0 on 13 / 14.
@@ -82,6 +78,10 @@ var menu := 0
 var panel := MwMessagePanel.new()
 ## -$36: the music's handle (-1: none).
 var music := -1
+## Port only ([member MwSettings.goal_song_carries]): the music was asked
+## for while the goal song carried over from the rink still played; it
+## starts when the song ends ([method _music_pass]).
+var _music_wanted := false
 ## -4: the tick of the last pass boundary.
 var snapshot := 0
 ## -$3A: the tick the 600 ticks count from.
@@ -102,6 +102,15 @@ var _comment_known := false          ## the comment's locals were set in this vi
 var _touched := {}                   ## players whose animation object was set (+$23 cleared)
 
 
+## Plan 45: the rink sim disposed as this sim goes (its cycles would keep the
+## match's state; MwScreenSim.dispose).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and rink != null:
+		rink.dispose()
+
+
+## Always true: this sim ports the scoreboards, so the screen checks compare its visits
+## with the original's (a stub has no such method).
 func ported() -> bool:
 	return true
 
@@ -125,6 +134,7 @@ func enter(state: MwRinkState, screen_id: int, from_screen: int) -> void:
 	panel.reset()
 	menu = 0
 	music = -1
+	_music_wanted = false
 	comment = 0
 	_comment_known = false
 	if from >= 7 and from <= 10:
@@ -182,6 +192,7 @@ static func leave(sim: MwScreenSim, to: int, music_handle: int) -> int:
 	sim.fade_out(FADE_OUT)
 	sim.events.append(["music_stop", music_handle])
 	sim.sound_call(func() -> void: MwSound.stop(music_handle))
+	sim.sound_call(func() -> void: MwSound.end_carry())   # port: a goal song still carried over stops too
 	sim.s.projection = 0
 	return to
 
@@ -193,9 +204,14 @@ func _menu_show() -> void:
 	_music_on()
 
 
-## `$8E4E`: the music `$1B` unless it is on (crowd off first).
+## `$8E4E`: the music `$1B` unless it is on (crowd off first). Port only:
+## while a goal song carried over from the rink plays ([member
+## MwSettings.goal_song_carries]), later ([member _music_wanted]).
 func _music_on() -> void:
 	if music >= 0:
+		return
+	if live() and MwSound.carrying():
+		_music_wanted = true
 		return
 	crowd_off()                                 # `$8E54`
 	music = play_music(self)
@@ -206,12 +222,13 @@ func _music_on() -> void:
 static func play_music(sim: MwScreenSim) -> int:
 	var h: int
 	if sim.live():
-		h = MwScreenSim.handle_of(MwSound.play(MUSIC))
+		var d0 := MwSound.play(MUSIC)
+		var fade := MwSound.take_fade_in()
+		if fade > 0:
+			MwSound.fade_in(d0, fade)               # port: after a carried goal song
+		h = MwScreenSim.handle_of(d0)
 	else:
-		sim._serial = (sim._serial + 1) & 0x3FFFFFFF
-		h = sim._serial | 0x40000000
-		if sim.hooks.has_method("voice_handle"):
-			h = int(sim.hooks.call("voice_handle", sim, MUSIC))
+		h = sim.checks_handle(MUSIC)
 	sim.events.append(["music", MUSIC, h])
 	return h
 
@@ -222,10 +239,10 @@ func event_team() -> MwRinkState.Team:
 
 
 ## The team a RAM address long ([param v]: `$FFFFB402` / `$FFFFB8AC`) names, or null.
-static func team_of_long(st: MwRinkState, v: int) -> MwRinkState.Team:
+static func team_of_long(state: MwRinkState, v: int) -> MwRinkState.Team:
 	for t in 2:
 		if v & 0xFFFF == TEAM_WORDS[t]:
-			return st.teams[t]
+			return state.teams[t]
 	return null
 
 
@@ -238,11 +255,11 @@ static func player_long(p: MwRinkState.Player) -> int:
 
 
 ## The player slot at a RAM address long, or null.
-static func player_at(st: MwRinkState, v: int) -> MwRinkState.Player:
+static func player_at(state: MwRinkState, v: int) -> MwRinkState.Player:
 	if v == 0:
 		return null
 	for t in 2:
-		for p in st.teams[t].players:
+		for p in state.teams[t].players:
 			if player_long(p) == v & 0xFFFFFFFF:
 				return p
 	return null
@@ -335,15 +352,15 @@ func _comment_setup() -> void:
 		push_warning("MwScoreboardSim: no scorer at $%08X" % s.scorer)
 		return
 	name = MwGfx.u32(rom, p.original)
-	var set := portrait.set_player(rom, p.original, 0)
-	if set >= 9:
-		set = 0
+	var quote_set := portrait.set_player(rom, p.original, 0)
+	if quote_set >= 9:
+		quote_set = 0
 	var sit := s.goal_kind & 0xFFFF
 	if sit >= 7:
 		sit = 0
 	var team := s.teams[0] if (s.scorer & 0xFFFFFFFF) < (0xFFFF0000 | TEAM_WORDS[1]) else s.teams[1]
 	var other := s.teams[1] if team == s.teams[0] else s.teams[0]
-	quote_at = quote_pick(self, set, 10, sit, team, other, p.original)
+	quote_at = quote_pick(self, quote_set, 10, sit, team, other, p.original)
 	portrait.start(rom, 0)
 	speech_frame(self, rect_at(rom, SPEECH_RECT), true)
 	comment = 1
@@ -361,7 +378,8 @@ func _comment_pass(e: int) -> void:
 	var attr := MwGfx.u16(rom, PORTRAIT_AT + 6)
 	if (s.scorer & 0xFFFFFFFF) >= (0xFFFF0000 | TEAM_WORDS[1]):
 		attr = 0x40
-	portrait.draw(self, MwGfx.u16(rom, PORTRAIT_AT), MwGfx.u16(rom, PORTRAIT_AT + 2), MwGfx.u16(rom, PORTRAIT_AT + 4), attr)
+	portrait.draw(self, MwGfx.u16(rom, PORTRAIT_AT), MwGfx.u16(rom, PORTRAIT_AT + 2), MwGfx.u16(rom, PORTRAIT_AT + 4),
+			attr)
 	speech_frame(self, rect_at(rom, SPEECH_RECT), false)
 	print_quote(self)
 	bubble_tail(self)
@@ -425,11 +443,12 @@ func step(elapsed: int, held: Array, new: Array) -> int:
 	return -1
 
 
-## `read_joypads` as the state keeps it (`$FFCA5A`: held, newly pressed).
-static func read_pads(st: MwRinkState, held: Array, new: Array) -> void:
-	for p in 4:
-		st.pads_held[p] = int(held[p]) & 0xFF
-		st.pads_new[p] = int(new[p]) & 0xFF
+## `read_joypads` as the state keeps it (`$FFCA5A`: held, newly pressed;
+## plan 34, an extended set-up: its twelve match pads).
+static func read_pads(state: MwRinkState, held: Array, new: Array) -> void:
+	for p in mini(state.pads_held.size(), mini(held.size(), new.size())):
+		state.pads_held[p] = int(held[p]) & 0xFF
+		state.pads_new[p] = int(new[p]) & 0xFF
 
 
 ## `$91C4`: every lined-up player's animation advanced; a stopped one not
@@ -472,15 +491,24 @@ func _players_draw() -> void:
 
 
 ## `$8E68`: the music again when it ended; without music the crowd on,
-## unless 12's comment is still talking (timer above -400).
+## unless 12's comment is still talking (timer above -400). Port only
+## ([member MwSettings.goal_song_carries]): nothing while a goal song carried
+## over from the rink plays; then the music asked for meanwhile, and the
+## first crowd or music fades in ([method MwSound.take_fade_in]).
 func _music_pass() -> void:
+	if live() and MwSound.carrying():
+		return
+	if _music_wanted:
+		_music_wanted = false
+		_music_on()
+		return
 	if music >= 0:
 		if not playing(music):
 			music = play_music(self)
 		return
 	if comment != 0 and MwRinkSim.s16(portrait.timer) > TALK_QUIET:
 		return
-	crowd_level(CROWD)                          # `$8E8C`
+	crowd_level(CROWD, MwSound.take_fade_in() if live() else 0)   # `$8E8C`
 
 
 ## `$8E94`: the menu's buttons (newly pressed on any pad, [param w]):
@@ -505,22 +533,23 @@ func _menu_input(w: int) -> int:
 
 ## A rectangle (x, y, w, h words) from the ROM.
 static func rect_at(rom_: PackedByteArray, a: int) -> PackedInt32Array:
-	return PackedInt32Array([MwGfx.s16(rom_, a), MwGfx.s16(rom_, a + 2), MwGfx.s16(rom_, a + 4), MwGfx.s16(rom_, a + 6)])
+	return PackedInt32Array([MwGfx.s16(rom_, a), MwGfx.s16(rom_, a + 2), MwGfx.s16(rom_, a + 4),
+			MwGfx.s16(rom_, a + 6)])
 
 
 ## `$BD96` ([param filled]: the box framed and filled, the text box
 ## `$FFC336` made in it and homed) / `$BD9E` (framed only): `$FFC3B4`,
 ## `$FFC3BC` and the rect `$FFC32E` noted, the frame drawn (`$BA98`).
 static func speech_frame(sim: MwScreenSim, rect: PackedInt32Array, filled: bool) -> void:
-	var st := sim.s
-	st.box_fill = 1 if filled else 0
-	st.box_c3bc = 0
+	var state := sim.s
+	state.box_fill = 1 if filled else 0
+	state.box_c3bc = 0
 	for i in 4:
-		st.speech_box[i] = rect[i]
+		state.speech_box[i] = rect[i]
 	sim.window_ops.append(["box", rect[0], rect[1], rect[2], rect[3], filled])
 	if not filled:
 		return
-	var tb := st.text_box
+	var tb := state.text_box
 	tb.plane = WINDOW
 	tb.font = SPEECH_FONT
 	tb.x = rect[0]
@@ -539,42 +568,22 @@ static func speech_frame_erase(sim: MwScreenSim, rect: PackedInt32Array) -> void
 
 ## `$BB2E`: the quote (`$FFC4FE`) written into the text box from its
 ## corner, attr `$E0` (`$15860`: word wrap; the cursor ends where the text
-## did) - as [method MwRinkPhases._print_quote].
+## did) - the rink's too ([method MwRinkPhases._print_quote]; plan 40, D2:
+## MwTextBox.layout): one "quote" operation the window painter lays out.
 static func print_quote(sim: MwScreenSim) -> void:
-	var rom_ := sim.rom
-	var st := sim.s
-	var tb := st.text_box
+	print_quote_into(sim.rom, sim.s, sim.window_ops)
+
+
+## [method print_quote] for state [param state]'s text box and quote, the
+## operation into [param ops].
+static func print_quote_into(rom_: PackedByteArray, state: MwRinkState, ops: Array) -> void:
+	var tb := state.text_box
 	tb.cursor_x = 0
 	tb.cursor_y = 0
-	sim.window_ops.append(["quote", tb.font, tb.x, tb.y, 0xE0, st.quote.slice(0, maxi(st.quote.find(0), 0)), tb.w, tb.h])
-	var f := tb.font
-	var line := MwGfx.u16(rom_, f) + tb.spacing
-	var x := MwRinkSim.s16(tb.cursor_x)
-	var i := 0
-	var q := st.quote
-	while i < q.size() and q[i] != 0:
-		var ch := q[i]
-		if ch < 0x21 or ch > 0x7E:
-			if ch == 0x20:
-				x = MwRinkSim.s16(x + MwGfx.u16(rom_, f + 2))
-			elif ch == 0x0A:
-				tb.cursor_y = (tb.cursor_y + line) & 0xFFFF
-				x = 0
-			i += 1
-			continue
-		var width := 0
-		var j := i
-		while j < q.size() and q[j] >= 0x21 and q[j] <= 0x7E:
-			width += MwRinkPhases.glyph_width(rom_, f, q[j])
-			j += 1
-		if MwRinkSim.s16(x + width) > MwRinkSim.s16(tb.w) and x != 0:
-			tb.cursor_y = (tb.cursor_y + line) & 0xFFFF
-			x = 0
-		if (tb.cursor_y & 0xFFFF) >= (tb.h & 0xFFFF):
-			break
-		x = MwRinkSim.s16(x + width)
-		i = j
-	tb.cursor_x = x & 0xFFFF
+	ops.append(["quote", tb.font, tb.x, tb.y, 0xE0, state.quote.slice(0, maxi(state.quote.find(0), 0)), tb.w, tb.h])
+	var l := MwTextBox.layout(rom_, tb.font, state.quote, tb.w, tb.h, MwGfx.u16(rom_, tb.font) + tb.spacing)
+	tb.cursor_x = l["cursor_x"]
+	tb.cursor_y = l["cursor_y"]
 
 
 ## `$BD32` at (184, 57): the speech bubble's tail (`$1FB02`, attr `$E0`, depth 0).
@@ -582,86 +591,64 @@ static func bubble_tail(sim: MwScreenSim) -> void:
 	sim.sprite_ops.append(["piece", BUBBLE_TAIL, TAIL_AT.x, TAIL_AT.y, 0xE0, 0])
 
 
-## `$F420`: quote set [param set] of [param category] for [param situation]
+## `$F420`: quote set [param quote_set] of [param category] for [param situation]
 ## expanded into `$FFC4FE` (one string: that one; several: `rng_range(0, n
 ## - 1)`; none: `$50D2D`): `[` [param team]'s city, a space and name, `{`
 ## its name, `}` [param other]'s name, `@` the string at the record
 ## [param who] (12: the scorer's; elsewhere a5 holds no record, -1, and no
 ## quote of categories 11 or 13 has an `@`). Returns the buffer's address
-## (the value word is not kept).
-static func quote_pick(sim: MwScreenSim, set: int, category: int, situation: int,
+## (the value word is not kept). Plan 40: MwQuotes.
+static func quote_pick(sim: MwScreenSim, quote_set: int, category: int, situation: int,
 		team: MwRinkState.Team, other: MwRinkState.Team, who: int) -> int:
-	var rom_ := sim.rom
-	var t := MwGfx.u32(rom_, QUOTES + 4 * (category & 0xFFFF))
-	t = MwGfx.u32(rom_, t + 4 * (situation & 0xFFFF))
-	t = MwGfx.u32(rom_, t + 4 * (set & 0xFFFF))
-	var count := MwGfx.u16(rom_, t + 2)
-	var src := NO_QUOTE
-	if count == 1:
-		src = MwGfx.u32(rom_, t + 4)
-	elif count > 1:
-		src = MwGfx.u32(rom_, t + 4 + 4 * (sim.rng_range(0, count - 1) & 0xFFFF))
-	var q := sim.s.quote
-	var out := 0
-	while true:
-		var ch := rom_[src]
-		src += 1
-		match ch:
-			0x40:
-				if who < 0:
-					push_warning("MwScoreboardSim: quote code @ without a record")
-				else:
-					out = _copy(rom_, q, out, MwGfx.u32(rom_, who))
-			0x5B:
-				out = _copy(rom_, q, out, MwGfx.u32(rom_, team.record))
-				_put(q, out, 0x20)
-				out += 1
-				out = _copy(rom_, q, out, MwGfx.u32(rom_, team.record + 4))
-			0x7B:
-				out = _copy(rom_, q, out, MwGfx.u32(rom_, team.record + 4))
-			0x7D:
-				out = _copy(rom_, q, out, MwGfx.u32(rom_, other.record + 4))
-			_:
-				_put(q, out, ch)
-				out += 1
-				if ch == 0:
-					break
+	var bytes := sim.rom
+	var t := MwQuotes.set_at(bytes, category & 0xFFFF, situation & 0xFFFF, quote_set & 0xFFFF)
+	var src := MwQuotes.choose(bytes, t, func(hi: int) -> int: return sim.rng_range(0, hi))
+	return quote_expand(sim, MwGfx.rom_string(bytes, src), team, other, who)
+
+
+## The port's own quote set [param lines] ([MwQuotes], not ROM text; plan
+## 26) picked as `$F420` picks a ROM set of that size (one: it; several:
+## `rng_range(0, n - 1)`, the same draw) and expanded as [method
+## quote_pick] does, with the plural possessive (a name ending in "s" takes
+## "'" for "'s"; owner). Returns the buffer's address.
+static func quote_from(sim: MwScreenSim, lines: Array, team: MwRinkState.Team,
+		other: MwRinkState.Team, who: int) -> int:
+	var i := 0
+	if lines.size() > 1:
+		i = sim.rng_range(0, lines.size() - 1) & 0xFFFF
+	return quote_expand(sim, str(lines[i]).to_ascii_buffer(), team, other, who, true)
+
+
+## `$F420`'s copy into `$FFC4FE` of [param template] (MwQuotes.expand_into
+## with [param team]'s, [param other]'s and [param who]'s strings). Returns
+## the buffer's address.
+static func quote_expand(sim: MwScreenSim, template: PackedByteArray, team: MwRinkState.Team,
+		other: MwRinkState.Team, who: int, possessive := false) -> int:
+	var at := who if template.has(0x40) else -1     # the record read only for an `@`, as the original
+	MwQuotes.expand_into(sim.s.quote, template, MwQuotes.fields(sim.rom, team.record, other.record, at), possessive)
 	return 0xFFFFC4FE
 
 
-static func _copy(rom_: PackedByteArray, q: PackedByteArray, at: int, src: int) -> int:
-	while rom_[src] != 0:
-		_put(q, at, rom_[src])
-		at += 1
-		src += 1
-	_put(q, at, 0)
-	return at
-
-
-static func _put(q: PackedByteArray, at: int, v: int) -> void:
-	if at < q.size():
-		q[at] = v & 0xFF
-
-
 ## An animation object's frame as a sprite operation (screen pixels).
-static func anim_op(a: MwAnimState, x: int, y: int, depth: int, attr: int) -> Array:
-	return ["anim", a.address, a.variant, a.frame, MwRinkSim.s16(x), MwRinkSim.s16(y), depth & 0xFFFF, attr & 0xFF]
+static func anim_op(animation: MwAnimState, x: int, y: int, depth: int, attr: int) -> Array:
+	return ["anim", animation.address, animation.variant, animation.frame, MwRinkSim.s16(x), MwRinkSim.s16(y),
+			depth & 0xFFFF, attr & 0xFF]
 
 
 ## `$5AC2`: rink point -> map point and depth; with the side view
 ## (`$FFBDBA`, the scoreboards) x' = y + 160, y' = 377 - |x| - z.
-static func project(st: MwRinkState, x: int, y: int, z: int) -> Vector3i:
-	if st.projection != 0:
+static func project(state: MwRinkState, x: int, y: int, z: int) -> Vector3i:
+	if state.projection != 0:
 		var my := MwRinkSim.s16(-absi(MwRinkSim.s16(x)) + 0x179 - z)
 		return Vector3i(MwRinkSim.s16(y + 0xA0), my, MwRinkSim.s16(my + z))
 	var my2 := MwRinkSim.s16(y + 0x1CD - z)
 	return Vector3i(MwRinkSim.s16(x + 0x100), my2, MwRinkSim.s16(my2 + z))
 
 
-## `$14472`: hotspot [param n] of [param a]'s frame, negated by the flips
+## `$14472`: hotspot [param n] of [param animation]'s frame, negated by the flips
 ## of [param attr] (bit 3 H, bit 4 V) XOR the variant's (`$1563E`, `$A142`).
-static func hotspot(rom_: PackedByteArray, a: MwAnimState, n: int, attr: int) -> Vector2i:
-	var f := a.frame_address(rom_)
+static func hotspot(rom_: PackedByteArray, animation: MwAnimState, n: int, attr: int) -> Vector2i:
+	var f := animation.frame_address(rom_)
 	var flips := ((attr >> 3) & 3) ^ f.y
 	var at := f.x + 2 + 6 * MwGfx.u16(rom_, f.x) + 2 * n
 	var hx := MwGfx.s8(rom_, at)
@@ -684,26 +671,13 @@ class Portrait extends MwRinkState.Portrait:
 	## Returns the quote set of the face (0 for none).
 	func set_player(rom_: PackedByteArray, record_: int, size_: int) -> int:
 		size = size_ & 0xFFFF
-		var set := 0
-		if record_ == 0:
-			data = NO_PORTRAIT
-		else:
-			var found := false
-			for i in 6:
-				var a := STAR_PORTRAITS + 10 * i
-				if MwGfx.u32(rom_, a) == record_:
-					data = MwGfx.u32(rom_, a + 4)
-					set = MwGfx.u16(rom_, a + 8)
-					found = true
-					break
-			if not found:
-				var k := 6 * (rom_[record_ + 7] & 0xF)
-				data = MwGfx.u32(rom_, SPECIES_PORTRAITS + k)
-				set = MwGfx.u16(rom_, SPECIES_PORTRAITS + k + 4)
+		var face := MwPortrait.player_face(rom_, record_)   # plan 40 (D5)
+		data = face[0]
+		var quote_set := face[1]
 		x10 = 0
 		handle = 0
 		anim.flags &= ~MwAnimState.PLAYING
-		return set
+		return quote_set
 
 	## `$B542`: talking (0) or pulling a face (1; 2+ as 1): that animation
 	## (`anim_set`) from its start, playing, the timer at -40, two voices.
@@ -722,7 +696,7 @@ class Portrait extends MwRinkState.Portrait:
 	## cycle, then a 480-tick pause, the mouth shut); the mouth alternates a
 	## random frame (`rng_range(0, frames - 1)`) and frame 0.
 	func advance(sim: MwScreenSim, e: int) -> void:
-		var rom_ := sim.rom
+		var bytes := sim.rom
 		if mode != 0:
 			var old := anim.frame
 			anim.advance(e)
@@ -730,11 +704,11 @@ class Portrait extends MwRinkState.Portrait:
 				return
 			var a := data + 0xA
 			while true:
-				var w := MwGfx.u16(rom_, a)
+				var w := MwGfx.u16(bytes, a)
 				if old < w:
 					return
 				if old == w:
-					sim.sound(MwGfx.u16(rom_, a + 2))
+					sim.sound(MwGfx.u16(bytes, a + 2))
 					return
 				a += 4
 			return
@@ -752,11 +726,11 @@ class Portrait extends MwRinkState.Portrait:
 				anim.frame = 0
 				return
 			voices = (voices - 1) & 0xFFFF
-			handle = sim.sound(MwGfx.u16(rom_, data + 8))
+			handle = sim.sound(MwGfx.u16(bytes, data + 8))
 		if anim.frame != 0:
 			anim.frame = 0
 		else:
-			anim.frame = sim.rng_range(0, rom_[anim.address + 3] - 1) & 0xFF
+			anim.frame = sim.rng_range(0, bytes[anim.address + 3] - 1) & 0xFF
 		timer = t & 0xFFFF
 
 	## `$B656`: stopped, its voice too (`$B660`).
@@ -768,19 +742,20 @@ class Portrait extends MwRinkState.Portrait:
 	## `$B61C` on the window: drawn at ([param x], [param y]) (its border
 	## first when it has a size).
 	func draw(sim: MwScreenSim, x: int, y: int, depth: int, attr: int) -> void:
-		sim.sprite_ops.append(["portrait", x, y, depth & 0xFFFF, attr & 0xFF, anim.address, anim.variant, anim.frame, size])
+		sim.sprite_ops.append(["portrait", x, y, depth & 0xFFFF, attr & 0xFF, anim.address, anim.variant, anim.frame,
+				size])
 
 	## Its fields against the object at [param at] in the original's RAM
 	## (the voice handle: zero or not).
-	func compare(d: Diff, at: int, what: String) -> void:
-		d.anim(what + " anim", at, anim, x0b)
-		d.long(what + " data", at + 0xC, data)
-		d.word(what + " +$10", at + 0x10, x10)
-		d.word(what + " mode", at + 0x12, mode)
-		d.word(what + " timer", at + 0x14, timer)
-		d.word(what + " size", at + 0x16, size)
-		d.flag(what + " voice", at + 0x18, handle != 0)
-		d.word(what + " voices", at + 0x1C, voices)
+	func compare(diff: Diff, at: int, what: String) -> void:
+		diff.anim(what + " anim", at, anim, x0b)
+		diff.long(what + " data", at + 0xC, data)
+		diff.word(what + " +$10", at + 0x10, x10)
+		diff.word(what + " mode", at + 0x12, mode)
+		diff.word(what + " timer", at + 0x14, timer)
+		diff.word(what + " size", at + 0x16, size)
+		diff.flag(what + " voice", at + 0x18, handle != 0)
+		diff.word(what + " voices", at + 0x1C, voices)
 
 
 # --- Glynda the Zamboni (14) ---------------------------------------------------------------------
@@ -822,7 +797,7 @@ class Zamboni:
 	## `$F2B4` ([param camera_] the window, [param y_], [param depth_]):
 	## heading for 480 from x -92, the three animations playing, the debris.
 	func setup(sim: MwScreenSim, camera_: int, y_: int, depth_: int) -> void:
-		var rom_ := sim.rom
+		var bytes := sim.rom
 		target = 0x1E0
 		x = -0x5C
 		attr = 0xA0
@@ -835,11 +810,11 @@ class Zamboni:
 		last_frame = 0
 		grabbing = 0
 		rider_x = -0x5C
-		body = MwAnimState.from_record(rom_, BODY)
+		body = MwAnimState.from_record(bytes, BODY)
 		body.flags |= MwAnimState.PLAYING
-		rider = MwAnimState.from_record(rom_, RIDER)
+		rider = MwAnimState.from_record(bytes, RIDER)
 		rider.flags |= MwAnimState.PLAYING
-		whip = MwAnimState.from_record(rom_, WHIP)
+		whip = MwAnimState.from_record(bytes, WHIP)
 		whip.flags |= MwAnimState.PLAYING
 		_debris(sim)
 
@@ -890,39 +865,39 @@ class Zamboni:
 	## `$F11A`: the Zamboni's animation; a new frame moves it (`$F116`,
 	## backwards while heading left); drawn, its rider at its hotspot 0.
 	func _drive(sim: MwScreenSim) -> void:
-		var rom_ := sim.rom
+		var bytes := sim.rom
 		body.advance(e)
 		var f := body.frame
 		if f != last_frame:
 			last_frame = f
-			var d: int = rom_[STEPS + f]
+			var d: int = bytes[STEPS + f]
 			if MwRinkSim.s16(target) < 0:
 				d = -d
 			x = MwRinkSim.s16(x + d)
 		sim.sprite_ops.append(MwScoreboardSim.anim_op(body, x, y, depth, attr))
 		rider.advance(e)
-		var h := MwScoreboardSim.hotspot(rom_, body, 0, attr)
+		var h := MwScoreboardSim.hotspot(bytes, body, 0, attr)
 		rider_x = MwRinkSim.s16(h.x + x)
 		sim.sprite_ops.append(MwScoreboardSim.anim_op(rider, rider_x, h.y + y, depth + 1, attr))
 
 	## `$F1A0`: a crack done: the next queued one starts; the whip drawn
 	## (idle too) at the Zamboni's hotspot 1.
 	func _whip(sim: MwScreenSim) -> void:
-		var rom_ := sim.rom
+		var bytes := sim.rom
 		var go := cracks != 0
 		if go and not whip.playing():
 			cracks = (cracks - 1) & 0xFFFF
 			if cracks == 0:
 				go = false
 			else:
-				whip = MwAnimState.from_record(rom_, WHIP)
+				whip = MwAnimState.from_record(bytes, WHIP)
 				whip.flags |= MwAnimState.PLAYING
 				whip_late = 0
 		if go:
 			whip.advance(e)
 			if whip.position >= 0x800 and whip_late == 0:
 				whip_late = 1
-		var h := MwScoreboardSim.hotspot(rom_, body, 1, attr)
+		var h := MwScoreboardSim.hotspot(bytes, body, 1, attr)
 		sim.sprite_ops.append(MwScoreboardSim.anim_op(whip, h.x + x, h.y + y, depth + 2, attr))
 
 	## `$F224`: a D-pad press: the whip starts if idle; one crack more.
@@ -934,29 +909,29 @@ class Zamboni:
 		cracks = (cracks + 1) & 0xFFFF
 
 	## Its RAM against the original's.
-	func compare(d: Diff) -> void:
-		d.word("zamboni e", RAM, e)
-		d.word("zamboni x", RAM + 2, x)
-		d.word("zamboni y", RAM + 4, y)
-		d.word("zamboni depth", RAM + 6, depth)
-		d.word("zamboni attr", RAM + 8, attr)
-		d.long("zamboni camera", RAM + 0xA, camera)
-		d.word("zamboni target", RAM + 0xE, target)
-		d.anim("zamboni body", RAM + 0x10, body, 0)
-		d.anim("zamboni rider", RAM + 0x1C, rider, 0)
-		d.anim("zamboni whip", RAM + 0x28, whip, 0)
+	func compare(diff: Diff) -> void:
+		diff.word("zamboni e", RAM, e)
+		diff.word("zamboni x", RAM + 2, x)
+		diff.word("zamboni y", RAM + 4, y)
+		diff.word("zamboni depth", RAM + 6, depth)
+		diff.word("zamboni attr", RAM + 8, attr)
+		diff.long("zamboni camera", RAM + 0xA, camera)
+		diff.word("zamboni target", RAM + 0xE, target)
+		diff.anim("zamboni body", RAM + 0x10, body, 0)
+		diff.anim("zamboni rider", RAM + 0x1C, rider, 0)
+		diff.anim("zamboni whip", RAM + 0x28, whip, 0)
 		for i in 4:
 			if i < debris.size():
-				d.anim("debris %d" % i, RAM + 0x34 + 0xC * i, debris[i], 0)
-			d.word("debris %d y" % i, RAM + 0x64 + 2 * i, debris_y[i])
+				diff.anim("debris %d" % i, RAM + 0x34 + 0xC * i, debris[i], 0)
+			diff.word("debris %d y" % i, RAM + 0x64 + 2 * i, debris_y[i])
 		for i in 5:
-			d.word("debris %d x" % i, RAM + 0x6C + 2 * i, debris_x[i])
-		d.long("zamboni next", RAM + 0x76, 0xFFFFC4E6 + 2 * next)
-		d.word("zamboni cracks", RAM + 0x7A, cracks)
-		d.word("zamboni last frame", RAM + 0x7C, last_frame)
-		d.word("zamboni grabbing", RAM + 0x7E, grabbing)
-		d.word("zamboni rider x", RAM + 0x80, rider_x)
-		d.word("zamboni whip late", RAM + 0x82, whip_late)
+			diff.word("debris %d x" % i, RAM + 0x6C + 2 * i, debris_x[i])
+		diff.long("zamboni next", RAM + 0x76, 0xFFFFC4E6 + 2 * next)
+		diff.word("zamboni cracks", RAM + 0x7A, cracks)
+		diff.word("zamboni last frame", RAM + 0x7C, last_frame)
+		diff.word("zamboni grabbing", RAM + 0x7E, grabbing)
+		diff.word("zamboni rider x", RAM + 0x80, rider_x)
+		diff.word("zamboni whip late", RAM + 0x82, whip_late)
 
 
 # --- comparisons ---------------------------------------------------------------------------------
@@ -988,47 +963,47 @@ class Mem:
 ## [what, ours, theirs] (hex).
 class Diff:
 	var out: Array = []
-	var m: Mem
+	var mem: Mem
 
 	func _init(m_: Mem) -> void:
-		m = m_
+		mem = m_
 
 	func _note(what: String, ours: int, theirs: int, digits: int) -> void:
 		if ours != theirs:
 			out.append([what, ("%0" + str(digits) + "X") % ours, ("%0" + str(digits) + "X") % theirs])
 
 	func byte(what: String, a: int, v: int) -> void:
-		_note(what, v & 0xFF, m.u8(a), 2)
+		_note(what, v & 0xFF, mem.u8(a), 2)
 
 	func word(what: String, a: int, v: int) -> void:
-		_note(what, v & 0xFFFF, m.u16(a), 4)
+		_note(what, v & 0xFFFF, mem.u16(a), 4)
 
 	func long(what: String, a: int, v: int) -> void:
-		_note(what, v & 0xFFFFFFFF, m.u32(a), 8)
+		_note(what, v & 0xFFFFFFFF, mem.u32(a), 8)
 
 	## A handle's presence: [param on] against the long at [param a] being
 	## non-zero.
 	func flag(what: String, a: int, on: bool) -> void:
-		var theirs := m.u32(a) != 0
+		var theirs := mem.u32(a) != 0
 		if on != theirs:
-			out.append([what, "on" if on else "0", "%08X" % m.u32(a)])
+			out.append([what, "on" if on else "0", "%08X" % mem.u32(a)])
 
 	## A music handle's sign: [param on] against the long at [param a] being
 	## non-negative.
 	func handle(what: String, a: int, on: bool) -> void:
-		var theirs := m.u32(a) & 0x80000000 == 0
+		var theirs := mem.u32(a) & 0x80000000 == 0
 		if on != theirs:
-			out.append([what, "on" if on else "-1", "%08X" % m.u32(a)])
+			out.append([what, "on" if on else "-1", "%08X" % mem.u32(a)])
 
 	## An animation object (`$C` bytes: record, speed, flags, variant,
 	## position, frame, [param b] the byte after them; -1 not compared).
-	func anim(what: String, a: int, n: MwAnimState, b := -1) -> void:
-		long(what + " record", a, n.address)
-		word(what + " speed", a + 4, n.speed)
-		byte(what + " flags", a + 6, n.flags)
-		byte(what + " variant", a + 7, n.variant)
-		word(what + " position", a + 8, n.position)
-		byte(what + " frame", a + 0xA, n.frame)
+	func anim(what: String, a: int, animation: MwAnimState, b := -1) -> void:
+		long(what + " record", a, animation.address)
+		word(what + " speed", a + 4, animation.speed)
+		byte(what + " flags", a + 6, animation.flags)
+		byte(what + " variant", a + 7, animation.variant)
+		word(what + " position", a + 8, animation.position)
+		byte(what + " frame", a + 0xA, animation.frame)
 		if b >= 0:
 			byte(what + " +$B", a + 0xB, b)
 
@@ -1037,58 +1012,61 @@ class Diff:
 	func ram_range(ours: PackedByteArray, lo: int, hi: int) -> void:
 		for a in range(lo, hi):
 			var i := a - MwRinkRam.BASE
-			if ours[i] != m.ram[i]:
-				out.append([MwRinkRam.describe(a), "%02X" % ours[i], "%02X" % m.ram[i]])
+			if ours[i] != mem.ram[i]:
+				out.append([MwRinkRam.describe(a), "%02X" % ours[i], "%02X" % mem.ram[i]])
 
 
 ## The speech box's state left for the rink (`$FFC32E`, `$FFC336`,
 ## `$FFC3B4`, `$FFC3BC`, the quote `$FFC4FE`), from an encoded image.
-static func compare_speech(d: Diff, ours: PackedByteArray) -> void:
-	d.ram_range(ours, MwRinkRam.SPEECH_BOX, MwRinkRam.SPEECH_BOX + 8)
-	d.ram_range(ours, MwRinkRam.TEXT_BOX, MwRinkRam.TEXT_BOX + 0x16)
-	d.ram_range(ours, MwRinkRam.BOX_FILL, MwRinkRam.BOX_FILL + 2)
-	d.ram_range(ours, MwRinkRam.BOX_C3BC, MwRinkRam.BOX_C3BC + 2)
-	d.ram_range(ours, MwRinkRam.QUOTE, MwRinkRam.QUOTE + MwRinkState.QUOTE_SIZE)
+static func compare_speech(diff: Diff, ours: PackedByteArray) -> void:
+	diff.ram_range(ours, MwRinkRam.SPEECH_BOX, MwRinkRam.SPEECH_BOX + 8)
+	diff.ram_range(ours, MwRinkRam.TEXT_BOX, MwRinkRam.TEXT_BOX + 0x16)
+	diff.ram_range(ours, MwRinkRam.BOX_FILL, MwRinkRam.BOX_FILL + 2)
+	diff.ram_range(ours, MwRinkRam.BOX_C3BC, MwRinkRam.BOX_C3BC + 2)
+	diff.ram_range(ours, MwRinkRam.QUOTE, MwRinkRam.QUOTE + MwRinkState.QUOTE_SIZE)
 
 
 ## What the set-up `$9034` leaves: the side view, plane B's scroll buffers.
-static func compare_setup(d: Diff, ours: PackedByteArray) -> void:
-	d.ram_range(ours, MwRinkRam.PROJECTION, MwRinkRam.PROJECTION + 2)
-	d.ram_range(ours, MwRinkRam.SCROLL_B, MwRinkRam.SCROLL_B + 2)
-	d.ram_range(ours, MwRinkRam.SCROLL_B + 4, MwRinkRam.SCROLL_B + 6)
+static func compare_setup(diff: Diff, ours: PackedByteArray) -> void:
+	diff.ram_range(ours, MwRinkRam.PROJECTION, MwRinkRam.PROJECTION + 2)
+	diff.ram_range(ours, MwRinkRam.SCROLL_B, MwRinkRam.SCROLL_B + 2)
+	diff.ram_range(ours, MwRinkRam.SCROLL_B + 4, MwRinkRam.SCROLL_B + 6)
 
 
 ## Bytes +$23 of the animation objects of [param players] (cleared by
 ## `anim_set` / `$1438E`).
-static func compare_anim_pad(d: Diff, players: Array) -> void:
+static func compare_anim_pad(diff: Diff, players: Array) -> void:
 	for p in players:
 		var pl := p as MwRinkState.Player
-		d.byte("T%d P%d +$23" % [pl.team, pl.index], MwRinkRam.player_address(pl.team, pl.index) + 0x23, 0)
+		diff.byte("T%d P%d +$23" % [pl.team, pl.index], MwRinkRam.player_address(pl.team, pl.index) + 0x23, 0)
 
 
+## The fields that differ from the original's RAM after the same pass ([param ram]: an
+## [MwRinkRam] image, [param stack]: the stack page): the locals at `a6` = [constant LOCALS],
+## the teams, the set-up's and the speech box's state, the Zamboni; ["what", ours, theirs].
 func compare(ram: PackedByteArray, stack: PackedByteArray) -> Array:
-	var d := Diff.new(Mem.new(ram, stack))
+	var diff := Diff.new(Mem.new(ram, stack))
 	var a6 := LOCALS
-	d.long("snapshot -4", a6 - 4, snapshot)
-	d.word("panel dir", a6 - 0xA, panel.dir)
-	d.word("panel remainder", a6 - 8, panel.remainder)
-	d.word("panel size", a6 - 6, panel.size)
-	d.word("menu -$C", a6 - 0xC, menu)
-	d.word("flag -$32", a6 - 0x32, flag)
-	d.handle("music -$36", a6 - 0x36, music >= 0)
-	d.long("stamp -$3A", a6 - 0x3A, stamp)
+	diff.long("snapshot -4", a6 - 4, snapshot)
+	diff.word("panel dir", a6 - 0xA, panel.dir)
+	diff.word("panel remainder", a6 - 8, panel.remainder)
+	diff.word("panel size", a6 - 6, panel.size)
+	diff.word("menu -$C", a6 - 0xC, menu)
+	diff.word("flag -$32", a6 - 0x32, flag)
+	diff.handle("music -$36", a6 - 0x36, music >= 0)
+	diff.long("stamp -$3A", a6 - 0x3A, stamp)
 	if screen == 12 and _comment_known:
-		d.word("comment -$2C", a6 - 0x2C, comment)
+		diff.word("comment -$2C", a6 - 0x2C, comment)
 		if s.scorer != 0:
-			portrait.compare(d, a6 - 0x2A, "portrait")
-			d.long("quote -$30", a6 - 0x30, quote_at)
-			d.long("name -$3E", a6 - 0x3E, name)
+			portrait.compare(diff, a6 - 0x2A, "portrait")
+			diff.long("quote -$30", a6 - 0x30, quote_at)
+			diff.long("name -$3E", a6 - 0x3E, name)
 	var ours := MwRinkRam.encode(s, ram)
 	# the teams (players, their animation fields, the box) and what the set-up leaves
-	d.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
-	compare_anim_pad(d, _touched.keys())
-	compare_setup(d, ours)
-	compare_speech(d, ours)
+	diff.ram_range(ours, MwRinkRam.TEAMS[0], MwRinkRam.TEAMS[1] + 0x4AA)
+	compare_anim_pad(diff, _touched.keys())
+	compare_setup(diff, ours)
+	compare_speech(diff, ours)
 	if zamboni != null:
-		zamboni.compare(d)
-	return d.out
+		zamboni.compare(diff)
+	return diff.out

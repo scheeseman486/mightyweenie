@@ -18,11 +18,11 @@ func _scene(id: int, exits: Array) -> MwBetweenPlays:
 
 
 static func _frame(actions: Array) -> MwInputFrame:
-	var f := MwInputFrame.new()
+	var input := MwInputFrame.new()
 	for a in actions:
-		f.held[a] = true
-		f.pressed[a] = true
-	return f
+		input.held[a] = true
+		input.pressed[a] = true
+	return input
 
 
 static func _shown(layer: Node) -> int:
@@ -33,8 +33,8 @@ static func _shown(layer: Node) -> int:
 	return n
 
 
-static func _cells(node: Node, name: String) -> int:
-	return (node.get_node(name) as TileMapLayer).get_used_cells().size()
+static func _cells(node: Node, layer_name: String) -> int:
+	return (node.get_node(layer_name) as TileMapLayer).get_used_cells().size()
 
 
 ## Whether the window shows cells of the fight's tile bank (the card's rows).
@@ -66,11 +66,11 @@ func test_fight_scene() -> void:
 	assert_eq(sim.fighters[0].state, MwFightSim.PUNCH, "B / C: fight_punch on pad 1")
 	for i in 60:
 		node._screen_pass(1, MwInputFrame.new())
-	node._screen_pass(1, _frame(["p1_ui_accept"]))
-	assert_eq(sim.state, MwFightSim.PAUSING, "Start: the menu context's accept")
+	node._screen_pass(1, _frame(["p1_fight_pause"]))
+	assert_eq(sim.state, MwFightSim.PAUSING, "Start: the fight's pause verb")
 	for i in 30:
 		node._screen_pass(1, MwInputFrame.new())
-	node._screen_pass(1, _frame(["p1_ui_accept"]))
+	node._screen_pass(1, _frame(["p1_fight_pause"]))
 	assert_eq(sim.state, MwFightSim.FIGHTING, "resumed")
 	sim.fight_time = 1199
 	sim.fighters[0].landed = 2
@@ -86,10 +86,10 @@ func test_fight_scene() -> void:
 	assert_eq(_shown(node.sprites_high), pieces, "the fighters stay over the card")
 	assert_eq(int(node.palette.steps.size()), 3, "the card's colours: the screen palette, $39, colour 0")
 	for i in 70:
-		node._screen_pass(2, _frame(["p2_ui_option_b"]))
+		node._screen_pass(2, _frame(["p2_fight_punch"]))
 		if not exits.is_empty():
 			break
-	assert_eq(exits, [17], "B on pad 2 ends the card after 120 ticks")
+	assert_eq(exits, [17], "a punch (B) on pad 2 ends the card after 120 ticks")
 	assert_eq(_shown(node.sprites_high), pieces)
 
 

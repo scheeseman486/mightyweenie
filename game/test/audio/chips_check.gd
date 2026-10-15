@@ -182,30 +182,30 @@ static func fundamental_amplitude(buf: PackedVector2Array, rate: float, skip_s :
 	var start := int(skip_s * rate)
 	var periods := floorf((buf.size() - start) * f / rate)
 	var n := int(periods * rate / f)
-	var s := 0.0
+	var sine_sum := 0.0
 	var c := 0.0
 	var w := TAU * f / rate
 	for i in n:
 		var x := buf[start + i].x
-		s += x * sin(w * i)
+		sine_sum += x * sin(w * i)
 		c += x * cos(w * i)
-	return 2.0 * sqrt(s * s + c * c) / n
+	return 2.0 * sqrt(sine_sum * sine_sum + c * c) / n
 
 
 static func peak(buf: PackedVector2Array) -> float:
-	var p := 0.0
+	var loudest := 0.0
 	for v in buf:
-		p = maxf(p, maxf(absf(v.x), absf(v.y)))
-	return p
+		loudest = maxf(loudest, maxf(absf(v.x), absf(v.y)))
+	return loudest
 
 
 static func rms(buf: PackedVector2Array) -> float:
 	if buf.is_empty():
 		return 0.0
-	var s := 0.0
+	var squares := 0.0
 	for v in buf:
-		s += v.x * v.x
-	return sqrt(s / buf.size())
+		squares += v.x * v.x
+	return sqrt(squares / buf.size())
 
 
 ## 16-bit stereo WAV at the chips' rate (rounded to whole Hz).

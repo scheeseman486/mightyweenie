@@ -9,6 +9,20 @@ extends MwScreen
 ## bounce, pages below rise. Sprites (logo, big letters, portraits) sit on
 ## the plane and move with it.
 ##
+## From the rink's pause menu (plan 29, owner: TEAM INFO; the entry data's
+## [code]pause[/code]): the match's two teams ([code]teams[/code]: team
+## indices, from the rink's state), opening on [code]side[/code] (the
+## pausing player's opponent); Start from the bio goes back to the paused
+## game (the router pops this screen); the random streams it draws from are
+## copies, so the match's are as they were.
+##
+## From the port's front menu (plan 34, team descriptions; the entry data's
+## [code]browse[/code]): the bio's and the coach's D-pad step through all 23
+## teams in the game setup's menu order - the custom teams too, after the
+## teams they follow (plan 38) - (Left / Up back, Right / Down on)
+## instead of switching to the other team, and Start from the bio goes back
+## to the front menu.
+##
 ## Any pad drives the screen. Bio: D-pad switches team, A/B/C the coach.
 ## Coach: D-pad switches team, A/B/C the roster. Roster: D-pad moves the
 ## cursor (Up/Down player, Left/Right line), A/B/C the player. Player: D-pad
@@ -38,8 +52,8 @@ const SIDE_ATTRS := 0xC224         ## $20, $40: palette line of the sprites by s
 const TEXT_COLOUR := 0xC20C        ## the `move.w #$EE` of `$C1E6`: colour 9 of the text line
 const TEXT_LINE := 0x1BD6A         ## the text line's colours
 
-const FONT_BIG := 0x246FA          ## sprite letters (24 px per letter, space 8)
-const FONT_HEADING := 0x22BEC
+const FONT_BIG := MwFonts.BIG          ## sprite letters (24 px per letter, space 8)
+const FONT_HEADING := MwFonts.HEADING
 const FONT_LIGHT := MwPlanePainter.FONT_MENU
 const FONT_DARK := MwPlanePainter.FONT_SMALL
 
@@ -62,11 +76,8 @@ const VERDICT_WORDS := 0x1CEE0
 const POSITIONS := 0x1CF0C         ## "CENTER" ... "GOALIE" by roster position
 const LABELS := [0x1CF24, 0x1CF3C]          ## skater ratings, left / right column
 const GOALIE_LABELS := [0x1CF54, 0x1CF68]
-## Ratings shown in each column: [record offset, high nibble]; the sixth row
-## only for players with an extra rating (+$D high nibble), never goalies.
-const RATINGS := [
-	[[0x9, false], [0xA, false], [0x8, true], [0xC, true], [0xC, false], [0xE, true]],
-	[[0xB, true], [0xB, false], [0xA, true], [0xD, false], [0x9, true], [0xF, true]]]
+## Ratings shown in each column: [constant MwPlayerRecord.COLUMNS] (the
+## sixth row only for an enforcer, never a goalie).
 const RATING_ROW := 8
 const LABEL_X := [9, 0x19]
 const VALUE_X := [0x15, 0x25]
@@ -96,9 +107,9 @@ const BADGE := 0x214CE             ## frame drawn beside players with an extra r
 const PLAYER_PORTRAIT_SIZE := 1
 const STAR_QUOTES := 12            ## `$F420` category
 
-const SOUND_CROWD := 0x10
-const SOUND_MOVE := 0x25
-const SOUND_LAND := 0x15
+const SOUND_CROWD := MwSoundIds.CROWD
+const SOUND_MOVE := MwSoundIds.MOVE
+const SOUND_LAND := MwSoundIds.THUD
 
 @onready var plane: RomPlane = $Plane
 @onready var starfield: RomStarfield = $Starfield
@@ -117,6 +128,8 @@ var rom: PackedByteArray
 var setup: MwMatchSetup
 var page := Page.BIO
 var side := 0             ## `$C322`: 0 team A (home), 1 team B (visiting)
+## Plan 34: every team in turn (the front menu's team descriptions).
+var browse := false
 var team := 0             ## `$C32C`
 var cursor := 0           ## `$C324`: roster position 0-5 (C, LW, RW, LD, RD, G)
 var line := 0             ## `$C326`: line 0-3
@@ -141,33 +154,45 @@ var _effect := 0          ## `$C3C4`
 var _team_lines := false  ## lines 1-2 are the teams' lines (after a switch)
 var _portrait_player := false  ## the portrait is a player's (tail, badge)
 var _drawn_roster := []   ## what the roster rows show (redrawn on change)
-var _leaving := false
+var _teams := [0, 0]      # team A's and team B's index (the setup's, or the paused match's)
+var _paused_game := false # over the rink's pause menu (plan 29)
+var _rng: MlhRng          # the main stream it draws from (a copy over a paused game)
 
 
 func _ready() -> void:
 	fades_in_itself = false
 
 
-func _enter_screen(_data: Dictionary) -> void:
+func _enter_screen(data: Dictionary) -> void:
 	if not MwRom.available() or session == null:
 		return
 	rom = MwRom.data()
 	setup = session.setup
+	_paused_game = bool(data.get("pause", false))
+	browse = bool(data.get("browse", false))
+	_teams = data.get("teams", [setup.team_a, setup.team_b])
+	_rng = MlhRng.new(session.rng.state) if _paused_game else session.rng
 	MwSound.music_fade_out(1)                 # `$C768`: the menus' music stops
 	hook = false
-	starfield.start(session.rng_aux)          # $13480, then held ($134D0)
+	# $13480, then held ($134D0)
+	starfield.start(MlhRng.new(session.rng_aux.state) if _paused_game else session.rng_aux)
 	starfield.hold()
 	plane.wipe()                              # $BB94: plane A cleared
 	portrait.set_palette(palette)
-	portrait.rng = session.rng
+	portrait.rng = _rng
 	tail.set_pieces(_xor([MwGfx.piece(rom, TAIL)], TAIL_ATTR))
 	badge.frame_addresses = PackedInt32Array([BADGE])
 	logo.position = LOGO_AT
 	city.position = CITY_AT
 	team_name.position = NAME_AT
+	# port only (plan 38): a custom team's name in colours of its own, on a
+	# palette of the letters' own (the original's: the side's shirt colours)
+	var names := MwScreenPalettes.names(palette)
+	city.palette = names
+	team_name.palette = names
 	number.position = NUMBER_AT
 	_motion_start()                           # $C3B6
-	side = 0
+	side = clampi(int(data.get("side", 0)), 0, 1)
 	_select_team()                            # $C226
 	_text_palette()                           # $C1E6
 	_show(false, false, false)
@@ -175,7 +200,7 @@ func _enter_screen(_data: Dictionary) -> void:
 
 
 func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
-	if rom.is_empty() or _leaving:
+	if rom.is_empty() or leaving():
 		return
 	_now += elapsed
 	for i in elapsed:
@@ -187,10 +212,6 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 		_open(_opening)
 	if scrolling:
 		_scroll_pass()
-		return
-	if input != null and input.is_pressed("ui_back"):
-		_leaving = true                       # Menu Back (plan 21): as Start on the bio
-		exit_to(1)
 		return
 	_crowd_sound()
 	match page:
@@ -205,17 +226,17 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 
 
 # --- pages: opening ------------------------------------------------------------------------------
-## Opens [param p] after the original's drawing time.
-func _request(p: Page, from_player := false) -> void:
-	_opening = p
+## Opens [param next_page] after the original's drawing time.
+func _request(next_page: Page, from_player := false) -> void:
+	_opening = next_page
 	_from_player = from_player
-	_open_at = _now + DRAW_TICKS[p] + (1 if from_player else 0)
+	_open_at = _now + DRAW_TICKS[next_page] + (1 if from_player else 0)
 
 
-## Draws page [param p] and starts its move (the first move pass is this one).
-func _open(p: Page) -> void:
-	page = p
-	match p:
+## Draws page [param next_page] and starts its move (the first move pass is this one).
+func _open(next_page: Page) -> void:
+	page = next_page
+	match next_page:
 		Page.BIO:                               # $C4AA
 			_erase_lower()
 			box = MwTextBox.new(plane, FONT_LIGHT, _rect(BIO_BOX))
@@ -242,6 +263,7 @@ func _open(p: Page) -> void:
 			_erase_upper()
 			_framed_box(PLAYER_BOX)
 			portrait.attr = _sprite_attr()
+			portrait.set_palette(palette)
 			portrait.set_player(rom, _player(), PLAYER_PORTRAIT_SIZE)
 			portrait.start(0)
 			_mark = _now
@@ -316,11 +338,15 @@ func _set_scroll(v: int) -> void:
 
 
 # --- pages: their loops --------------------------------------------------------------------------
-## The original's pads: every player's newly pressed byte (`$C28E`).
+## The original's pads: every player's newly pressed byte (`$C28E`) -
+## pads 1-4, or in an extended set-up every player's (plan 34: [method
+## MwSession.screen_pads]; over a paused match, players 5-12 who paused
+## leave it too).
 func _pads(input: MwInputFrame) -> int:
 	if input == null:
 		return 0
-	return input.pad_bits(1) | input.pad_bits(2) | input.pad_bits(3) | input.pad_bits(4)
+	var ctx := [MwVerbs.Context.TEAM_INFO]    # Menu Back is Start here (plan 22): a page -> the bio -> leave
+	return input.any_pad_bits(session.screen_pads() if session else 4, ctx)
 
 
 ## Start (`$C28E`): from a page back to the bio; from the bio, leave.
@@ -328,8 +354,12 @@ func _start_pressed(pads: int) -> bool:
 	if pads & 0x80 == 0:
 		return false
 	if page == Page.BIO:
-		_leaving = true                       # the crowd stops once the fade is over (_exit_tree)
-		exit_to(1)
+		if _paused_game:
+			pop()                             # back to the paused game (plan 29)
+		elif browse:
+			exit_to(MwScreens.FRONT_MENU)     # plan 34
+		else:
+			exit_to(1)
 	else:
 		_request(Page.BIO)
 	return true
@@ -342,7 +372,7 @@ func _bio_pass(input: MwInputFrame) -> void:         # $C4FE
 		return
 	if pads & 0x0F:
 		_effect_sound(SOUND_MOVE)
-		side ^= 1
+		_other_team(pads)
 		_erase_lower()
 		_select_team()
 		_team_lines = true                    # $2268
@@ -361,7 +391,7 @@ func _coach_pass(input: MwInputFrame) -> void:       # $C592
 	if pads & 0x0F:
 		portrait.stop()
 		_effect_sound(SOUND_MOVE)
-		side ^= 1
+		_other_team(pads)
 		_select_team()
 		_team_lines = true
 		_update_palette()
@@ -410,6 +440,19 @@ func _player_pass(input: MwInputFrame) -> void:      # $C70A
 
 ## `$C348`: Down / Up the next / previous player, Right / Left the next /
 ## previous line, wrapping through the lines.
+## The D-pad on the bio and the coach: the other team (`side ^= 1`); when
+## browsing (plan 34), the previous (Left / Up) or next team in the game
+## setup's menu order on the same side.
+func _other_team(pads: int) -> void:
+	if not browse:
+		side ^= 1
+		return
+	var order := MwCustomTeams.menu_order(rom)          # the ROM's order, the custom teams in it (plan 38)
+	var pos := order.find(_teams[side])
+	pos = posmod(pos + (-1 if pads & 0x05 else 1), order.size())
+	_teams[side] = order[pos]
+
+
 func _move_cursor(pads: int) -> void:
 	if pads & 0x02:
 		cursor += 1
@@ -443,7 +486,7 @@ func _advance_portrait() -> void:
 ## `$C226`: the side's team; the panel colours on line 0; cursor to the
 ## first player.
 func _select_team() -> void:
-	team = setup.team_a if side == 0 else setup.team_b
+	team = _teams[side]
 	cursor = 0
 	line = 0
 	_update_palette()
@@ -462,8 +505,8 @@ func _text_palette() -> void:
 ## line.
 func _update_palette() -> void:
 	palette.screen = 2
-	palette.team_a = setup.team_a
-	palette.team_b = setup.team_b
+	palette.team_a = _teams[0]
+	palette.team_b = _teams[1]
 	palette.stadium = setup.stadium
 	var steps := PackedStringArray(["screen_palette", "black 0", "panel_line %s 0" % ("a" if side == 0 else "b")])
 	if _team_lines:
@@ -471,6 +514,11 @@ func _update_palette() -> void:
 	var tl := 2 - side
 	steps.append_array(["rom %x %d" % [TEXT_LINE, tl], "word %x %d" % [TEXT_COLOUR, 16 * tl + 9]])
 	palette.steps = steps
+	# port only (plan 38): a custom coach with colours of his own wears them
+	var alt: RomPalette = null
+	if not _portrait_player:
+		alt = MwCustomTeams.coach_palette(rom, palette, team, "ab"[side], side + 1)
+	portrait.set_palette(alt if alt != null else palette)
 
 
 ## Palette bits of the side's sprites (`d6`): team A line 1, team B line 2.
@@ -498,7 +546,7 @@ func _effect_sound(id: int) -> void:
 ## Left after Start's fade (`td_leave` `$BC2C` waits for it): the crowd's
 ## sequence stopped (`$C7AA`).
 func _exit_tree() -> void:
-	if _leaving:
+	if leaving():
 		MwSound.stop(_crowd)
 
 
@@ -538,8 +586,8 @@ func _framed_box(a: int) -> void:
 	box = MwTextBox.new(plane, FONT_DARK, r)
 
 
-func _text(font: int, s: PackedByteArray, x: int, y: int, attr: int) -> void:
-	MwPlanePainter.text(plane, rom, font, s, x, y, attr)
+func _text(font: int, bytes: PackedByteArray, x: int, y: int, attr: int) -> void:
+	MwPlanePainter.text(plane, rom, font, bytes, x, y, attr)
 
 
 func _str(pointer_at: int) -> PackedByteArray:
@@ -589,10 +637,10 @@ func _roster_text() -> void:
 		_text(font, row, 2, 0x22 + 2 * i, PLAIN_ATTR)
 
 
-## `$BDCE`: copies [param s] into [param row] from [param at]; spaces keep
+## `$BDCE`: copies [param bytes] into [param row] from [param at]; spaces keep
 ## what is there; stops at the row's end.
-static func _overlay(row: PackedByteArray, at: int, s: PackedByteArray) -> void:
-	for c in s:
+static func _overlay(row: PackedByteArray, at: int, bytes: PackedByteArray) -> void:
+	for c in bytes:
 		if at >= row.size():
 			return
 		if c != 0x20:
@@ -615,10 +663,10 @@ func _player_text() -> void:
 	var rec := _player()
 	box.home()
 	var star := MwPortrait.star_entry(rom, rec)
-	if star != 0:                             # $BEE2: a star's own quote
+	if star != 0 and team < MwTeams.COUNT:    # $BEE2: a star's own quote (a team not among the 23: the generic one)
 		var group := 0 if team < 20 else (1 if team < 22 else 2)
-		var q := MwQuotes.pick(rom, STAR_QUOTES, group, MwGfx.u16(rom, star + 8), session.rng)
-		box.write(rom, MwQuotes.expand(q["template"], {}), TEXT_ATTR)
+		var quote := MwQuotes.pick(rom, STAR_QUOTES, group, MwGfx.u16(rom, star + 8), _rng)
+		box.write(rom, MwQuotes.expand(quote["template"], {}), TEXT_ATTR)
 	else:
 		var quality := rom[rec + 8] & 0x0F
 		var parts := [_str(QUOTE_PARTS), MwGfx.rom_string(rom, MwGfx.u32(rom, rec)),
@@ -638,16 +686,14 @@ func _player_text() -> void:
 func _ratings(rec: int) -> void:
 	var goalie := cursor == 5
 	var rows := 5
-	if not goalie and rom[rec + 0x0D] >> 4 != 0:
+	if not goalie and MwPlayerRecord.enforcer(rom, rec):
 		rows = 6
 	for col in 2:
 		var labels: int = (GOALIE_LABELS if goalie else LABELS)[col]
 		for i in rows:
 			_text(FONT_LIGHT, _str(labels + 4 * i), LABEL_X[col], RATING_ROW + 2 * i, PLAIN_ATTR)
 		for i in rows:
-			var r: Array = RATINGS[col][i]
-			var b := rom[rec + int(r[0])]
-			var v := b >> 4 if r[1] else b & 0x0F
+			var v := MwPlayerRecord.nibble(rom, rec, MwPlayerRecord.COLUMNS[col][i])
 			_text(FONT_LIGHT, _digits(v, true), VALUE_X[col], RATING_ROW + 2 * i, PLAIN_ATTR)
 
 
@@ -663,8 +709,8 @@ func _show(team_header: bool, player_header: bool, portrait_shown: bool) -> void
 	city.visible = team_header
 	team_name.visible = team_header
 	number.visible = player_header
-	for n in player_names:
-		n.visible = player_header and n.texture != null
+	for pieces in player_names:
+		pieces.visible = player_header and pieces.texture != null
 	portrait.visible = portrait_shown
 	tail.visible = portrait_shown
 	tail.position = PLAYER_TAIL_AT if _portrait_player else COACH_TAIL_AT
@@ -686,19 +732,19 @@ func _player_header() -> void:
 	var rec := _player()
 	badge.attr_xor = _sprite_attr()
 	_big_text(number, _digits(rom[rec + 4], false))
-	var name := MwGfx.rom_string(rom, MwGfx.u32(rom, rec))
+	var player_name := MwGfx.rom_string(rom, MwGfx.u32(rom, rec))
 	var first := PackedByteArray()
 	var i := 0
-	if MwGfx.text_width(rom, FONT_BIG, name) > PLAYER_NAME_SPLIT:
-		while i < name.size() and first.size() < 10:
-			var c := name[i]
+	if MwGfx.text_width(rom, FONT_BIG, player_name) > PLAYER_NAME_SPLIT:
+		while i < player_name.size() and first.size() < 10:
+			var c := player_name[i]
 			i += 1
 			if c == 0x20:
 				break
 			first.append(c)
-		if i < name.size() and name[i] == 0x20:
+		if i < player_name.size() and player_name[i] == 0x20:
 			i += 1
-	var rest := name.slice(i, mini(i + 10, name.size()))
+	var rest := player_name.slice(i, mini(i + 10, player_name.size()))
 	if first.is_empty():
 		_big_text(player_names[0], rest)
 		player_names[0].position = Vector2(PLAYER_NAME_X, 0xB4)
@@ -710,10 +756,10 @@ func _player_header() -> void:
 		player_names[1].position = Vector2(PLAYER_NAME_X, 0xC0)
 
 
-## `$B772`: [param s] in the big sprite letters, one piece a letter, on the
+## `$B772`: [param bytes] in the big sprite letters, one piece a letter, on the
 ## side's palette line.
-func _big_text(node: RomPieces, s: PackedByteArray) -> void:
-	node.set_pieces(MwSpriteText.fixed(rom, FONT_BIG, s, _sprite_attr())[0])
+func _big_text(node: RomPieces, bytes: PackedByteArray) -> void:
+	node.set_pieces(MwSpriteText.fixed(rom, FONT_BIG, bytes, _sprite_attr())[0])
 
 
 ## The original's D3 on sprite pieces: palette line bits XORed.

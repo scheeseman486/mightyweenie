@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Plan 35's offline proof (docs/net.md): the game is a pure function of its
+# start record and its input stream. A local match from the game setup is
+# recorded with live_match.gd's bots on the pads (its start record, the
+# input stream tick by tick, a hash of the rink's state every pass and of
+# the session at every screen change), then replayed in a fresh process
+# from the record and the stream alone; passes when every hash is equal.
+#   tools/bin/net-determinism [TICKS=20000] [live_match options]
+#   e.g. tools/bin/net-determinism 30000 --humans 1+2+3.4+5 --owners 1 --view 7
+# Without options: --humans 1+2.3 (three bots on the pads). The recording:
+# out/net/determinism.mwnet. Linux, headless. With MW_GODOT_WINDOWS set (e.g.
+# "wine /path/Godot_v4.7.1-stable_win64.exe", the wine environment exported:
+# docs/net.md "The soak") the recording is also replayed by Windows' Godot.
+# MW_GODOT names another Linux Godot binary.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+ticks=20000
+if [[ $# -gt 0 && "$1" != --* ]]; then ticks="$1"; shift; fi
+opts=("$@")
+[[ ${#opts[@]} -eq 0 ]] && opts=(--humans "1+2.3")
+out="$MW_ROOT/out/net"
+mkdir -p "$out"
+file="$out/determinism.mwnet"
+filter='^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)\|^\s*$'
+godot=("$(dirname "${BASH_SOURCE[0]}")/godot-headless")      # (MW_GODOT honoured there)
+"${godot[@]}" -s res://test/screens/net_determinism.gd -- \
+  --record "$file" --ticks "$ticks" "${opts[@]}" 2>&1 | grep -v "$filter"
+[[ ${PIPESTATUS[0]} -eq 0 ]] || { echo "net-determinism: the recording failed"; exit 1; }
+"${godot[@]}" -s res://test/screens/net_determinism.gd -- --replay "$file" 2>&1 | grep -v "$filter"
+status=${PIPESTATUS[0]}
+if [[ -n "${MW_GODOT_WINDOWS:-}" ]]; then
+  # Windows' Godot under wine sees this machine's files on its Z: drive
+  read -r -a win <<< "$MW_GODOT_WINDOWS"
+  echo "Windows:"
+  "${win[@]}" --headless --path "Z:$MW_ROOT/game" -s res://test/screens/net_determinism.gd -- \
+    --replay "Z:$file" 2>&1 | grep -v "$filter"
+  [[ ${PIPESTATUS[0]} -eq 0 ]] || status=1
+fi
+exit "$status"

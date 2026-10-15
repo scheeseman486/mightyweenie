@@ -16,15 +16,14 @@ while (( $# )); do
     *) args+=("$1"); shift ;;
   esac
 done
-bin="$MW_CACHE/godot-headless-$GODOT_VERSION/godot"
-[[ -x $bin ]] || "$(dirname "${BASH_SOURCE[0]}")/godot-headless" --version >/dev/null
+bin="$(mw_godot_headless)" || exit 1
 status=0
 for a in "${args[@]}"; do
   if [[ -f $V/rec/$a/meta.json ]]; then visits=("$a"); else
     mapfile -t visits < <(python3 -c "import json,sys; [print('$a/'+v.split('/',1)[1]) for v in json.load(open('$V/rec/$a/index.json'))]"); fi
   for v in "${visits[@]}"; do
     mkdir -p "$V/ours/$v"
-    xvfb-run -a -s "-screen 0 1280x1024x24" "$bin" --path game \
+    mw_xvfb "$bin" --path game \
         --rendering-driver opengl3 --rendering-method gl_compatibility --audio-driver Dummy \
         -s res://test/screens/visual_check.gd -- "$V/rec/$v" "$V/ours/$v" 2>&1 \
       | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)\|^OpenGL API\|^$\|V-Sync\|set_use_vsync' \

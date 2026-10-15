@@ -12,14 +12,14 @@ const SCRIPT := "res://scenes/instant_replay/instant_replay.gd"
 
 
 ## Screen 7 entered from [param from]; its exit requests go to [param
-## exits]. [param st]: a state handed over in a session (null: run alone).
-func _scene(from: int, exits: Array, st: MwRinkState = null) -> MwBetweenPlays:
+## exits]. [param state]: a state handed over in a session (null: run alone).
+func _scene(from: int, exits: Array, state: MwRinkState = null) -> MwBetweenPlays:
 	var node: MwBetweenPlays = (load(MwScreens.scene_path(7)) as PackedScene).instantiate()
 	node.screen_id = 7
 	node.previous = from
-	if st != null:
+	if state != null:
 		node.session = MwSession.new(1234, 5678)
-		node.session.screens["rink"] = st
+		node.session.screens["rink"] = state
 	add_child_autofree(node)
 	node.exit_requested.connect(func(to: int, _d: Dictionary, _f: bool, _t: int) -> void: exits.append(to))
 	node._enter_screen({})
@@ -36,12 +36,12 @@ func _recorded_state() -> MwRinkState:
 
 
 static func _frame(actions: Array, held_only := false) -> MwInputFrame:
-	var f := MwInputFrame.new()
+	var input := MwInputFrame.new()
 	for a in actions:
-		f.held[a] = true
+		input.held[a] = true
 		if not held_only:
-			f.pressed[a] = true
-	return f
+			input.pressed[a] = true
+	return input
 
 
 static func _shown(layer: Node) -> int:
@@ -52,8 +52,8 @@ static func _shown(layer: Node) -> int:
 	return n
 
 
-static func _cells(node: Node, name: String) -> int:
-	return (node.get_node(name) as TileMapLayer).get_used_cells().size()
+static func _cells(node: Node, layer_name: String) -> int:
+	return (node.get_node(layer_name) as TileMapLayer).get_used_cells().size()
 
 
 func _camera(node: MwBetweenPlays) -> Vector2:
@@ -81,7 +81,13 @@ func test_scene_alone_shows_the_oldest_frame() -> void:
 	assert_true(_shown(node.sprites_low) + _shown(node.sprites_high) > 5, "the frame's sprites")
 	assert_eq(node.sprites_low.ram_tiles.size(), 4 * 8, "the plates' RAM tiles")
 	assert_eq(node.palette.screen, 7)
-	assert_eq(node.palette.steps, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), "the rink's palette")
+	assert_eq(node.palette.steps, PackedStringArray(["screen_palette", "rom 1BD8A 3", "player_lines"]),
+			"the rink's palette (plan 34: and players 5-12's marker lines)")
+	var plain := RomPalette.make(7, PackedStringArray(["screen_palette", "rom 1BD8A 3"]), node.palette.team_a,
+			node.palette.stadium)
+	plain.team_b = node.palette.team_b
+	assert_eq(node.palette.colours().slice(0, 64), plain.colours(), "its first four lines the original's")
+	assert_eq(node.palette.colours().size(), 192, "lines 4-11 after them")
 	assert_eq(exits, [])
 
 
@@ -111,20 +117,20 @@ func test_play_rewind_and_exit_to_the_rink() -> void:
 	assert_eq(exits, [], "another pad's Start")
 	node._screen_pass(1, _frame(["p1_replay_exit"]))
 	assert_eq(exits, [6], "Start: back to the rink, play continues (entry 6)")
-	var r := rs.replay.ring
-	assert_eq([r.read, r.used], [rs.replay.saved_read, rs.replay.saved_used], "the ring put back")
+	var ring := rs.replay.ring
+	assert_eq([ring.read, ring.used], [rs.replay.saved_read, rs.replay.saved_used], "the ring put back")
 
 
 func test_live_from_the_pause_menu_and_a_scoreboard() -> void:
 	if not need_rom():
 		return
-	var st := _recorded_state()
-	assert_true(st.replay.frames > 20, "frames recorded")
-	st.pause_pad = 2                         # pad 2 paused and answered A
+	var state := _recorded_state()
+	assert_true(state.replay.frames > 20, "frames recorded")
+	state.pause_pad = 2                         # pad 2 paused and answered A
 	var exits := []
-	var node := _scene(6, exits, st)
+	var node := _scene(6, exits, state)
 	var rs := node.sim as MwReplaySim
-	assert_eq(rs.s, st, "the rink's state from the session")
+	assert_eq(rs.s, state, "the rink's state from the session")
 	assert_eq(rs.replay.pad, 1, "pad 2 controls")
 	node._screen_pass(1, _frame(["p1_replay_exit"]))
 	assert_eq(exits, [], "pad 1 is ignored")
@@ -132,10 +138,10 @@ func test_live_from_the_pause_menu_and_a_scoreboard() -> void:
 	assert_eq(exits, [6])
 	# from a scoreboard: the pad that pressed C there (its sim left the read in the state)
 	for p in 4:
-		st.pads_new[p] = 0
-	st.pads_new[2] = MwInstantReplay.NEW_C
+		state.pads_new[p] = 0
+	state.pads_new[2] = MwInstantReplay.NEW_C
 	exits.clear()
-	var sb := _scene(14, exits, st)
+	var sb := _scene(14, exits, state)
 	assert_eq((sb.sim as MwReplaySim).replay.pad, 2, "pad 3 pressed C")
 	sb._screen_pass(1, _frame(["p3_replay_exit"]))
 	assert_eq(exits, [14], "back to the scoreboard")

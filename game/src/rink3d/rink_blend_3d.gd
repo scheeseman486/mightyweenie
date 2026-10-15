@@ -15,10 +15,10 @@ extends RefCounted
 const SNAP_PX := 48.0
 
 
-## [param items] (MwRinkDraw3D.items) by their keys.
-static func by_key(items: Array) -> Dictionary:
+## [param pass_items] (MwRinkDraw3D.items) by their keys.
+static func by_key(pass_items: Array) -> Dictionary:
 	var out := {}
-	for it: Dictionary in items:
+	for it: Dictionary in pass_items:
 		if it.has("key"):
 			out[it["key"]] = it
 	return out

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Checks that no screen's picture changes shape, scale or view in front of
+# the player (owner, 2026-10-09; game/test/screens/picture_check.gd): whole
+# flows headless at full speed - a P1 v CPU match with every pause menu item,
+# a CPU v CPU match, the attract run - in the 2D and the 3D follow view,
+# ASPECT RATIO ORIGINAL and WIDE (a 1920 x 1080 window), side by side.
+# A few minutes on a desktop (12 runs; -j sets how many at once).
+#   tools/bin/picture-check [-j N] [-- EXTRA picture_check ARGS]
+# Then a self-test: the TEAM INFO glitch fixed on 2026-10-09 re-created
+# (--inject 1) must be reported. Logs: out/pictures/check/<kind>_v<view>_<aspect>.log,
+# selftest.log. Exits 1 on any glitch, unfinished run or a failed self-test.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+jobs=12
+while (( $# )); do
+  case "$1" in
+    -j) jobs="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) echo "usage: picture-check [-j N] [-- ARGS]" >&2; exit 2 ;;
+  esac
+done
+out="$MW_ROOT/out/pictures/check"
+rm -rf "$out"; mkdir -p "$out"
+runs=()
+for view in 0 7; do                 # MwRinkViews: FLAT 0, FOLLOW 7
+  for aspect in ORIGINAL WIDE; do
+    runs+=("match_v${view}_${aspect}|--view $view --aspect $aspect")
+    runs+=("cpu_v${view}_${aspect}|--view $view --aspect $aspect --pads 5 --seed 2 --pause 0")
+    runs+=("attract_v${view}_${aspect}|--view $view --aspect $aspect --attract 1")
+  done
+done
+run_one() {
+  local name="${1%%|*}" args="${1#*|}"
+  shift
+  # shellcheck disable=SC2086
+  timeout 1800 "$MW_ROOT/tools/bin/godot-headless" -s res://test/screens/picture_check.gd -- --minutes 1 $args "$@" \
+    > "$out/$name.log" 2>&1
+  echo "EXIT $?" >> "$out/$name.log"
+}
+running=0
+for r in "${runs[@]}"; do
+  run_one "$r" "$@" &
+  running=$((running + 1))
+  if (( running >= jobs )); then wait -n; running=$((running - 1)); fi
+done
+wait
+# the check's own check: TEAM INFO's old early release re-created must be reported
+timeout 600 "$MW_ROOT/tools/bin/godot-headless" -s res://test/screens/picture_check.gd -- --minutes 1 --inject 1 \
+  --ticks 2000 > "$out/selftest.log" 2>&1
+status=0
+if grep -q '^GLITCH' "$out/selftest.log"; then
+  printf '%-22s %s\n' selftest "ok (the re-created TEAM INFO glitch was reported)"
+else
+  printf '%-22s %s\n' selftest "FAILED: the re-created TEAM INFO glitch went unreported"
+  status=1
+fi
+for r in "${runs[@]}"; do
+  name="${r%%|*}"
+  res=$(grep -m1 '^RESULT' "$out/$name.log" | cut -d' ' -f2-)
+  printf '%-22s %s\n' "$name" "${res:-no result}"
+  grep '^GLITCH\|^STALE' "$out/$name.log" | sed 's/^/    /'
+  [[ $res == ok ]] || status=1
+done
+exit $status

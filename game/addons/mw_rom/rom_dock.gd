@@ -59,7 +59,8 @@ func _reload() -> void:
 	if not MwRom.available():
 		_status.text = "No ROM: run tools/bin/setup-rom (game/rom/mlh.gen)."
 	else:
-		_status.text = "ROM %s, catalogue %d entries" % [MwRom.archive().sha1.left(8), MwRom.catalogue().get("entries", {}).size()]
+		_status.text = "ROM %s, catalogue %d entries" % [MwRom.archive().sha1.left(8),
+				MwRom.catalogue().get("entries", {}).size()]
 	_fill()
 
 
@@ -76,13 +77,15 @@ func _fill() -> void:
 		if kind == "frames":
 			for group in cat.get("frames", {}):
 				if screen < 0 or str(screen) in group.split(","):
-					_leaf(parent, "screens %s (%d)" % [group, cat["frames"][group].size()], {"kind": "frames", "group": group})
+					_leaf(parent, "screens %s (%d)" % [group, cat["frames"][group].size()],
+							{"kind": "frames", "group": group})
 					n += 1
 		elif kind == "pieces":
 			for caller in cat.get("pieces", {}):
 				var g: Dictionary = cat["pieces"][caller]
 				if screen < 0 or MwRom.has_screen(g, screen):
-					_leaf(parent, "drawn by $%s (%d)" % [caller.to_upper(), g["pieces"].size()], {"kind": "pieces", "caller": caller})
+					_leaf(parent, "drawn by $%s (%d)" % [caller.to_upper(), g["pieces"].size()],
+							{"kind": "pieces", "caller": caller})
 					n += 1
 		else:
 			for key in MwRom.keys(kind, screen):
@@ -98,16 +101,16 @@ func _leaf(parent: TreeItem, text: String, meta: Dictionary) -> void:
 	it.set_metadata(0, meta)
 
 
-func _first_screen(e: Dictionary) -> int:
-	var s := int(_screen.value)
-	if s >= 0:
-		return s
-	var screens: Array = e.get("screens", [0])
+func _first_screen(entry: Dictionary) -> int:
+	var screen := int(_screen.value)
+	if screen >= 0:
+		return screen
+	var screens: Array = entry.get("screens", [0])
 	return int(screens[0]) if not screens.is_empty() else 0
 
 
 func _on_selected() -> void:
-	var meta = _tree.get_selected().get_metadata(0)
+	var meta: Variant = _tree.get_selected().get_metadata(0)
 	if meta == null or not MwRom.available():
 		return
 	_selected = meta
@@ -119,51 +122,55 @@ func _on_selected() -> void:
 		"frames":
 			var frames: Array = cat["frames"][meta["group"]]
 			var screen := int(meta["group"].split(",")[0])
-			img = _frames_image(rom, frames.map(func(f): return MwGfx.frame_pieces(rom, int(f))), MwScreenPalettes.palette(screen))
+			img = _frames_image(rom, frames.map(func(f): return MwGfx.frame_pieces(rom, int(f))), \
+					MwScreenPalettes.palette(screen))
 			info = "%d frames drawn outside animations on screens %s" % [frames.size(), meta["group"]]
 		"pieces":
 			var g: Dictionary = cat["pieces"][meta["caller"]]
-			img = _frames_image(rom, g["pieces"].map(func(p): return [MwGfx.piece(rom, int(p))]), MwScreenPalettes.palette(int(g["screens"][0])))
-			info = "%d single pieces drawn by $%s on screens %s" % [g["pieces"].size(), meta["caller"].to_upper(), g["screens"]]
+			img = _frames_image(rom, g["pieces"].map(func(p): return [MwGfx.piece(rom, int(p))]), \
+					MwScreenPalettes.palette(int(g["screens"][0])))
+			info = "%d single pieces drawn by $%s on screens %s" \
+					% [g["pieces"].size(), meta["caller"].to_upper(), g["screens"]]
 		_:
-			var e := MwRom.entry(meta["key"])
-			var screen := _first_screen(e)
+			var entry := MwRom.entry(meta["key"])
+			var screen := _first_screen(entry)
 			var pal := MwScreenPalettes.palette(screen, meta["key"])
-			info = _describe(e)
-			match e["kind"]:
+			info = _describe(entry)
+			match entry["kind"]:
 				"picture":
-					var p := MwGfx.picture_image(rom, MwGfx.picture(rom, int(e["address"])))
-					img = _rgba(p["w"], p["h"], p["px"], pal)
+					var picture := MwGfx.picture_image(rom, MwGfx.picture(rom, int(entry["address"])))
+					img = _rgba(picture["w"], picture["h"], picture["px"], pal)
 				"tilebank":
-					img = _bank_image(rom, e, pal)
+					img = _bank_image(rom, entry, pal)
 				"map":
-					img = _map_image(rom, e, screen, pal)
+					img = _map_image(rom, entry, screen, pal)
 				"palette":
-					img = _swatches(MwGfx.words(rom, int(e["address"]), 16))
+					img = _swatches(MwGfx.words(rom, int(entry["address"]), 16))
 				"anim":
-					var an := MwGfx.animation(rom, int(e["address"]))
+					var an := MwGfx.animation(rom, int(entry["address"]))
 					var frames := []
 					for o in MwGfx.anim_offsets(rom, an, 0):
-						frames.append(MwGfx.flip_pieces(MwGfx.frame_pieces(rom, an["frames"] + o), an["variants"][0][1]))
+						frames.append(MwGfx.flip_pieces(MwGfx.frame_pieces(rom, an["frames"] + o),
+								an["variants"][0][1]))
 					img = _frames_image(rom, frames, pal)
 					info += "\n%d variants, %.1f frames/s" % [an["variants"].size(), MwGfx.anim_fps(an)]
 				"font":
 					var glyphs := []
-					for g in MwGfx.font_glyphs(rom, int(e["address"])):
+					for g in MwGfx.font_glyphs(rom, int(entry["address"])):
 						glyphs.append([MwGfx.piece(rom, g)])
 					img = _frames_image(rom, glyphs, pal)
-					info += "\nchars: " + "".join(MwGfx.font_char_map(rom, int(e["address"])).keys())
+					info += "\nchars: " + "".join(MwGfx.font_char_map(rom, int(entry["address"])).keys())
 	_preview.texture = ImageTexture.create_from_image(img) if img else null
 	_info.text = info
 	_add.disabled = meta["kind"] in ["palette", "font", "pieces"]
 
 
-func _describe(e: Dictionary) -> String:
+func _describe(entry: Dictionary) -> String:
 	var parts := []
-	for k in e:
+	for k in entry:
 		if k in ["kind", "placements", "uses", "strings"]:
 			continue
-		var v = e[k]
+		var v: Variant = entry[k]
 		if v is float and k in ["address", "tiles", "map", "frame_data"]:
 			parts.append("%s $%X" % [k, int(v)])
 		elif v is float:
@@ -171,8 +178,8 @@ func _describe(e: Dictionary) -> String:
 		else:
 			parts.append("%s %s" % [k, str(v)])
 	for k in ["placements", "uses", "strings"]:
-		if e.has(k):
-			parts.append("%d %s" % [e[k].size(), k])
+		if entry.has(k):
+			parts.append("%d %s" % [entry[k].size(), k])
 	return ", ".join(parts)
 
 
@@ -187,30 +194,32 @@ func _rgba(w: int, h: int, px: PackedByteArray, pal: RomPalette) -> Image:
 	return img
 
 
-func _bank_image(rom: PackedByteArray, e: Dictionary, pal: RomPalette) -> Image:
-	var count := int(e["count"])
+func _bank_image(rom: PackedByteArray, entry: Dictionary, pal: RomPalette) -> Image:
+	var count := int(entry["count"])
 	var cols := 32
 	var rows := ceili(count / float(cols))
 	var px := PackedByteArray()
 	px.resize(cols * 8 * rows * 8)
 	for i in count:
-		MwGfx.blit_tile(px, cols * 8, (i % cols) * 8, (i / cols) * 8, MwGfx.tile_indices(rom, int(e["tiles"]) + 32 * i), 0, false, false)
+		MwGfx.blit_tile(px, cols * 8, (i % cols) * 8, (i / cols) * 8,
+				MwGfx.tile_indices(rom, int(entry["tiles"]) + 32 * i), 0, false, false)
 	return _rgba(cols * 8, rows * 8, px, pal)
 
 
-func _map_image(rom: PackedByteArray, e: Dictionary, screen: int, pal: RomPalette) -> Image:
+func _map_image(rom: PackedByteArray, entry: Dictionary, screen: int, pal: RomPalette) -> Image:
 	var ts := RomTileSet.new()
 	ts.banks = MwScreenPalettes.banks(screen)
 	var vram := ts.vram_tiles()
-	var cols := int(e["cols"])
-	var rows := int(e["rows"])
+	var cols := int(entry["cols"])
+	var rows := int(entry["rows"])
 	var px := PackedByteArray()
 	px.resize(cols * 8 * rows * 8)
 	for y in rows:
 		for x in cols:
-			var w := MwGfx.u16(rom, int(e["address"]) + y * int(e["src_stride"]) + 2 * x)
+			var w := MwGfx.u16(rom, int(entry["address"]) + y * int(entry["src_stride"]) + 2 * x)
 			if vram.has(w & 0x7FF):
-				MwGfx.blit_tile(px, cols * 8, x * 8, y * 8, MwGfx.tile_indices(rom, vram[w & 0x7FF]), (w >> 13) & 3, (w & 0x800) != 0, (w & 0x1000) != 0)
+				MwGfx.blit_tile(px, cols * 8, x * 8, y * 8, MwGfx.tile_indices(rom, vram[w & 0x7FF]), (w >> 13) & 3,
+						(w & 0x800) != 0, (w & 0x1000) != 0)
 	return _rgba(cols * 8, rows * 8, px, pal)
 
 
@@ -260,19 +269,19 @@ func _add_to_scene() -> void:
 	var meta := _selected
 	match meta["kind"]:
 		"picture", "tilebank", "map":
-			var e := MwRom.entry(meta["key"])
-			var screen := _first_screen(e)
+			var entry := MwRom.entry(meta["key"])
+			var screen := _first_screen(entry)
 			var layer := RomTileMapLayer.new()
 			var ts := RomTileSet.new()
-			ts.banks = MwScreenPalettes.banks(screen, meta["key"] if e["kind"] != "map" else "")
+			ts.banks = MwScreenPalettes.banks(screen, meta["key"] if entry["kind"] != "map" else "")
 			layer.tiles = ts
 			layer.palette = MwScreenPalettes.palette(screen, meta["key"])
-			layer.map = meta["key"] if e["kind"] != "tilebank" else ""
+			layer.map = meta["key"] if entry["kind"] != "tilebank" else ""
 			node = layer
 		"anim":
-			var e := MwRom.entry(meta["key"])
+			var anim_entry := MwRom.entry(meta["key"])
 			var sprite := RomSprite.new()
-			sprite.palette = MwScreenPalettes.palette(_first_screen(e))
+			sprite.palette = MwScreenPalettes.palette(_first_screen(anim_entry))
 			sprite.anim = meta["key"]
 			node = sprite
 		"frames":

@@ -24,7 +24,10 @@ const LINEUPS := [["cpu_s0", 0], ["p1_s9", 0], ["cpu_s10", 0], ["p1_s8", 0], ["p
 		["cpu_s16", 0], ["p4_s22", 0], ["p1_s9", 934], ["p1_s2", 2573], ["p4_s22", 3942], ["cpu_s0", 967],
 		["cpu_s0", 2099], ["p4_s22", 2060]]
 ## The leaves the set-up, line-up and period change decide.
-const LINEUP_LEAVES := "^(teams/\\d/players/\\d/(motion/(pos|vel)/\\d|angle|target_[xy]|state|substate|anim/(address|variant|frame|position|flags)|record|original|slot|position|flags|weapon|charges)|teams/\\d/(flags4|health/\\d+|x330/\\d|pads/\\d|attr|nearest)|puck/(motion/(pos|vel)/\\d|flags|anim/address|carrier)|faceoff_spot|hold_(bit|left)/\\d)$"
+const LINEUP_LEAVES := ("^(teams/\\d/players/\\d/(motion/(pos|vel)/\\d|angle|target_[xy]|state|substate|anim/(address|"
+		+ "variant|frame|position|flags)|record|original|slot|position|flags|weapon|charges)|"
+		+ "teams/\\d/(flags4|health/\\d+|x330/\\d|pads/\\d|attr|nearest)|puck/(motion/(pos|vel)/\\d|flags|"
+		+ "anim/address|carrier)|faceoff_spot|hold_(bit|left)/\\d)$")
 
 
 static func work_dir() -> String:
@@ -209,7 +212,8 @@ static func _pairs(changes: Dictionary, index: Dictionary) -> Array:
 	return out
 
 
-static func _entry(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Array, paths: Array, index: Dictionary) -> Dictionary:
+static func _entry(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Array, paths: Array,
+		index: Dictionary) -> Dictionary:
 	var start := rec.start(k)
 	var s0 := MwRinkRam.decode(rom, start)
 	var d0 := MwSimDict.to_dict(s0)
@@ -240,12 +244,12 @@ static func _entry(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Arr
 	var tk := []
 	for e in rec.log_entries("tk", k):
 		tk.append([int(e[0]), int(e[1])])
-	var pk: Variant = null
+	var puck_log: Variant = null
 	var pl := rec.log_entries("pk", k)
 	if not pl.is_empty():
-		pk = int(pl[0][1])
+		puck_log = int(pl[0][1])
 	return {"run": rec.name, "pass": k, "e": rec.elapsed(k), "features": feats, "start": values,
-			"end": _pairs(MwSimDict.diff(d0, d1), index), "thinks": thinks, "ent": ent, "tk": tk, "pk": pk}
+			"end": _pairs(MwSimDict.diff(d0, d1), index), "thinks": thinks, "ent": ent, "tk": tk, "pk": puck_log}
 
 
 ## A line-up case: the setup (pass 0) or the state before (the previous
@@ -264,9 +268,11 @@ static func _lineup(rom: PackedByteArray, rec: MwSimRecording, k: int, paths: Ar
 	var out := {"run": rec.name, "pass": k, "screen": screen, "expect": expect,
 			"spot": MwRinkRam.u8(rec.start(k), MwRinkRam.FACEOFF_SPOT)}
 	if k == 0:
-		var su: Dictionary = rec.meta["setup"]
-		out["setup"] = {"stadium": int(su.get("0xffb0e4", 0)), "team_a": int(su["0xffb0de"]), "team_b": int(su["0xffb0df"]),
-				"pads": int(su["0xffb0e0"]), "reserves": int(su.get("0xffb0e6", 0)), "death_index": int(su.get("0xffb0e7", 0))}
+		var setup_ram: Dictionary = rec.meta["setup"]
+		out["setup"] = {"stadium": int(setup_ram.get("0xffb0e4", 0)), "team_a": int(setup_ram["0xffb0de"]),
+				"team_b": int(setup_ram["0xffb0df"]),
+				"pads": int(setup_ram["0xffb0e0"]), "reserves": int(setup_ram.get("0xffb0e6", 0)),
+				"death_index": int(setup_ram.get("0xffb0e7", 0))}
 	else:
 		var before := MwSimDict.leaves(MwSimDict.to_dict(MwRinkRam.decode(rom, rec.end(k - 1))))
 		var values := []

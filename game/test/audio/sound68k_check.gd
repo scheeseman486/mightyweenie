@@ -63,11 +63,11 @@ func _init() -> void:
 		print("no ROM (tools/bin/setup-rom)")
 		quit(1)
 		return
-	var root := ProjectSettings.globalize_path("res://").path_join("..").simplify_path()
-	var z := make_stub(rom)
+	var repo_root := ProjectSettings.globalize_path("res://").path_join("..").simplify_path()
+	var z80 := make_stub(rom)
 	var failed := false
 	for rel in paths:
-		var path := rel if rel.is_absolute_path() else root.path_join(rel)
+		var path := rel if rel.is_absolute_path() else repo_root.path_join(rel)
 		if not FileAccess.file_exists(path):
 			print("%s: missing (tools/bin/py out/plan12/port68k/dump.py)" % rel)
 			failed = true
@@ -79,7 +79,7 @@ func _init() -> void:
 		var bad_ticks := 0
 		var stats := {calls = 0, returns = 0, blocks = 0, clears = 0, rams = 0, usec = 0, max_usec = 0}
 		for sc: Dictionary in data["scenarios"]:
-			var r := replay(rom, sc, stats, z)
+			var r := replay(rom, sc, stats, z80)
 			n_sc += 1
 			n_ticks += int(r["ticks"])
 			bad_ticks += int(r["bad_ticks"])
@@ -88,7 +88,8 @@ func _init() -> void:
 			else:
 				for m in (r["msgs"] as PackedStringArray):
 					print("  %s: %s" % [sc["name"], m])
-		print("%s: %d/%d scenarios identical, %d/%d ticks identical (%d calls, %d return values, %d blocks, %d voice clears, %d full RAM images); vblank %.1f us mean, %d us max"
+		print(("%s: %d/%d scenarios identical, %d/%d ticks identical (%d calls, %d return values, %d blocks, %d voice "
+				+ "clears, %d full RAM images); vblank %.1f us mean, %d us max")
 				% [rel.get_file(), ok_sc, n_sc, n_ticks - bad_ticks, n_ticks, stats.calls, stats.returns,
 				stats.blocks, stats.clears, stats.rams, float(stats.usec) / maxi(1, n_ticks), stats.max_usec])
 		failed = failed or ok_sc != n_sc
@@ -96,22 +97,22 @@ func _init() -> void:
 
 
 ## Replays one recorded scenario through a new [MwSound68k] with the Z80 stub
-## [param z]; returns {ticks, bad_ticks, msgs} (the first few mismatches) and
+## [param z80]; returns {ticks, bad_ticks, msgs} (the first few mismatches) and
 ## adds to [param stats].
-static func replay(rom: PackedByteArray, sc: Dictionary, stats: Dictionary, z: StubZ80) -> Dictionary:
+static func replay(rom: PackedByteArray, sc: Dictionary, stats: Dictionary, z80: StubZ80) -> Dictionary:
 	if sc.has("patches"):
 		# synthetic scenarios: made-up instruments and sequences dump.py wrote
 		# into its copy of the ROM (paths the game's own data never reaches)
 		rom = rom.duplicate()
-		for p: Array in sc["patches"]:
-			var bytes := String(p[1]).hex_decode()
+		for patch: Array in sc["patches"]:
+			var bytes := String(patch[1]).hex_decode()
 			for i in bytes.size():
-				rom[int(p[0]) + i] = bytes[i]
-	var s := MwSound68k.new(rom)
-	s.pal = bool(sc["pal"])
+				rom[int(patch[0]) + i] = bytes[i]
+	var driver := MwSound68k.new(rom)
+	driver.pal = bool(sc["pal"])
 	var msgs := PackedStringArray()
-	s.reset()
-	var diff := _first_diff(s.ram_image(), String(sc["ram0"]).hex_decode())
+	driver.reset()
+	var diff := _first_diff(driver.ram_image(), String(sc["ram0"]).hex_decode())
 	if diff != "":
 		msgs.append("after reset: RAM differs at " + diff)
 	var ticks: Array = sc["ticks"]
@@ -123,20 +124,21 @@ static func replay(rom: PackedByteArray, sc: Dictionary, stats: Dictionary, z: S
 		for c: Array in t["calls"]:
 			stats.calls += 1
 			var want: Variant = c[c.size() - 1]
-			var got: Variant = _call(s, c)
+			var got: Variant = _call(driver, c)
 			if want == null:
 				continue
 			stats.returns += 1
 			var same: bool = (got == want) if want is bool else (got is int and got == int(want))
 			if not same:
-				bad.append("%s%s returned %s, the model %s" % [c[0], str(c.slice(1, c.size() - 1)), str(got), str(want)])
-		z.pending = bool(t["pending"])
+				bad.append("%s%s returned %s, the model %s"
+						% [c[0], str(c.slice(1, c.size() - 1)), str(got), str(want)])
+		z80.pending = bool(t["pending"])
 		var status: Array = t["status"]
 		for k in 4:
-			z.status[k] = int(status[k])
-		z.clears.clear()
+			z80.status[k] = int(status[k])
+		z80.clears.clear()
 		var t0 := Time.get_ticks_usec()
-		var block := s.vblank(z)
+		var block := driver.vblank(z80)
 		var dt := Time.get_ticks_usec() - t0
 		stats.usec += dt
 		stats.max_usec = maxi(stats.max_usec, dt)
@@ -149,11 +151,11 @@ static func replay(rom: PackedByteArray, sc: Dictionary, stats: Dictionary, z: S
 		for v: Variant in t["clears"]:
 			want_clears.append(int(v))
 		stats.clears += want_clears.size()
-		if z.clears != want_clears:
-			bad.append("voices freed %s, the model %s" % [str(z.clears), str(want_clears)])
-		if _SKIPS[s.skipped] != String(t["skip"]):
-			bad.append("skip '%s', the model '%s'" % [_SKIPS[s.skipped], t["skip"]])
-		var ram := s.ram_image()
+		if z80.clears != want_clears:
+			bad.append("voices freed %s, the model %s" % [str(z80.clears), str(want_clears)])
+		if _SKIPS[driver.skipped] != String(t["skip"]):
+			bad.append("skip '%s', the model '%s'" % [_SKIPS[driver.skipped], t["skip"]])
+		var ram := driver.ram_image()
 		hasher.start(HashingContext.HASH_SHA1)
 		hasher.update(ram)
 		if hasher.finish().hex_encode() != String(t["sha1"]):
@@ -170,43 +172,43 @@ static func replay(rom: PackedByteArray, sc: Dictionary, stats: Dictionary, z: S
 	return {ticks = ticks.size(), bad_ticks = bad_ticks, msgs = msgs}
 
 
-## One recorded call [name, args..., return] on [param s]; returns its result
+## One recorded call [name, args..., return] on [param driver]; returns its result
 ## (null for the routines without one).
-static func _call(s: MwSound68k, c: Array) -> Variant:
+static func _call(driver: MwSound68k, c: Array) -> Variant:
 	var a := c.slice(1, c.size() - 1)
 	match String(c[0]):
 		"music_title":
-			s.music_title()
+			driver.music_title()
 		"music_game":
-			s.music_game()
+			driver.music_game()
 		"music_start":
-			s.music_start(int(a[0]))
+			driver.music_start(int(a[0]))
 		"music_fade_out":
-			s.music_fade_out(int(a[0]))
+			driver.music_fade_out(int(a[0]))
 		"enter_match":
-			s.enter_match(int(a[0]))
+			driver.enter_match(int(a[0]))
 		"sound_play":
-			return s.sound_play(int(a[0]))
+			return driver.sound_play(int(a[0]))
 		"random_sound":
-			return s.random_sound(int(a[0]))
+			return driver.random_sound(int(a[0]))
 		"positional":
-			return s.positional(int(a[0]), int(a[1]) != 0)
+			return driver.positional(int(a[0]), int(a[1]) != 0)
 		"stop_positional":
-			s.stop_positional()
+			driver.stop_positional()
 		"sound_busy":
-			return s.sound_busy(int(a[0]))
+			return driver.sound_busy(int(a[0]))
 		"sound_stop":
-			s.sound_stop(int(a[0]))
+			driver.sound_stop(int(a[0]))
 		"crowd_level":
-			s.crowd_level(int(a[0]))
+			driver.crowd_level(int(a[0]))
 		"crowd_restart":
-			s.crowd_restart()
+			driver.crowd_restart()
 		"crowd_fade":
-			s.crowd_fade()
+			driver.crowd_fade()
 		"crowd_off":
-			s.crowd_off()
+			driver.crowd_off()
 		"set_d5_high":
-			s.d5_high = int(a[0])
+			driver.d5_high = int(a[0])
 		var other:
 			push_error("sound68k_check: unknown call " + str(other))
 	return null

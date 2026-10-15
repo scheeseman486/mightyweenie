@@ -49,13 +49,13 @@ func test_a_team_change_takes_the_portrait_away() -> void:
 		return false), "a star's portrait shows")
 	if hit[0] < 0:
 		return
-	var p: MwTeamPanel = menu.panels[hit[0]]
+	var panel: MwTeamPanel = menu.panels[hit[0]]
 	router.step()
-	p.reset(p.team ^ 1)
+	panel.reset(panel.team ^ 1)
 	router.step()
-	assert_false(p.portrait.visible, "the portrait goes with the old team")
-	assert_eq(p.state, 0, "the new team's logo")
-	assert_false(p.team_colours, "the panel colours are back")
+	assert_false(panel.portrait.visible, "the portrait goes with the old team")
+	assert_eq(panel.state, 0, "the new team's logo")
+	assert_false(panel.team_colours, "the panel colours are back")
 
 
 func test_a_team_change_takes_the_skater_away() -> void:
@@ -70,26 +70,26 @@ func test_a_team_change_takes_the_skater_away() -> void:
 		return false), "a skater shows")
 	if hit[0] < 0:
 		return
-	var p: MwTeamPanel = menu.panels[hit[0]]
-	p.reset(p.team ^ 1)
+	var panel: MwTeamPanel = menu.panels[hit[0]]
+	panel.reset(panel.team ^ 1)
 	router.step()
-	assert_false(p.skater.visible)
+	assert_false(panel.skater.visible)
 
 
 func test_the_skater_is_clipped_to_its_window() -> void:
 	if not need_rom():
 		return
 	for i in 2:
-		var p: MwTeamPanel = menu.panels[i]
+		var team_panel: MwTeamPanel = menu.panels[i]
 		var w: Rect2i = MwTeamPanel.WINDOWS[i]
-		assert_true(p.skater_clip.clip_contents)
-		assert_eq(Rect2i(p.skater_clip.get_rect()), w, "panel %d window" % i)
-		assert_eq(p.skater.get_parent(), p.skater_clip)
+		assert_true(team_panel.skater_clip.clip_contents)
+		assert_eq(Rect2i(team_panel.skater_clip.get_rect()), w, "panel %d window" % i)
+		assert_eq(team_panel.skater.get_parent(), team_panel.skater_clip)
 	assert_true(_until(func() -> bool:
 		return menu.panels[0].skater.visible or menu.panels[1].skater.visible), "a skater shows")
 	for i in 2:
-		var p: MwTeamPanel = menu.panels[i]
-		if p.skater.visible:
-			var at := p.skater.global_position
-			var want := Vector2(RomStarfield.asr8(p.pos.x), RomStarfield.asr8(p.pos.y))
+		var panel: MwTeamPanel = menu.panels[i]
+		if panel.skater.visible:
+			var at := panel.skater.global_position
+			var want := Vector2(RomStarfield.asr8(panel.pos.x), RomStarfield.asr8(panel.pos.y))
 			assert_eq(at, want, "the skater stays where the original puts it")

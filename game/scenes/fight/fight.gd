@@ -54,11 +54,11 @@ func _screen_pass(elapsed: int, input: MwInputFrame) -> void:
 ## A pass's draws; the pass that ends the fight shows its last frame and
 ## starts the fade, the card waits for it (without a fader: at once).
 func _draw_pass() -> void:
-	var f := sim as MwFightSim
-	if f == null or f.card_window_from < 0 or fader == null:
+	var fight := sim as MwFightSim
+	if fight == null or fight.card_window_from < 0 or fader == null:
 		super._draw_pass()
 		return
-	var cut := f.card_window_from
+	var cut := fight.card_window_from
 	painter_b.paint(sim.plane_ops, state)
 	painter_w.paint(sim.window_ops.slice(0, cut), state)
 	var list := drawer.list(state, sim.sprite_ops)

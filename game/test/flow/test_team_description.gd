@@ -43,7 +43,8 @@ func _play(case_name: String) -> Dictionary:
 	host.add_child(fader)
 	var router := MwRouter.new(host, fader)
 	router.session = MwSession.new(0x61F2415D, 0x1234567)
-	var script := MwInputScript.parse(FileAccess.get_file_as_string(repo_path("compare/scripts/%s.mwi" % case_name)), case_name)
+	var script := MwInputScript.parse(FileAccess.get_file_as_string(repo_path("compare/scripts/%s.mwi" % case_name)),
+			case_name)
 	assert_eq(script.error, "")
 	var player := MwScriptPlayer.new(script)
 	var source := MwScriptedInput.new(player)
@@ -115,10 +116,13 @@ func _check(case_name: String) -> void:
 		# selections: same order, close in time
 		var wsel := _selections(ws)
 		var gsel := _selections(gs)
-		assert_eq(gsel.map(func(s: Array) -> Array: return s.slice(1)), wsel.map(func(s: Array) -> Array: return s.slice(1)), tag + ": team / cursor / line changes")
+		assert_eq(gsel.map(func(selection: Array) -> Array: return selection.slice(1)), \
+				wsel.map(func(selection: Array) -> Array: return selection.slice(1)), \
+				tag + ": team / cursor / line changes")
 		for k in range(1, mini(wsel.size(), gsel.size())):
 			var d := int(gsel[k][0]) - int(wsel[k][0])
-			assert_true(d >= -SELECT_EARLY and d <= SELECT_LATE, "%s: change %d at %+d ticks from the original's" % [tag, k, d])
+			assert_true(d >= -SELECT_EARLY and d <= SELECT_LATE,
+					"%s: change %d at %+d ticks from the original's" % [tag, k, d])
 		# moves: same vscroll at the same tick of the move
 		var wm := _moves(ws)
 		var gm := _moves(gs)
@@ -144,7 +148,8 @@ func _check(case_name: String) -> void:
 				if at.get(t, -1) != int(w[1]):
 					bad.append([int(w[0]) - int(first[0]), int(w[1]), at.get(t, -1)])
 			assert_eq(bad, [], "%s move %d: [tick of move, original, ours] that differ" % [tag, k])
-		assert_eq(gs.back().slice(1), ws.back().slice(1).map(func(x: Variant) -> int: return int(x)), tag + ": last state")
+		assert_eq(gs.back().slice(1), ws.back().slice(1).map(func(x: Variant) -> int: return int(x)), \
+				tag + ": last state")
 
 
 func test_pages_like_the_original() -> void:
@@ -158,45 +163,63 @@ func test_teams_and_pads_like_the_original() -> void:
 # --- the ports underneath ------------------------------------------------------------------------
 ## The coach page's drop as the original moved it (BlastEm / GPGX traces):
 ## z (1/256 px) and z speed after so many ticks from (0, 0, 160) at -200.
+## Plan 34: the pages read every pad (`$C28E`) - in an extended set-up
+## every player's, so players 5-12 (over a match one of them paused) turn
+## the pages and leave too; in the original's set-ups pads 1-4.
+func test_players_5_to_12_count_in_an_extended_set_up() -> void:
+	if not need_rom():
+		return
+	var td := (load(MwScreens.scene_path(2)) as PackedScene).instantiate() as MwTeamDescription
+	td.session = MwSession.new(1, 1)
+	var press := MwInputFrame.make({MwVerbs.menu_action(9, "ui_info_return"): true}, {})
+	assert_eq(td._pads(press), 0, "the original's set-up: player 9 on no pad")
+	for p in [1, 2, 3]:
+		td.session.humans.set_team(p, 0)
+	td.session.humans.set_team(9, 1)
+	td.session.pad_map = td.session.humans.pad_players(rom)
+	assert_eq(td._pads(press), 0x80, "an extended set-up: player 9's Start")
+	td.free()
+
+
 func test_motion_drop_and_bounces() -> void:
-	var p := MwMotion.Params.new(-32, 0x60, 0, 0)
-	var m := MwMotion.new()
-	m.init(0, 0, 160)
-	m.vel[2] = -200
+	var params := MwMotion.Params.new(-32, 0x60, 0, 0)
+	var motion := MwMotion.new()
+	motion.init(0, 0, 160)
+	motion.vel[2] = -200
 	var want := {2: [40528, -264], 45: [280, -1640], 46: [0, 627], 66: [6460, -13], 86: [0, 244], 93: [0, 20]}
 	var t := 0
 	for k in [2, 45, 46, 66, 86, 93]:
-		m.step(p, k - t)
+		motion.step(params, k - t)
 		t = k
-		assert_eq([m.pos[2], m.vel[2]], want[k], "after %d ticks" % k)
+		assert_eq([motion.pos[2], motion.vel[2]], want[k], "after %d ticks" % k)
 
 
 func test_motion_rise_and_chunks() -> void:
-	var p := MwMotion.Params.new(-32, 0x60, 0, 0)
-	var a := MwMotion.new()
-	var b := MwMotion.new()
-	a.vel[2] = 0x708
-	b.vel[2] = 0x708
+	var params := MwMotion.Params.new(-32, 0x60, 0, 0)
+	var per_tick := MwMotion.new()
+	var motion := MwMotion.new()
+	per_tick.vel[2] = 0x708
+	motion.vel[2] = 0x708
 	for i in 31:
-		a.step(p, 1)
-	b.step(p, 31)                       # in chunks of 8: the same z
-	assert_eq([a.pos[2], a.vel[2]], [40920, 808])
-	assert_eq([b.pos[2], b.vel[2]], [40920, 808])
+		per_tick.step(params, 1)
+	motion.step(params, 31)                       # in chunks of 8: the same z
+	assert_eq([per_tick.pos[2], per_tick.vel[2]], [40920, 808])
+	assert_eq([motion.pos[2], motion.vel[2]], [40920, 808])
 
 
 func test_motion_friction_matches_the_68000_arithmetic() -> void:
 	# x with friction 16/256: the speed decays by the factor table (mulu,
 	# lsr 8), the position moves by the lost speed / friction (divs)
-	var p := MwMotion.Params.new(0, 0, 16, 16)
-	assert_eq(p.ground.slice(0, 3), PackedInt32Array([240, 225, 210]))
-	var m := MwMotion.new()
-	m.vel[0] = 1000
-	m.step(p, 1)
-	assert_eq([m.pos[0], m.vel[0]], [1008, 937])
-	m.vel[0] = -1000
-	m.pos[0] = 0
-	m.step(p, 2)
-	assert_eq([m.pos[0], m.vel[0]], [-1952, -878])
+	var params := MwMotion.Params.new(0, 0, 16, 16)
+	assert_eq(params.ground.slice(0, 3), PackedInt32Array([240, 225, 210]))
+	var motion := MwMotion.new()
+	motion.vel[0] = 1000
+	motion.step(params, 1)
+	assert_eq([motion.pos[0], motion.vel[0]], [1008, 937])
+	motion.vel[0] = -1000
+	motion.pos[0] = 0
+	motion.step(params, 2)
+	assert_eq([motion.pos[0], motion.vel[0]], [-1952, -878])
 
 
 func test_text_box_wraps_words() -> void:
@@ -224,7 +247,7 @@ func test_star_quotes() -> void:
 		return
 	var e := MwPortrait.star_entry(rom, MwTeams.player(rom, 22, 0))
 	assert_ne(e, 0, "team 22's first player is a star")
-	var q := MwQuotes.pick(rom, MwTeamDescription.STAR_QUOTES, 2, MwGfx.u16(rom, e + 8), MlhRng.new(1))
-	assert_gt(q["template"].size(), 20)
+	var quote := MwQuotes.pick(rom, MwTeamDescription.STAR_QUOTES, 2, MwGfx.u16(rom, e + 8), MlhRng.new(1))
+	assert_gt(quote["template"].size(), 20)
 	assert_eq(MwQuotes.expand("A @ B {".to_ascii_buffer(), {"@": "x".to_ascii_buffer(), "{": "yz".to_ascii_buffer()}),
 			"A x B yz".to_ascii_buffer())

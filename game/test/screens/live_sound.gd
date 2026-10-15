@@ -22,14 +22,13 @@ extends SceneTree
 ## a game-over scoreboard, else 1. Needs the ROM; without the mw_audio
 ## extension the driver runs unheard.
 
-const LiveMatch := preload("res://test/screens/live_match.gd")
+const Bots := preload("res://test/support/bots.gd")
 
 var _started := false
 var _router: MwRouter
 var _counts := {}
 var _by_screen := {}
 var _log: FileAccess
-var _peak := 0.0
 var _peaks := {}
 var _wav: FileAccess
 var _wav_bytes := 0
@@ -63,7 +62,7 @@ func _process(_delta: float) -> bool:
 	su.team_a = int(teams[0])
 	su.team_b = int(teams[1])
 	su.play_mode = int(args.get("mode", "0"))
-	var bot := LiveMatch.MenuBot.new()
+	var bot := Bots.MenuBot.new()
 	bot.router = router
 	bot.detours = int(args.get("detours", "6"))
 	bot.cpu = su.pads == 5
@@ -144,11 +143,11 @@ func _audio_tick(audio: MwAudio, render: bool, n: int) -> void:
 		_wav_bytes += pcm.size()
 	if n % 30 != 0:
 		return
-	var p := 0.0
+	var loudest := 0.0
 	for f in frames:
-		p = maxf(p, maxf(absf(f.x), absf(f.y)))
+		loudest = maxf(loudest, maxf(absf(f.x), absf(f.y)))
 	var id := _router.current_id()
-	_peaks[id] = snappedf(maxf(float(_peaks.get(id, 0.0)), p), 0.001)
+	_peaks[id] = snappedf(maxf(float(_peaks.get(id, 0.0)), loudest), 0.001)
 
 
 ## A WAV file (PCM 16-bit stereo at [param rate]); sizes patched at [method _wav_close].
@@ -190,18 +189,10 @@ func _on_call(what: String, args: Array, result: Variant) -> void:
 		var a := PackedStringArray()
 		for v in args:
 			a.append(("$%X" % (v & 0xFFFFFFFF)) if v is int else str(v))
-		var r := "" if result == null else (" -> $%X" % (result & 0xFFFFFFFF) if result is int else " -> %s" % str(result))
+		var r := "" if result == null else (" -> $%X" % (result & 0xFFFFFFFF) if result is int
+				else " -> %s" % str(result))
 		_log.store_line("%7d %2d %s(%s)%s" % [_router.tick, id, what, ", ".join(a), r])
 
 
 func _args() -> Dictionary:
-	var out := {}
-	var a := OS.get_cmdline_user_args()
-	var i := 0
-	while i < a.size():
-		if a[i].begins_with("--") and i + 1 < a.size():
-			out[a[i].substr(2)] = a[i + 1]
-			i += 2
-		else:
-			i += 1
-	return out
+	return preload("res://test/support/cli.gd").args()      # (plan 40: one copy)

@@ -5,7 +5,7 @@ extends "res://test/rom/rom_test_base.gd"
 
 const WEENIES := 5               # no skulls
 const ACES := 22                 # six
-const STEPS := ["screen_palette", "rom 1BD8A 3"]   # the rink's palette
+const STEPS := MwScreenPalettes.RINK   # the rink's palette
 
 var seats: Array = []
 var skulls := PackedInt32Array()
@@ -22,12 +22,12 @@ func _share(teams: PackedInt32Array, t: int) -> float:
 	return float(MwCrowdMix.counts(teams).get(t, 0)) / teams.size()
 
 
-## Whether [param share] is within [param range] x the ability of
+## Whether [param share] is within [param bounds] x the ability of
 ## [param skull_count] (one seat of rounding).
-func _assert_share(share: float, range: Vector2, skull_count: int, what: String) -> void:
+func _assert_share(share: float, bounds: Vector2, skull_count: int, what: String) -> void:
 	var f := MwCrowdMix.ability(skull_count)
 	var slack := 1.0 / seats.size()
-	assert_between(share, range.x * f - slack, range.y * f + slack, what)
+	assert_between(share, bounds.x * f - slack, bounds.y * f + slack, what)
 
 
 func test_ability_margin() -> void:
@@ -43,8 +43,8 @@ func test_skulls_from_the_rom() -> void:
 	assert_eq(skulls.size(), 23)
 	assert_eq(skulls[WEENIES], 0, "the Mighty Weenies")
 	assert_eq(skulls[ACES], 6, "the Galaxy Aces")
-	for s in skulls:
-		assert_between(s, 0, 6)
+	for skull_count in skulls:
+		assert_between(skull_count, 0, 6)
 
 
 func test_home_and_away_shares() -> void:
@@ -82,8 +82,8 @@ func test_a_third_teams_stadium() -> void:
 func _together(teams: PackedInt32Array, team: int) -> float:
 	var cells := {}
 	for i in seats.size():
-		var p: Vector3 = seats[i]["pos"]
-		var c := Vector2i(floori(p.x / 32.0), floori(p.y / 32.0))
+		var seat_pos: Vector3 = seats[i]["pos"]
+		var c := Vector2i(floori(seat_pos.x / 32.0), floori(seat_pos.y / 32.0))
 		if not cells.has(c):
 			cells[c] = []
 		cells[c].append(i)
@@ -92,12 +92,12 @@ func _together(teams: PackedInt32Array, team: int) -> float:
 	for i in seats.size():
 		if teams[i] != team:
 			continue
-		var p: Vector3 = seats[i]["pos"]
-		var c := Vector2i(floori(p.x / 32.0), floori(p.y / 32.0))
+		var point: Vector3 = seats[i]["pos"]
+		var c := Vector2i(floori(point.x / 32.0), floori(point.y / 32.0))
 		for dx in [-1, 0, 1]:
 			for dy in [-1, 0, 1]:
 				for j: int in cells.get(c + Vector2i(dx, dy), []):
-					if j != i and p.distance_to(seats[j]["pos"]) < 26.0:
+					if j != i and point.distance_to(seats[j]["pos"]) < 26.0:
 						all += 1
 						same += int(teams[j] == team)
 	return float(same) / maxi(all, 1)
@@ -143,9 +143,9 @@ func test_the_stands_wear_their_teams() -> void:
 		return
 	var stands := MwStands3D.new()
 	add_child_autofree(stands)
-	var p := RomPalette.make(4, PackedStringArray(STEPS), 0, 0)
-	p.team_b = 7
-	stands.palette = p
+	var palette := RomPalette.make(4, PackedStringArray(STEPS), 0, 0)
+	palette.team_b = 7
+	stands.palette = palette
 	assert_eq(stands.fan_teams.size(), stands.seats.size(), "a team per seat")
 	assert_eq(stands.fan_teams, MwCrowdMix.assign(stands.seats, 0, 7, 0, skulls))
 	for t in [0, WEENIES, ACES]:
@@ -153,7 +153,7 @@ func test_the_stands_wear_their_teams() -> void:
 		for i in range(1, 16):
 			assert_eq(stands.team_lines.get_pixel(i, t).to_rgba32(), line.rgba(16 + i).to_rgba32(),
 					"team %d colour %d" % [t, i])
-	p.stadium = 7
+	palette.stadium = 7
 	stands.refresh()
 	assert_eq(stands.fan_teams, MwCrowdMix.assign(stands.seats, 0, 7, 7, skulls), "follows the palette")
 	stands.variety = false

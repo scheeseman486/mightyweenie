@@ -26,13 +26,13 @@ extends RefCounted
 ## of the ticks of a demo; deliberately not reproduced).
 
 # --- ROM ---------------------------------------------------------------------
-const Z80_DRIVER := 0x15C90          ## length word (= Z80 address of the FM patches), then the Z80 code
-const INSTRUMENTS := 0x1FF010        ## 256 word offsets (from here) to instrument records ($15B4C)
-const SAMPLES := 0x1C0000            ## sample offsets in instruments are relative to this ($15B46)
-const SEQUENCES := 0x1F57E           ## sound ids 0..$11: sequence pointers (long)
-const VOICE_IDS := 0x1F5C6           ## sound ids $12..$4C: instrument index (word, < 0 none)
+const Z80_DRIVER := MwSoundRom.Z80_DRIVER          ## length word (= Z80 address of the FM patches), then the Z80 code
+const INSTRUMENTS := MwSoundRom.INSTRUMENTS        ## 256 word offsets (from here) to instrument records ($15B4C)
+const SAMPLES := MwSoundRom.SAMPLES            ## sample offsets in instruments are relative to this ($15B46)
+const SEQUENCES := MwSoundRom.SEQUENCES           ## sound ids 0..$11: sequence pointers (long)
+const VOICE_IDS := MwSoundRom.VOICE_IDS           ## sound ids $12..$4C: instrument index (word, < 0 none)
 const MUSIC_TITLE := 0x1CDC00        ## the sequence $13C66 starts
-const MUSIC_GAME := 0x1CE2D0         ## the sequence $13C6E starts
+const MUSIC_GAME := MwSoundRom.MUSIC_GAME         ## the sequence $13C6E starts
 const CHANNEL_RECORDS := 0x4CECE     ## 14 words: channel -> its record's offset from $FFE6B0
 const ALLOC_CLASSES := 0x16930       ## 5 x 8 bytes: first struct offset, first mask bit, count - 1
 const NOTE_FOLD := 0x169D6           ## MIDI notes $6C-$7F folded to $60-$6B (indexed -$6C)
@@ -85,7 +85,7 @@ const QUEUE_ENTRY := 12
 const QUEUE_SIZE := 0x300
 const TRACK_PROGRAMS := 0xFFF384     ## 16 bytes: program last sent per MIDI channel
 const INSTRUMENT_BASE := 0xFFE6A6    ## long: INSTRUMENTS ($15B4C)
-const SAMPLE_BASE := 0xFFE6AA        ## long: SAMPLES ($15B46)
+const SAMPLE_BASE_RAM := 0xFFE6AA        ## long: SAMPLES ($15B46)
 const DRIVER_LENGTH := 0xFFE6AE      ## word: Z80 driver length = Z80 address of the patches
 
 # --- work RAM: the game side ($13BE0-$13FFF) ----------------------------------------
@@ -202,6 +202,36 @@ var d5_high := 0
 var trace := Callable()
 ## [enum Skip]: why the last [method vblank] did nothing.
 var skipped := Skip.NONE
+## The driver's work in the last [method vblank], counted at the places the
+## plan 36 load recordings probe the original (`mw_harness load-record
+## --sound`): the [enum Work] counts; [method MwPassCost.sound_cycles] turns
+## them into the 68000's cycles for the rink's TICK RATE ORIGINAL.
+var work := PackedInt32Array()
+## [member work]'s entries and the original's probe addresses.
+enum Work {
+	CHANNEL,        ## `$17176`: a channel in use in the channel pass
+	NOTE_OFF_ENTRY, ## `$18CDE`: a queued note-off looked at
+	TRACK_CLOCK,    ## `$189E0`
+	MIDI_BYTE,      ## `$17356`
+	NOTE_OFF,       ## `$173EA`
+	NOTE_ON,        ## `$174D2`
+	PCM_NOTE_ON,    ## `$17556`
+	FM_NOTE_ON,     ## `$17656`
+	CHANNELS,       ## `$1715E`
+	ENV_PITCH,      ## `$16F28`
+	ENV_VOLUME,     ## `$16FB4`
+	ARPEGGIO,       ## `$17040`
+	VIBRATO,        ## `$170C6`
+	FM_PITCH,       ## `$16DAC`
+	PCM_PITCH,      ## `$16D32`
+	VOICE_RATE,     ## `$17E62`
+	VOICE_VOLUME,   ## `$17EA2`
+	COPY,           ## `$17B68`: the batch copied to the Z80
+	CROWD,          ## `$13F1C`
+	TRACK_SLOT,     ## `$18D54`: the sequencer's track loop
+	DRIVER,         ## `$17B48`: `$17B20` past the Z80 / lock checks
+	COUNT,
+}
 ## The PCM sounds the driver cut short or refused since the last [method
 ## take_drops], for want of a channel or a bank, or by the positional rule
 ## (observation only: recording them changes nothing in the driver; the audio
@@ -231,6 +261,7 @@ var _vlq_end := 0              # where the number the last _vlq() read ended
 
 
 func _init(rom_data: PackedByteArray) -> void:
+	work.resize(Work.COUNT)
 	rom = rom_data
 	mem.resize(0x10000)
 
@@ -241,39 +272,48 @@ func r8(a: int) -> int:
 	return mem[a & 0xFFFF]
 
 
+## Work RAM word at [param a] (big-endian, unsigned; `a & $FFFF`).
 func r16(a: int) -> int:
 	var i := a & 0xFFFF
 	return (mem[i] << 8) | mem[i + 1]
 
 
+## Work RAM long at [param a] (big-endian, unsigned; two [method r16] reads).
 func r32(a: int) -> int:
 	return (r16(a) << 16) | r16(a + 2)
 
 
+## Writes the low byte of [param v] to work RAM at [param a] (`a & $FFFF`).
 func w8(a: int, v: int) -> void:
 	mem[a & 0xFFFF] = v & 0xFF
 
 
+## Writes the low word of [param v] to work RAM at [param a], big-endian (`a & $FFFF`).
 func w16(a: int, v: int) -> void:
 	var i := a & 0xFFFF
 	mem[i] = (v >> 8) & 0xFF
 	mem[i + 1] = v & 0xFF
 
 
+## Writes the low long of [param v] to work RAM at [param a], big-endian (two
+## [method w16] writes).
 func w32(a: int, v: int) -> void:
 	w16(a, v >> 16)
 	w16(a + 2, v)
 
 
+## ROM byte at [param a] (`a & $FFFFFF`).
 func rom8(a: int) -> int:
 	return rom[a & 0xFFFFFF]
 
 
+## ROM word at [param a] (big-endian, unsigned; `a & $FFFFFF`).
 func rom16(a: int) -> int:
 	var i := a & 0xFFFFFF
 	return (rom[i] << 8) | rom[i + 1]
 
 
+## ROM long at [param a] (big-endian, unsigned; two [method rom16] reads).
 func rom32(a: int) -> int:
 	return (rom16(a) << 16) | rom16(a + 2)
 
@@ -356,7 +396,7 @@ func reset() -> void:
 		w32(channel(n) + CH_PATCH, 0xFFFFFFFF)
 	for c in 16:
 		w8(VOLUMES + c, 0x7F)
-	w32(SAMPLE_BASE, SAMPLES)               # $15B46
+	w32(SAMPLE_BASE_RAM, SAMPLES)               # $15B46
 
 
 ## `$18706`: tracks free (only state and slot written), queue empty.
@@ -481,6 +521,39 @@ func sound_play(id: int) -> int:
 	return handle & 0xFFFFFFFF
 
 
+## Port only (owner, 2026-10-10: the game setup's slam's second crash
+## a little lower in pitch and a little softer): [method sound_play]'s voice
+## path for sound [param id] (a sampled effect, `$12-$4C`) at [param rate]
+## (8.8, `$100` the original's) and [param volume] (`$100` the original's) -
+## the driver's own pitched voice ([method voice_start]: the fourth PCM
+## voice). Other sounds play as [method sound_play]. Returns the handle.
+func sound_play_voice(id: int, rate: int, volume: int) -> int:
+	var d0 := id & 0xFFFF
+	if d0 < 0x12 or d0 - 0x12 >= 0x3B:
+		return sound_play(id)
+	var index := rom16(VOICE_IDS + 2 * (d0 - 0x12))
+	if (index & 0x8000) != 0:
+		return sound_play(id)
+	_api(1)
+	_cut_positional()
+	var handle := voice_start(index, rate, volume)
+	_api(-1)
+	return handle & 0xFFFFFFFF
+
+
+## Port only (plan 39, [MwOrganPool]): [method sound_play]'s sequence path
+## for the sequence at [param seq] (an address in this driver's copy of the
+## ROM, where [MwAudio] put the organ pool's tunes): the last positional sound
+## stopped first (quirk 2), then the sequence started. Returns its handle
+## (bit 31 set).
+func play_sequence(seq: int) -> int:
+	_api(1)
+	_cut_positional()
+	var handle := seq_start(seq) | 0x80000000
+	_api(-1)
+	return handle & 0xFFFFFFFF
+
+
 ## `$13CE2`: sound 5 + (rng & 3), [param rng_value] being the caller's draw
 ## from the game's generator (`$4BC6`).
 func random_sound(rng_value: int) -> int:
@@ -528,7 +601,44 @@ func take_drops() -> Array:
 	return d
 
 
-## `$13D9C`: is the sequence or voice [param handle] still playing?
+## Port only ([member MwSettings.goal_song_carries]): `$13C04` for a rink
+## exit while sequence [param keep] (a [method sound_play] handle, bit 31
+## set) still plays - the crowd off, every other sequence and voice stopped,
+## the game's variables as [method reset] leaves them, but no reset: the
+## sequencer, the channels and the Z80 go on, so [param keep] plays to its
+## end ([method MwAudio.carry_over] keeps the Z80 too).
+func leave_keeping(keep: int) -> void:
+	crowd_off()
+	var others := {}
+	for slot in N_TRACKS:
+		var t := TRACKS + slot * TRACK_SIZE
+		if r8(t + TR_STATE) == 0 and r32(t + TR_HANDLE) != (keep & 0x7FFFFFFF):
+			others[r32(t + TR_HANDLE)] = true
+	for h: int in others:
+		seq_stop(h)
+	for v in 4:
+		var c := SFX_CHANNELS + v * CHANNEL_SIZE
+		if r8(c + CH_STATE) == 1:
+			voice_stop(r32(c + CH_CACHE))
+	w32(MUSIC_HANDLE, 0xFFFFFFFF)
+	w32(MUSIC_SEQ, 0)
+	w16(MUSIC_REPEAT, 0)
+	w16(MUSIC_FADE, 0)
+	w16(API_DEPTH, 0)
+	w32(POSITIONAL, 0xFFFFFFFF)
+	w16(POSITIONAL_AGE, 0)
+
+
+## Port only: the PCM voice (0-3, the Z80's channel) playing voice [param
+## handle], or -1.
+func voice_channel(handle: int) -> int:
+	var c := _voice(handle)
+	@warning_ignore("integer_division")
+	return -1 if c < 0 else (c - SFX_CHANNELS) / CHANNEL_SIZE
+
+
+## `$13D9C`: is the sequence or voice [param handle] still playing? A handle with bit 31
+## set is a sequence's ([method seq_busy]), else a voice's ([method voice_busy]).
 func sound_busy(handle: int) -> bool:
 	if (handle & 0x80000000) != 0:
 		return seq_busy(handle & 0x7FFFFFFF)
@@ -548,11 +658,14 @@ func sound_stop(handle: int) -> void:
 ## `$13E52`: crowd noise (instrument $50, a looped sample on the fourth PCM
 ## voice) at [param level] 0..1000: started if needed (rate $E0, volume $40),
 ## then rate and volume glide (`$13F1C`, per tick) towards $C0 + q and
-## $80 + 2q, q = level * $80 / 1000.
+## $80 + 2q, q = level * $80 / 1000. (The port's fade-in from silence is the
+## mix's, MwSound.crowd_level - plan 40, D7: the driver as the original's.)
 func crowd_level(level: int) -> void:
 	_api(1)
+	@warning_ignore("integer_division")
+	var q := (((level & 0xFFFF) * 0x80) / 1000) & 0xFFFF
 	var h := r32(CROWD_HANDLE)
-	if not (r16(CROWD_ON) != 0 and (h & 0x80000000) == 0 and voice_busy(h)):
+	if not crowd_sounding():
 		w16(CROWD_RATE, 0xE0)
 		w16(CROWD_VOL, 0x40)
 		h = voice_start(0x50, 0xE0, 0x40)
@@ -561,11 +674,16 @@ func crowd_level(level: int) -> void:
 			_api(-1)
 			return
 		w8(CROWD_ON, 0xFF)
-	@warning_ignore("integer_division")
-	var q := (((level & 0xFFFF) * 0x80) / 1000) & 0xFFFF
 	w16(CROWD_VOL_TARGET, 2 * q + 0x80)
 	w16(CROWD_RATE_TARGET, q + 0xC0)
 	_api(-1)
+
+
+## Whether the crowd is on and its voice playing ([method crowd_level]'s
+## test: otherwise it starts it).
+func crowd_sounding() -> bool:
+	var h := r32(CROWD_HANDLE)
+	return r16(CROWD_ON) != 0 and (h & 0x80000000) == 0 and voice_busy(h)
 
 
 ## `$13EB6`: restart the crowd voice (current rate / volume) when it is on but
@@ -604,6 +722,7 @@ func _api(d: int) -> void:
 ## `$13F1C`: crowd rate +-4 and volume +-8 per tick towards the targets; at
 ## volume 0 with the crowd off, the voice is stopped.
 func _crowd_tick() -> void:
+	work[Work.CROWD] += 1
 	var h := r32(CROWD_HANDLE)
 	if (h & 0x80000000) != 0:
 		return
@@ -635,6 +754,7 @@ func _crowd_tick() -> void:
 ## `$0038-$00BC` this tick (the change records; then Z80 `$00BD` = 1), or an
 ## empty array.
 func vblank(z80: MwSoundZ80) -> PackedByteArray:
+	work.fill(0)
 	var fade := r16(MUSIC_FADE)
 	if fade != 0:
 		fade -= 1
@@ -665,12 +785,14 @@ func driver_tick(z80: MwSoundZ80) -> PackedByteArray:
 		skipped = Skip.LOCK
 		return PackedByteArray()
 	skipped = Skip.NONE
+	work[Work.DRIVER] += 1
 	if r8(SEQ_LOCK) == 0:
 		channels_tick()                     # $1715E
 		seq_tick()                          # $18CD0
 	var block := PackedByteArray()
 	var copied := r8(DIRTY) != 0
 	if copied:
+		work[Work.COPY] += 1
 		var start := RECORDS & 0xFFFF
 		block = mem.slice(start, start + RECORDS_LEN)
 	for v in 4:
@@ -700,8 +822,8 @@ func seq_start(seq: int) -> int:
 		var pos := seq + _s16(rom16(seq + 4 + 4 * i))
 		var midi_ch := rom16(seq + 6 + 4 * i)
 		var t := -1
-		for s in N_TRACKS:
-			var u := TRACKS + s * TRACK_SIZE
+		for slot in N_TRACKS:
+			var u := TRACKS + slot * TRACK_SIZE
 			var st := r8(u + TR_STATE)
 			if st != 0 and (st & 0x80) == 0:
 				t = u
@@ -739,8 +861,8 @@ func seq_stop(handle: int) -> void:
 	var saved := r8(SEQ_LOCK)
 	w8(SEQ_LOCK, 0x80)
 	handle &= 0xFFFFFFFF
-	for s in N_TRACKS:
-		var t := TRACKS + s * TRACK_SIZE
+	for track_slot in N_TRACKS:
+		var t := TRACKS + track_slot * TRACK_SIZE
 		if r32(t + TR_HANDLE) != handle or r8(t + TR_STATE) != 0:
 			continue
 		w8(TRACKS_ACTIVE, r8(TRACKS_ACTIVE) - 1)
@@ -759,8 +881,8 @@ func seq_stop(handle: int) -> void:
 ## `$189BE`: a track of [param handle] is playing.
 func seq_busy(handle: int) -> bool:
 	handle &= 0xFFFFFFFF
-	for s in N_TRACKS:
-		var t := TRACKS + s * TRACK_SIZE
+	for slot in N_TRACKS:
+		var t := TRACKS + slot * TRACK_SIZE
 		if r8(t + TR_STATE) == 0 and r32(t + TR_HANDLE) == handle:
 			return true
 	return false
@@ -772,8 +894,8 @@ func seq_busy(handle: int) -> bool:
 ## [param d5] with that byte moved into its low byte: its high byte is
 ## whatever the caller had in d5 (0 after a track that was at the target).
 func seq_fade(handle: int, track: int, target: int, step: int, d5: int) -> void:
-	for s in N_TRACKS:
-		var t := TRACKS + s * TRACK_SIZE
+	for slot in N_TRACKS:
+		var t := TRACKS + slot * TRACK_SIZE
 		if r8(t + TR_STATE) != 0 or r32(t + TR_HANDLE) != (handle & 0xFFFFFFFF):
 			continue
 		if track >= 0 and r8(t + TR_INDEX) != track:
@@ -796,6 +918,7 @@ func seq_tick() -> void:
 	if r8(QUEUE_COUNT) != 0:
 		var e := r32(QUEUE_HEAD)
 		while true:
+			work[Work.NOTE_OFF_ENTRY] += 1
 			var left := (r32(e) - r32(e + 4)) & 0xFFFFFFFF
 			w32(e, left)
 			if left == 0 or (left & 0x80000000) != 0:
@@ -818,8 +941,9 @@ func seq_tick() -> void:
 				break
 	if r8(TRACKS_ACTIVE) == 0:
 		return
-	for s in N_TRACKS:
-		var t := TRACKS + s * TRACK_SIZE
+	for slot in N_TRACKS:
+		work[Work.TRACK_SLOT] += 1
+		var t := TRACKS + slot * TRACK_SIZE
 		if r8(t + TR_STATE) != 0:
 			continue
 		var acc := r16(t + TR_FRACTION) + r32(t + TR_TEMPO)
@@ -834,6 +958,7 @@ func seq_tick() -> void:
 ## test: a track that ended earlier in this tick runs its remaining clocks
 ## again from its last saved position.)
 func track_clock(t: int) -> bool:
+	work[Work.TRACK_CLOCK] += 1
 	var vol := _s16(r16(t + TR_VOLUME))
 	var target := _s16(r16(t + TR_VOLUME_TARGET))
 	var step := _s16(r16(t + TR_FADE_STEP))
@@ -880,8 +1005,8 @@ func track_clock(t: int) -> bool:
 			return false
 		elif op == 0xDA:                    # end of sequence: all its tracks
 			var h := r32(t + TR_HANDLE)
-			for s in N_TRACKS:
-				var u := TRACKS + s * TRACK_SIZE
+			for slot in N_TRACKS:
+				var u := TRACKS + slot * TRACK_SIZE
 				if r8(u + TR_STATE) == 0 and r32(u + TR_HANDLE) == h:
 					w8(u + TR_STATE, 1)
 					w8(TRACKS_ACTIVE, r8(TRACKS_ACTIVE) - 1)
@@ -889,8 +1014,8 @@ func track_clock(t: int) -> bool:
 			return true
 		elif op == 0xDB:                    # restart all its tracks
 			var h := r32(t + TR_HANDLE)
-			for s in N_TRACKS:
-				var u := TRACKS + s * TRACK_SIZE
+			for track_slot in N_TRACKS:
+				var u := TRACKS + track_slot * TRACK_SIZE
 				if r8(u + TR_STATE) == 0 and r32(u + TR_HANDLE) == h:
 					w32(u + TR_POS, r32(u + TR_START))
 					w32(u + TR_WAIT, r32(u + TR_FIRST_WAIT))
@@ -986,6 +1111,7 @@ func _note(t: int, op: int, pos: int) -> int:
 ## `$17356`: one byte of a MIDI message (running status kept); a complete
 ## message goes to its handler (table `$173CA`, address kept at `$E77A`).
 func midi(byte: int) -> void:
+	work[Work.MIDI_BYTE] += 1
 	var count := r16(PARSER_COUNT)
 	if count == 0:
 		if (byte & 0x80) != 0:
@@ -1055,6 +1181,7 @@ func _msg_bend() -> void:
 ## `$173EA`: note off for the oldest sounding music note with this channel and
 ## key (the last of equal serials).
 func _msg_note_off() -> void:
+	work[Work.NOTE_OFF] += 1
 	var key := r8(MIDI_DATA)
 	var ch := r8(MIDI_CHANNEL)
 	var found := -1
@@ -1102,6 +1229,7 @@ func _msg_note_off() -> void:
 ## `$174D2`: note on: instrument = the channel's program (channel 9: key +
 ## $5C), a channel allocated for its class, then the type's note-on.
 func _msg_note_on() -> void:
+	work[Work.NOTE_ON] += 1
 	if r16(NOTES_ON) == 0:
 		return
 	if r8(MIDI_DATA + 1) == 0:
@@ -1146,6 +1274,7 @@ func _fold(key: int) -> int:
 
 ## `$17556`: a sample note (one-shot when flag bit 1 is set).
 func _pcm_note_on(c: int, instr: int) -> void:
+	work[Work.PCM_NOTE_ON] += 1
 	if (r16(TRACK_VOLUME) & 0xFF) < rom8(instr + 0x15):
 		return
 	w32(c + CH_INSTR, instr)
@@ -1198,7 +1327,7 @@ func _refused_note(instr: int) -> void:
 ## PCM record bytes 5-7 (bank, address | $8000 high, low), 8 (loop flag),
 ## 9-11 (loop bank and address).
 func _pcm_address(rec: int, instr: int, bank: int) -> void:
-	var a := (rom32(instr + 8) + r32(SAMPLE_BASE)) & 0xFFFFFFFF
+	var a := (rom32(instr + 8) + r32(SAMPLE_BASE_RAM)) & 0xFFFFFFFF
 	w8(rec + 7, a | 0x8000)
 	w8(rec + 6, (a | 0x8000) >> 8)
 	var b := ((a >> 15) + bank) & 0xFF
@@ -1208,7 +1337,7 @@ func _pcm_address(rec: int, instr: int, bank: int) -> void:
 	var loop := rom8(instr + 0x10) & 1
 	w8(rec + 8, loop)
 	if loop != 0:
-		a = (rom16(instr + 0xE) + rom32(instr + 8) + r32(SAMPLE_BASE)) & 0xFFFFFFFF
+		a = (rom16(instr + 0xE) + rom32(instr + 8) + r32(SAMPLE_BASE_RAM)) & 0xFFFFFFFF
 		w8(rec + 0xB, a | 0x8000)
 		w8(rec + 0xA, (a | 0x8000) >> 8)
 		w8(rec + 9, (a >> 15) + bank)
@@ -1216,6 +1345,7 @@ func _pcm_address(rec: int, instr: int, bank: int) -> void:
 
 ## `$17656`: an FM note (the patch is sent when the channel had another).
 func _fm_note_on(c: int, instr: int) -> void:
+	work[Work.FM_NOTE_ON] += 1
 	var rec := r32(c + CH_RECORD)
 	w16(c + CH_SERIAL, r16(NOTE_SERIAL))
 	w8(c + CH_STATE, 0)
@@ -1467,6 +1597,7 @@ func voice_busy(handle: int) -> bool:
 
 ## `$17E62`: voice playback rate (8.8).
 func voice_rate(handle: int, rate: int) -> void:
+	work[Work.VOICE_RATE] += 1
 	var c := _voice(handle)
 	if c >= 0:
 		var rec := r32(c + CH_RECORD)
@@ -1477,6 +1608,7 @@ func voice_rate(handle: int, rate: int) -> void:
 
 ## `$17EA2`: voice volume ($100 = unity), / 2 into record byte 4.
 func voice_volume(handle: int, volume: int) -> void:
+	work[Work.VOICE_VOLUME] += 1
 	var c := _voice(handle)
 	if c >= 0:
 		var rec := r32(c + CH_RECORD)
@@ -1489,10 +1621,12 @@ func voice_volume(handle: int, volume: int) -> void:
 ## `$1715E`: for each music note (state 0): priority decay, FM release,
 ## modulators, pitch / volume output.
 func channels_tick() -> void:
+	work[Work.CHANNELS] += 1
 	for n in N_CHANNELS:
 		var c := channel(n)
 		if r8(c + CH_STATE) != 0:
 			continue
+		work[Work.CHANNEL] += 1
 		var instr := r32(c + CH_INSTR)
 		var kind := rom8(instr)
 		if kind == PCM or kind == PCM_PITCHED:
@@ -1546,6 +1680,7 @@ func _decay(c: int, at: int) -> void:
 ## +2 start value (copied at note-on), +4 attack step, +6 peak, +8 decay step,
 ## +$A sustain, +$C release step. The channel fields: state, value, timer.
 func _envelope(c: int, p: int, f_state: int, f_value: int, f_timer: int) -> void:
+	work[Work.ENV_PITCH if f_state == CH_PENV_STATE else Work.ENV_VOLUME] += 1
 	var state := r8(c + f_state)
 	if state == 0:
 		var t := _s16(r16(c + f_timer) - 1)
@@ -1575,6 +1710,7 @@ func _envelope(c: int, p: int, f_state: int, f_value: int, f_timer: int) -> void
 ## `$17040`: after +0 ticks, for +4 ticks cycle through the +2.b note offsets
 ## at +6.. (words), each held +3.b + 1 ticks; then offset 0.
 func _arpeggio(c: int, p: int) -> void:
+	work[Work.ARPEGGIO] += 1
 	var state := r8(c + CH_ARP_STATE)
 	if state == 0:
 		var t := _s16(r16(c + CH_ARP_TIMER) - 1)
@@ -1609,6 +1745,7 @@ func _arpeggio(c: int, p: int) -> void:
 ## value = sine(((phase & +$A) + +$C) >> 2) / 2 * +6 >> 14, clamped to
 ## +-(+8).
 func _vibrato(c: int, p: int) -> void:
+	work[Work.VIBRATO] += 1
 	var state := r8(c + CH_VIB_STATE)
 	if state == 0:
 		var timer := _s16(r16(c + CH_VIB_TIMER))
@@ -1627,8 +1764,8 @@ func _vibrato(c: int, p: int) -> void:
 		var phase := (r16(c + CH_VIB_PHASE) + rom16(p + 4)) & 0xFFFF
 		w16(c + CH_VIB_PHASE, phase)
 		var a := _s16((phase & rom16(p + 0xA)) + rom16(p + 0xC)) >> 2
-		var s := sine(a) >> 1
-		var v := _s16((s * _s16(rom16(p + 6))) >> 14)
+		var half_sine := sine(a) >> 1
+		var v := _s16((half_sine * _s16(rom16(p + 6))) >> 14)
 		var limit := _s16(rom16(p + 8))
 		if v > limit:
 			v = limit
@@ -1652,6 +1789,7 @@ func sine(angle: int) -> int:
 ## (towards +-(+$A) notes), detune (+4), pitch envelope, vibrato; when
 ## changed, normalised to block << 11 | F-number in record bytes 8-9.
 func _fm_pitch(c: int) -> void:
+	work[Work.FM_PITCH] += 1
 	var instr := r32(c + CH_INSTR)
 	var k := ((r8(c + CH_KEY) + r16(c + CH_ARP)) * 4) & 0xFFFF
 	var f := rom32(FM_FREQ + _s16(k))
@@ -1685,6 +1823,7 @@ func _fm_pitch(c: int) -> void:
 ## `$16D32`: rate = +$C, or (pitched, +$12 != 0) the note's word at +$16, bent
 ## towards +-(+$14) notes; record bytes 2-3 when changed.
 func _pcm_pitch(c: int) -> void:
+	work[Work.PCM_PITCH] += 1
 	var instr := r32(c + CH_INSTR)
 	var rate := rom16(instr + 0xC)
 	if rom8(instr + 0x12) != 0:

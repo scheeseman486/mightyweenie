@@ -22,7 +22,8 @@ func _initialize() -> void:
 		"game":
 			audio.s68k.music_game()
 		"id":
-			audio.s68k.sound_play(what.get_slice(":", 1).hex_to_int() if what.get_slice(":", 1).begins_with("0x") else int(what.get_slice(":", 1)))
+			audio.s68k.sound_play(what.get_slice(":", 1).hex_to_int() if what.get_slice(":", 1).begins_with("0x")
+					else int(what.get_slice(":", 1)))
 		"crowd":
 			audio.s68k.crowd_level(int(what.get_slice(":", 1)))
 	var pcm := PackedByteArray()

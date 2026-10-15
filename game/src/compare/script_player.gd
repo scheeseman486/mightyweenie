@@ -30,11 +30,12 @@ var _active: Array = []     # presses (Dictionary)
 
 func _init(script_in: MwInputScript) -> void:
 	input_script = script_in
-	for e in input_script.events:
-		if e.anchor == "tick":
-			_tick_due.append([int(e.start), e])
+	for event in input_script.events:
+		if event.anchor == "tick":
+			_tick_due.append([int(event.start), event])
 
 
+## The pad bits player [param player] (1-4) holds now: the masks of his presses down, ORed.
 func held(player: int) -> int:
 	var m := 0
 	for p in _active:
@@ -43,6 +44,7 @@ func held(player: int) -> int:
 	return m
 
 
+## [method held] for players 1 to 4, in order.
 func held_all() -> Array[int]:
 	var out: Array[int] = []
 	for p in range(1, PLAYERS + 1):
@@ -50,10 +52,13 @@ func held_all() -> Array[int]:
 	return out
 
 
+## Whether the script has reached its end ([member ended_at]: the tick).
 func ended() -> bool:
 	return ended_at >= 0
 
 
+## A screen entry at [param at_tick]: [param screen]'s visit counted, the holds anchored to
+## the visit before released, this visit's events queued and those due started.
 func screen_entered(screen: int, at_tick: int) -> void:
 	tick = at_tick
 	var visit := int(visits.get(screen, 0)) + 1
@@ -62,21 +67,26 @@ func screen_entered(screen: int, at_tick: int) -> void:
 	var moment := "screen %d" % screen
 	if current.x >= 0:  # pass-anchored holds end with their visit
 		var old := current
-		_release(func(p): return p.release_after != null and Vector2i(p.release_after.x, p.release_after.y) == old, moment)
+		_release(func(p): return p.release_after != null and Vector2i(p.release_after.x, p.release_after.y) == old, \
+				moment)
 	current = Vector2i(screen, visit)
-	for e in input_script.events:
-		if e.anchor == "screen" and e.screen == screen and e.visit == visit:
-			if e.unit == "tick":
-				_tick_due.append([at_tick + int(e.start), e])
+	for event in input_script.events:
+		if event.anchor == "screen" and event.screen == screen and event.visit == visit:
+			if event.unit == "tick":
+				_tick_due.append([at_tick + int(event.start), event])
 			else:
-				_pass_due.append([Vector3i(screen, visit, int(e.start)), e])
+				_pass_due.append([Vector3i(screen, visit, int(event.start)), event])
 	_apply_tick_due(at_tick, moment)
 
 
+## A visit going on after a sub-screen (player stats -> game stats): [param screen]'s visit
+## [param visit] is current again, without an entry.
 func resume(screen: int, visit: int) -> void:
 	current = Vector2i(screen, visit)
 
 
+## A tick starts at [param at_tick]: the holds that end by then and the taps down
+## [constant TAP_CAP_TICKS] ticks are released, then the events due start.
 func tick_start(at_tick: int) -> void:
 	tick = at_tick
 	var moment := "tick %d" % at_tick
@@ -85,6 +95,9 @@ func tick_start(at_tick: int) -> void:
 	_apply_tick_due(at_tick, moment)
 
 
+## A pass boundary at [param at_tick] (pass [param pass_index] of [param screen]'s visit
+## [param visit]): the taps read and the pass-anchored holds past their end released, the
+## events anchored here started, the taps still down marked read (released at the next).
 func boundary(screen: int, visit: int, pass_index: int, at_tick: int) -> void:
 	tick = at_tick
 	var moment := "pass %d/%d/%d" % [screen, visit, pass_index]
@@ -114,29 +127,29 @@ func _apply_tick_due(at_tick: int, moment: String) -> void:
 			_press(item[1].event, at_tick, moment, item[1].taps_left)
 
 
-func _start(e: Dictionary, at_tick: int, moment: String) -> void:
-	if e.mode == "end":
+func _start(event: Dictionary, at_tick: int, moment: String) -> void:
+	if event.mode == "end":
 		if ended_at < 0:
 			ended_at = at_tick
 			change_log.append([moment, 0, 0, "end"])
 		return
-	_press(e, at_tick, moment, int(e.repeat) - 1)
+	_press(event, at_tick, moment, int(event.repeat) - 1)
 
 
-func _press(e: Dictionary, at_tick: int, moment: String, taps_left: int) -> void:
-	var p := {"event": e, "player": int(e.player), "mask": int(e.buttons), "press_tick": at_tick,
+func _press(event: Dictionary, at_tick: int, moment: String, taps_left: int) -> void:
+	var press := {"event": event, "player": int(event.player), "mask": int(event.buttons), "press_tick": at_tick,
 		"release_tick": -1, "release_after": null, "read": false, "taps_left": taps_left}
-	if e.mode == "hold":
-		if e.unit == "pass":
-			p.release_after = Vector3i(e.screen, e.visit, int(e.end))
-		elif e.anchor == "tick":
-			p.release_tick = int(e.end)
+	if event.mode == "hold":
+		if event.unit == "pass":
+			press.release_after = Vector3i(event.screen, event.visit, int(event.end))
+		elif event.anchor == "tick":
+			press.release_tick = int(event.end)
 		else:
-			p.release_tick = int(entries[Vector2i(e.screen, e.visit)]) + int(e.end)
-	var before := held(p.player)
-	_active.append(p)
-	if held(p.player) != before:
-		change_log.append([moment, p.player, held(p.player), "down"])
+			press.release_tick = int(entries[Vector2i(event.screen, event.visit)]) + int(event.end)
+	var before := held(press.player)
+	_active.append(press)
+	if held(press.player) != before:
+		change_log.append([moment, press.player, held(press.player), "down"])
 
 
 func _release(pred: Callable, moment: String) -> void:

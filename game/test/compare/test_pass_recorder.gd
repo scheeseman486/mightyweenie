@@ -12,10 +12,10 @@ func test_lines_follow_the_format() -> void:
 	var head: Dictionary = JSON.parse_string(rec.lines[0])
 	assert_eq(head.format, "mw-pass/1")
 	assert_eq(head.side, "godot")
-	var p: Dictionary = JSON.parse_string(rec.lines[2])
+	var pass_record: Dictionary = JSON.parse_string(rec.lines[2])
 	for k in ["screen", "visit", "pass", "tick", "elapsed", "pads", "rng"]:
-		assert_true(p.has(k), k)
-	assert_eq(int(p.pads[0]), 0x8080)
+		assert_true(pass_record.has(k), k)
+	assert_eq(int(pass_record.pads[0]), 0x8080)
 	# integers stay integers in the text (the diff compares exact values)
 	assert_false(rec.lines[2].contains(".0"))
 

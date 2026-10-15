@@ -85,6 +85,9 @@ func _validate_property(property: Dictionary) -> void:
 		property.usage &= ~PROPERTY_USAGE_STORAGE
 
 
+## Builds [member sprite_frames] afresh from the ROM: [member anim]'s variants (or
+## [member frame_addresses] as one animation) on one canvas; none without the ROM. Then it
+## plays (in the editor with [member preview]) or, [member tick_driven], shows [member state].
 func rebuild() -> void:
 	if not MwRom.available() or (anim == "" and frame_addresses.is_empty()):
 		sprite_frames = null
@@ -139,8 +142,8 @@ func rebuild() -> void:
 
 
 func _anim_address() -> int:
-	var e := MwRom.entry(anim)
-	return int(e["address"]) if not e.is_empty() else anim.hex_to_int()
+	var entry := MwRom.entry(anim)
+	return int(entry["address"]) if not entry.is_empty() else anim.hex_to_int()
 
 
 func _xor(pieces: Array) -> Array:

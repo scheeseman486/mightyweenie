@@ -10,10 +10,12 @@ var events := []
 class Probe extends MwScreen:
 	var passes: Array = []
 	var resumed := 0
+	var last_result := {}
 	func _screen_pass(elapsed: int, _input: MwInputFrame) -> void:
 		passes.append(elapsed)
-	func _resume_screen() -> void:
+	func _resume_screen(r := {}) -> void:
 		resumed += 1
+		last_result = r
 
 
 func before_each() -> void:
@@ -24,8 +26,10 @@ func before_each() -> void:
 	router = MwRouter.new(host, fader)
 	router.factory = func(_id: Variant) -> MwScreen: return Probe.new()
 	events = []
-	router.screen_entered.connect(func(id: int, visit: int, tick: int, prev: int) -> void: events.append(["enter", id, visit, tick, prev]))
-	router.screen_resumed.connect(func(id: int, visit: int, tick: int) -> void: events.append(["resume", id, visit, tick]))
+	router.screen_entered.connect(func(id: int, visit: int, tick: int, \
+			prev: int) -> void: events.append(["enter", id, visit, tick, prev]))
+	router.screen_resumed.connect(func(id: int, visit: int, \
+			tick: int) -> void: events.append(["resume", id, visit, tick]))
 
 
 func after_each() -> void:
@@ -33,9 +37,9 @@ func after_each() -> void:
 
 
 func _probe(id: int) -> Probe:
-	var p := Probe.new()
-	p.screen_id = id
-	return p
+	var probe := Probe.new()
+	probe.screen_id = id
+	return probe
 
 
 func _steps(n: int) -> void:
@@ -108,6 +112,31 @@ func test_push_and_pop_keep_the_screen_underneath() -> void:
 	assert_gt(stats.passes.size(), before)
 
 
+## Plan 40 (S12): back from a pushed screen, the original's screens' first
+## pass carries every tick spent away; a port screen with resume_fresh
+## counts from the pop (B9: the online keyboard's starfield; CREATE-A-TEAM's
+## talking portrait) and learns how long it was away.
+func test_a_port_screen_resumes_fresh() -> void:
+	for fresh in [false, true]:
+		var under := _probe(8)
+		under.resume_fresh = fresh
+		router.stack.clear()
+		router.adopt(under)
+		_steps(5)
+		router.push(9, {}, false)
+		_steps(100)
+		var n := under.passes.size()
+		router.pop(false)
+		_steps(1)
+		_steps(3)
+		var first: int = under.passes[n]
+		if fresh:
+			assert_eq(first, 1, "counts from the pop")
+		else:
+			assert_gt(first, 90, "the original's: the time away caught up")
+		assert_between(under.away, 100, 102, "how long it was away")
+
+
 func test_visits_and_history() -> void:
 	router.adopt(_probe(14))
 	for target in [8, 14, 8]:
@@ -156,9 +185,9 @@ func test_a_screen_can_fade_itself_in() -> void:
 	router.adopt(_probe(MwScreens.BOOT))
 	fader.cover()
 	router.factory = func(_id: Variant) -> MwScreen:
-		var p := Probe.new()
-		p.fades_in_itself = true
-		return p
+		var probe := Probe.new()
+		probe.fades_in_itself = true
+		return probe
 	router.go(0, {}, false)
 	router.step()
 	assert_eq(router.current_id(), 0)
@@ -170,3 +199,41 @@ func test_screens_get_the_session_and_the_fader() -> void:
 	router.adopt(_probe(1))
 	assert_eq(router.current().session, router.session)
 	assert_eq(router.current().fader, fader)
+
+
+## Plan 40 (I6): a screen that asked to leave says so (the router keeps
+## the first request); a pushed screen hands the one under it a result as
+## it pops.
+func test_leaving_and_a_pops_result() -> void:
+	var menu := _probe(1)
+	router.adopt(menu)
+	assert_false(menu.leaving())
+	menu.exit_to(3)
+	menu.exit_to(5)
+	assert_true(menu.leaving())
+	assert_eq(menu.leaving_to, 3, "the first, as the router keeps it")
+
+
+func test_a_pushed_screen_hands_back_a_result() -> void:
+	var under := _probe(8)
+	router.adopt(under)
+	router.push(9, {}, false)
+	_steps(2)
+	var top := router.current()
+	top.pop({"text": "HELLO", "done": true})
+	assert_true(top.leaving(), "popping is leaving")
+	_steps(40)
+	assert_eq(router.current(), under)
+	assert_eq(under.last_result, {"text": "HELLO", "done": true})
+
+
+## Plan 45 (stability L5): a screen whose scene doesn't load gets a stand-in
+## that leaves for the main menu - never a null screen (release builds strip
+## the assert that stood here).
+func test_a_screen_without_a_scene_gets_a_stand_in() -> void:
+	var screen := MwRouter.instantiate_scene(-12345)
+	assert_true(screen is MwPlaceholderScreen, "a stand-in")
+	assert_eq([(screen as MwPlaceholderScreen).auto_exit_ticks, (screen as MwPlaceholderScreen).auto_exit], [1, 1],
+			"leaving for the main menu at once")
+	assert_push_error("no screen scene for -12345")
+	screen.free()

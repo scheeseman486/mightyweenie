@@ -16,42 +16,26 @@ var phases: MwRinkPhases
 var left := -1
 
 
-## CPU players that stay put (these tests are about human control and the
-## rules; the AI has its own checks: `tools/bin/sim-check --think`, `--ai`).
-class Idle:
-	func think(_sim: MwRinkSim, _p: MwRinkState.Player, _team: MwRinkState.Team, _other: MwRinkState.Team) -> void:
-		pass
+## The match and its passes (plan 40: test/support/rink_rig.gd).
+const RinkRig := preload("res://test/support/rink_rig.gd")
+
+var rig: RinkRig
 
 
 func _match(pads := 0) -> MwRinkState:
-	var s := MwRinkState.new()
-	s.rng = MlhRng.new(1234)
-	sim = MwRinkSim.new(rom, s)
-	sim.cpu = Idle.new()
-	update = MwRinkUpdate.new(sim)
-	phases = MwRinkPhases.new(update)
-	MwRinkMatch.start(sim, 3, 3, 7, pads, false, 2)
-	s.period_minutes = 3
-	s.clock = 180
-	assert_eq(phases.enter(5), -1, "a faceoff at centre ice")
+	rig = RinkRig.new()
+	var s := rig.make(rom, 3, 3, 7, pads)
+	sim = rig.sim
+	update = rig.update
+	phases = rig.phases
+	assert_eq(rig.enter(5), -1, "a faceoff at centre ice")
 	return s
 
 
 ## Passes of 2 ticks with pad 0 held [param held] (newly pressed on the
 ## first); stops when the phase handler leaves the rink ([member left]).
 func _run(passes: int, held := 0, new := -1) -> void:
-	left = -1
-	for i in passes:
-		sim.s.tick += 2
-		update.pass_start(2)
-		sim.s.pads_held[0] = held
-		sim.s.pads_new[0] = (held if new < 0 else new) if i == 0 else 0
-		sim.run(2)
-		update.after_segment(2)
-		left = phases.pass_end(2)
-		if left >= 0:
-			return
-		update.draws([], MwRinkPhases.RULES_DRAWN, phases.overlays)
+	left = rig.run(passes, RinkRig.held(sim.s, 0, held, new))
 
 
 func _until_play() -> void:
@@ -93,8 +77,8 @@ func test_a_match_lines_up_and_the_faceoff_drops() -> void:
 		return
 	var s := _match()
 	var n := 0
-	for t in s.teams:
-		for p in t.players:
+	for team in s.teams:
+		for p in team.players:
 			n += int(p.present)
 	assert_eq(n, 12, "six a side")
 	assert_eq(s.teams[0].pads, [0, 0xFF], "P1 controls team A")
@@ -209,8 +193,8 @@ func test_a_goalie_holding_the_puck_15_clock_seconds_stops_play() -> void:
 		return
 	var s := _match()
 	_until_play()
-	var g := s.teams[1].players[5]
-	_give(g)
+	var player := s.teams[1].players[5]
+	_give(player)
 	var clock := s.clock
 	_run(200)
 	assert_eq(s.phase, 8, "a stoppage")

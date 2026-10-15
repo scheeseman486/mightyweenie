@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://src/rom/rom_plane.gd" id="4_pl"]
 [ext_resource type="Script" path="res://src/rom/rom_tile_set.gd" id="5_ts"]
 [ext_resource type="Script" path="res://src/rom/rom_starfield.gd" id="7_sf"]
+[ext_resource type="Texture2D" path="res://assets/logo/mightyweenie_logo.png" id="8_mw"]
 
 [sub_resource type="Resource" id="pal_port"]
 script = ExtResource("3_pal")
@@ -32,12 +33,20 @@ palette = SubResource("pal_port")
 script = ExtResource("7_sf")
 palette = SubResource("pal_port")
 
-[node name="Plane" type="TileMapLayer" parent="."]
+[node name="Page" type="CanvasGroup" parent="."]
+
+[node name="WeenieLogo" type="Sprite2D" parent="Page"]
+texture_filter = 1
+position = Vector2(105, 83)
+texture = ExtResource("8_mw")
+centered = false
+
+[node name="Plane" type="TileMapLayer" parent="Page"]
 script = ExtResource("4_pl")
 tiles = SubResource("tiles_port")
 palette = SubResource("pal_port")
 
-[node name="HalfPlane" type="TileMapLayer" parent="."]
+[node name="HalfPlane" type="TileMapLayer" parent="Page"]
 position = Vector2(4, 0)
 script = ExtResource("4_pl")
 tiles = SubResource("tiles_port")

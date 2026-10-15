@@ -19,6 +19,10 @@ const TABLE := 0x1F4FA
 const ROWS := 10
 const RECORD_SIZE := 36
 const STADIUM_ROW := 6
+## The rows of the pads and the play mode, and the period length's.
+const PADS_ROW := 2
+const PLAY_MODE_ROW := 3
+const PERIOD_ROW := 4
 const STADIUM_TEMPLATE := 0x1F46A
 ## Up / Down: the next row for each row (`$139A8`, `$139B2`).
 const UP := 0x139A8
@@ -36,6 +40,9 @@ var rom: PackedByteArray
 var records := PackedInt32Array()
 ## Stadium names (string addresses) by stadium/team index.
 var stadium_names := PackedInt32Array()
+## Rows moved up or down (row -> cells; plan 34: the game setup's port
+## variants close the gaps of the rows they leave out).
+var shift := {}
 
 
 func _init(rom_bytes: PackedByteArray) -> void:
@@ -45,10 +52,11 @@ func _init(rom_bytes: PackedByteArray) -> void:
 		if a >= 0xFF0000:
 			a = STADIUM_TEMPLATE if i == STADIUM_ROW else 0
 		records.append(a)
-	for t in MwTeams.COUNT:
+	for t in MwTeams.count():           # the custom teams' rinks after the original's (plan 38)
 		stadium_names.append(MwGfx.u32(rom, MwTeams.stadium_record(rom, t)))
 
 
+## Whether [param row] (0-9) has a record (the period-minutes byte has none).
 func has_row(row: int) -> bool:
 	return row >= 0 and row < ROWS and records[row] != 0
 
@@ -58,12 +66,16 @@ func handler(row: int) -> int:
 	return MwGfx.u32(rom, records[row])
 
 
+## The fill word of [param row]'s items while unselected (record +4).
 func fill_word(row: int) -> int:
 	return MwGfx.u16(rom, records[row] + 4)
 
 
-## How many values the row has (Left/Right wrap).
+## How many values the row has (Left/Right wrap); the team rows and the
+## stadium row also count the custom teams (plan 38).
 func count(row: int) -> int:
+	if row < 2 or row == STADIUM_ROW:
+		return rom[records[row] + 6] + MwCustomTeams.count()
 	return rom[records[row] + 6]
 
 
@@ -71,7 +83,7 @@ func count(row: int) -> int:
 func item(row: int, which: int) -> Dictionary:
 	var a := records[row] + (8 if which == 0 else 0x16)
 	return {"list": MwGfx.u32(rom, a), "stride": MwGfx.u16(rom, a + 4),
-			"x": rom[a + 10], "y": rom[a + 11], "w": rom[a + 12], "centred": rom[a + 13] != 0}
+			"x": rom[a + 10], "y": rom[a + 11] + int(shift.get(row, 0)), "w": rom[a + 12], "centred": rom[a + 13] != 0}
 
 
 ## Where item [param which] of [param row] draws: its plane object (+6). The
@@ -92,6 +104,8 @@ func string_of(row: int, which: int, value: int) -> int:
 	var it := item(row, which)
 	if row == STADIUM_ROW and which == 1:
 		return stadium_names[value]
+	if value >= MwTeams.COUNT and int(it["stride"]) == MwTeams.SIZE:   # a custom team's (plan 38)
+		return MwGfx.u32(rom, MwTeams.record(value) + int(it["list"]) - MwTeams.TABLE)
 	return MwGfx.u32(rom, int(it["list"]) + value * int(it["stride"]))
 
 
@@ -100,6 +114,7 @@ func up(row: int) -> int:
 	return rom[UP + row]
 
 
+## The next row for Down from [param row] (`$139B2`).
 func down(row: int) -> int:
 	return rom[DOWN + row]
 
@@ -116,11 +131,11 @@ func draw(plane: RomPlane, row: int, value: int, selected: bool, text_only := fa
 		var w: int = it["w"]
 		if not text_only:
 			MwPlanePainter.fill(target, x, y, w, 1, SELECTED_FILL if selected else fill_word(row))
-		var s := MwGfx.rom_string(rom, string_of(row, which, value))
+		var bytes := MwGfx.rom_string(rom, string_of(row, which, value))
 		if it["centred"]:
-			x += ((w - MwGfx.text_width(rom, MwPlanePainter.FONT_MENU, s)) & 0xFF) >> 1
+			x += ((w - MwGfx.text_width(rom, MwPlanePainter.FONT_MENU, bytes)) & 0xFF) >> 1
 		var font := MwPlanePainter.FONT_SMALL if selected else MwPlanePainter.FONT_MENU
-		MwPlanePainter.text(target, rom, font, s, x, y, TEXT_ATTR)
+		MwPlanePainter.text(target, rom, font, bytes, x, y, TEXT_ATTR)
 
 
 ## `$135F2`: the highlight of a selected row (a frame, filled when

@@ -48,6 +48,10 @@ var portrait_elapsed := 0     ## +$4A
 var started := 0              ## +$66
 var target_x := 0             ## +$4C
 var team_colours := false     ## lines 1/2: panel colours (false) or team line
+## Plan 34 (owner): held on the team's logo - no portrait, no skater, no
+## cycle - on the controller selection and while its brick wall moves
+## ([MwBrickWall]); [method release] starts the cycle over.
+var held := false
 ## The skater's motion (24.8 fixed point, 1/256 px per tick).
 var pos := Vector2i.ZERO
 var vel := Vector2i.ZERO
@@ -71,6 +75,9 @@ func _init() -> void:
 	add_child(portrait)
 
 
+## Panel [param which] (0 team A, 1 team B) of [param main_menu], set up from its
+## panel record ([constant CONFIGS]): the icons, logo, ring, portrait and skater,
+## the skater's clip window and its four steps.
 func setup_panel(main_menu: MwMainMenu, which: int) -> void:
 	menu = main_menu
 	index = which
@@ -79,12 +86,12 @@ func setup_panel(main_menu: MwMainMenu, which: int) -> void:
 	var pal := menu.palette
 	if icons.is_empty():
 		for i in 6:
-			var s := RomSprite.new()
-			s.tick_driven = true
-			s.palette = pal
-			s.anim = "%x" % ICON_ANIM
-			add_child(s)
-			icons.append(s)
+			var sprite := RomSprite.new()
+			sprite.tick_driven = true
+			sprite.palette = pal
+			sprite.anim = "%x" % ICON_ANIM
+			add_child(sprite)
+			icons.append(sprite)
 		skater.tick_driven = true
 		skater.only_variant = true
 		skater.palette = pal
@@ -113,6 +120,7 @@ func setup_panel(main_menu: MwMainMenu, which: int) -> void:
 		steps.append(st)
 
 
+## The signed word at [param off] of the panel record ([member config]).
 func cfg(off: int) -> int:
 	return MwGfx.s16(rom, config + off)
 
@@ -144,14 +152,19 @@ func reset(t: int) -> void:
 		icons[i].visible = i < count()
 
 
+## How many featured players the team has, one icon each (team record +`$0B`,
+## [method MwTeams.skulls]).
 func count() -> int:
-	return MwTeams.featured(rom, team)
+	return MwTeams.skulls(rom, team)
 
 
-func _player_record(s: int) -> int:
-	return MwTeams.player(rom, team, s)
+func _player_record(roster_slot: int) -> int:
+	return MwTeams.player(rom, team, roster_slot)
 
 
+## The panel's pass: the icons placed, then (unless [member held]) the cycle's
+## logo, portrait or skater step on the menu's idle clock ([param elapsed]
+## unused).
 func step(elapsed: int) -> void:
 	if menu == null:
 		return
@@ -159,6 +172,8 @@ func step(elapsed: int) -> void:
 	for i in mini(count(), icons.size()):        # the icons
 		icons[i].position = Vector2(MwGfx.u16(rom, ICON_POS) + 12 * i + cfg(0xE) * 8, MwGfx.u16(rom, ICON_POS + 2))
 		icons[i].attr_xor = MwGfx.u16(rom, ICON_POS + 6)
+	if held:
+		return
 	if state < 0:
 		slot = 0
 		icon = 0
@@ -170,6 +185,33 @@ func step(elapsed: int) -> void:
 	else:
 		_skater_step(now)
 	var _e := elapsed
+
+
+## Port only: the game setup left by Menu Back - its portrait's voice fades
+## out quickly ([method MwPortrait.quiet]).
+func quiet(ticks: int) -> void:
+	portrait.quiet(ticks)
+
+
+## Plan 34 (owner: a playing animation is stopped): the panel
+## shows its team's logo and stays on it - the portrait or the skater gone,
+## the panel colours, the team's name drawn - until [method release].
+func hold() -> void:
+	held = true
+	state = 0
+	portrait.hide_now()
+	skater.visible = false
+	logo.visible = true
+	ring.visible = true
+	team_colours = false
+	menu._update_palette()
+	menu._draw_row(index)
+
+
+## The cycle starts over from the logo (its timer from now).
+func release() -> void:
+	held = false
+	state = -1
 
 
 ## `$131A0`: the logo again (panel colours, timer, the team's name).

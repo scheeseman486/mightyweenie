@@ -132,7 +132,7 @@ const END_STATUS_T := {
 
 # --- Z80 memory ------------------------------------------------------------------
 const Z80_RAM_SIZE := 0x2000
-const Z80_DRIVER := 0x15C90          ## ROM: length word (= Z80 address of the FM patches), then the code
+const Z80_DRIVER := MwSoundRom.Z80_DRIVER          ## ROM: length word (= Z80 address of the FM patches), then the code
 const FM_PATCHES_LEN := 0x1FFB70     ## ROM: length word of the FM patches ($15B4C)
 const FM_PATCHES := 0x1FFB72         ## ROM: the FM patches (26 bytes each), uploaded after the driver
 const Z80_BATCH := 0x0038            ## the 68000's batch ($85 bytes) lands here
@@ -280,19 +280,19 @@ func active() -> PackedInt32Array:
 ## The 16 bytes of channel [param k] as the Z80 has them ([method Channel.bytes]),
 ## the DPCM value (+15) brought up to date from the decoded sample.
 func channel_bytes(k: int) -> PackedByteArray:
-	var c := channels[k]
-	if c.codec == MwSoundSamples.CODEC_DPCM and c.sample >= 0:
-		var t := 2 * c.index + c.phase
-		var v := samples.decode(c.sample)
-		c.value = v[t - 1] if t > 0 and t <= v.size() else 0x80
-	return c.bytes()
+	var channel := channels[k]
+	if channel.codec == MwSoundSamples.CODEC_DPCM and channel.sample >= 0:
+		var t := 2 * channel.index + channel.phase
+		var v := samples.decode(channel.sample)
+		channel.value = v[t - 1] if t > 0 and t <= v.size() else 0x80
+	return channel.bytes()
 
 
 ## Channel [param k]'s position in its decoded stream (raw: bytes, DPCM:
 ## nibbles) as the Z80 counts it.
 func position(k: int) -> int:
-	var c := channels[k]
-	return 2 * c.index + c.phase if c.codec == MwSoundSamples.CODEC_DPCM else c.index
+	var channel := channels[k]
+	return 2 * channel.index + channel.phase if channel.codec == MwSoundSamples.CODEC_DPCM else channel.index
 
 
 ## The tick processing `$088C` of a 133-byte batch (Z80 `$0038-$00BC`, the
@@ -347,9 +347,9 @@ func advance(had_batch: bool) -> void:
 		var j := _NEVER
 		var i := 0
 		for p in act.size():
-			var n := _to_end(act[p], p, path)
-			if n < j:
-				j = n
+			var iterations := _to_end(act[p], p, path)
+			if iterations < j:
+				j = iterations
 				i = p
 		var tj := _time_for(act, path, j) if j < _NEVER else _NEVER
 		var ch := channels[act[i]]
@@ -489,7 +489,8 @@ func _pcm_start(b: PackedByteArray, o: int, k: int) -> int:
 			skip = 2
 		ch.phase = 0
 		ch.value = 0x80
-	var cost: int = PCM_START_T[ch.codec] if ch.codec <= MwSoundSamples.CODEC_DPCM else PCM_START_T[MwSoundSamples.CODEC_TYPE1]
+	var cost: int = PCM_START_T[ch.codec] if ch.codec <= MwSoundSamples.CODEC_DPCM \
+			else PCM_START_T[MwSoundSamples.CODEC_TYPE1]
 	cost += skip * bus_wait_t
 	ch.data = ((ch.bank << 15) | (window & 0x7FFF)) + skip
 	ch.sample = samples.find_header(header)
@@ -559,6 +560,17 @@ func _exit_cost() -> int:
 	return t
 
 
+## Port only: whether channel [param k] (0-3) plays a sample.
+func playing(k: int) -> bool:
+	return (channels[k].status & STATUS_PLAYING) != 0
+
+
+## Port only: the volume channel [param k] was last given in the mix
+## ([method _sync]; $80 = unity).
+func effective_volume(k: int) -> int:
+	return _reported_volume[k] if _reported_volume[k] >= 0 else 0x80
+
+
 ## Tells [member out] the effective step / volume of every playing channel that changed.
 func _sync() -> void:
 	var act := active()
@@ -615,10 +627,10 @@ func _time_for(act: PackedInt32Array, path: StringName, n: int) -> int:
 		var lo := PERIOD_DPCM_LOW_T + bus_wait_t
 		var first := hi if ch.phase == 0 else lo
 		var second := lo if ch.phase == 0 else hi
-		var t := (n + 1) / 2 * first + n / 2 * second
+		var dpcm_t := (n + 1) / 2 * first + n / 2 * second
 		var t0 := 2 * ch.index + ch.phase
-		t += CROSS_T * (((ch.data + ((t0 + n) >> 1)) >> 15) - ((ch.data + (t0 >> 1)) >> 15))
-		return t
+		dpcm_t += CROSS_T * (((ch.data + ((t0 + n) >> 1)) >> 15) - ((ch.data + (t0 >> 1)) >> 15))
+		return dpcm_t
 	var t: int = n * (PERIOD_MIX_T[act.size()] + act.size() * bus_wait_t)
 	if path == &"raw1":
 		var p0 := ch.index * 256 + ch.frac

@@ -5,6 +5,7 @@ extends "res://test/rom/rom_test_base.gd"
 ## team after the referee), his hits and fall, the forced fall after 900
 ## ticks, the crowd fading, the exit to 17. The original pass for pass:
 ## `tools/bin/screen-check scr_1009_v8 --only 19`.
+## Short names: r the MwRefereeSim under test.
 
 const NONE := [0, 0, 0, 0]
 
@@ -12,9 +13,8 @@ var sim: MwRinkSim
 var s: MwRinkState
 
 
-class Idle:
-	func think(_sim: MwRinkSim, _p: MwRinkState.Player, _team: MwRinkState.Team, _other: MwRinkState.Team) -> void:
-		pass
+## CPU players that stay put (plan 40: test/support/idle_cpu.gd).
+const Idle := preload("res://test/support/idle_cpu.gd")
 
 
 ## A match in phase 12 with the referee on the ice as `$10182` leaves him
@@ -142,5 +142,6 @@ func test_box_occupants_animate() -> void:
 	var box := r.sprite_ops.filter(func(o: Array) -> bool: return o[0] == "anim" and int(o[5]) == 377 - 189)
 	assert_eq(box.size(), 1, "the box entry")
 	assert_eq(int(box[0][4]), 160 + 52, "team B's box, its first place")
-	var ref := r.sprite_ops.filter(func(o: Array) -> bool: return o[0] == "anim" and int(o[1]) == MwRefereeSim.REF_STANDS)
+	var ref := r.sprite_ops.filter(func(o: Array) -> bool: return o[0] == "anim" \
+			and int(o[1]) == MwRefereeSim.REF_STANDS)
 	assert_eq([int(ref[0][4]), int(ref[0][5]), int(ref[0][7])], [160, 377 - 165, 0xA0], "the referee at (165, 0)")

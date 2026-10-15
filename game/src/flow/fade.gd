@@ -27,14 +27,17 @@ func _init(canvas_items: Array[CanvasItem] = [], start_level := 1.0) -> void:
 	set_level(start_level)
 
 
+## Fades to black over [param fade_ticks] ticks (at least 1) from the current level.
 func fade_out(fade_ticks: int) -> void:
 	_start(0.0, fade_ticks)
 
 
+## Fades back to full colour over [param fade_ticks] ticks (at least 1) from the current level.
 func fade_in(fade_ticks: int) -> void:
 	_start(1.0, fade_ticks)
 
 
+## Whether a fade is running.
 func busy() -> bool:
 	return progress < length
 

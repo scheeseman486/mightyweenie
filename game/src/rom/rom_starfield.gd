@@ -78,6 +78,25 @@ func hold() -> void:
 	vy = 0
 
 
+## Where a screen before left it - [x, y, vx, vy] (its [method state]) -
+## placed at once: a cut between screens shows the same stars on its first
+## frame (owner: no flash; the layer only moved on the next [method step]).
+## Anything but four values: left as it is.
+func restore(st: Variant) -> void:
+	if not (st is Array and (st as Array).size() >= 4):
+		return
+	x = int(st[0])
+	y = int(st[1])
+	vx = int(st[2])
+	vy = int(st[3])
+	_place()
+
+
+## [x, y, vx, vy] for [method restore].
+func state() -> Array:
+	return [x, y, vx, vy]
+
+
 ## One tick of the VBlank task.
 func step() -> void:
 	x += vx
@@ -98,6 +117,6 @@ static func asr8(v: int) -> int:
 func _place() -> void:
 	if _layer == null:
 		return
-	var s := scroll()
+	var scroll_px := scroll()
 	# Screen (sx, sy) shows picture pixel ((sx - h) mod 256, (sy + v) mod 256).
-	_layer.position = Vector2(posmod(s.x, SIZE) - SIZE, -posmod(s.y, SIZE))
+	_layer.position = Vector2(posmod(scroll_px.x, SIZE) - SIZE, -posmod(scroll_px.y, SIZE))

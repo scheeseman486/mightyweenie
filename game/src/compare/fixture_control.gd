@@ -34,6 +34,8 @@ static func changes(paths: Array, pairs: Array) -> Dictionary:
 	return out
 
 
+## The recorded think for [param p] this pass, its changes patched into [param sim]'s state (a
+## note when there is none).
 func think(sim: MwRinkSim, p: MwRinkState.Player, _team: MwRinkState.Team, _other: MwRinkState.Team) -> void:
 	for i in _thinks.size():
 		var t: Array = _thinks[i]
@@ -44,6 +46,8 @@ func think(sim: MwRinkSim, p: MwRinkState.Player, _team: MwRinkState.Team, _othe
 	notes.append("T%d P%d: no recorded think" % [p.team, p.index])
 
 
+## The tick the original read at the next player's update, set in [param sim]'s state (a note
+## for [param p] when none is left).
 func before_player(sim: MwRinkSim, p: MwRinkState.Player) -> void:
 	if _ent_at < _ent.size():
 		sim.s.tick = int(_ent[_ent_at])
@@ -52,16 +56,19 @@ func before_player(sim: MwRinkSim, p: MwRinkState.Player) -> void:
 		notes.append("T%d P%d: no entry tick" % [p.team, p.index])
 
 
+## The tick the original read at site [param tag], set in [param sim]'s state: the next one
+## recorded there, reads at other sites passed over (a note when none is left).
 func tick_at(sim: MwRinkSim, tag: int) -> void:
 	while _tk_at < _tk.size():
-		var e: Array = _tk[_tk_at]
+		var tick_read: Array = _tk[_tk_at]
 		_tk_at += 1
-		if int(e[0]) == tag:
-			sim.s.tick = int(e[1])
+		if int(tick_read[0]) == tag:
+			sim.s.tick = int(tick_read[1])
 			return
 	notes.append("tick site %d: none recorded" % tag)
 
 
+## The tick the original read at the puck update, set in [param sim]'s state (when recorded).
 func before_puck(sim: MwRinkSim) -> void:
 	if _pk != null:
 		sim.s.tick = int(_pk)

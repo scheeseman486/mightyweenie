@@ -196,6 +196,16 @@ func _init() -> void:
 			"--draws":
 				draws_check = true
 				visit = true
+			"--load-features":         # plan 36: with --visit, each pass's MwPassLoad features -> DIR/NAME.jsonl
+				i += 1
+				load_out = args[i]
+				visit = true
+			"--tick-model":            # plan 36: with --visit, TICK RATE ORIGINAL's and APPROXIMATED's pass lengths
+				tick_model = true
+				visit = true
+			"--rec-dir":               # recordings elsewhere than out/sim (plan 36's out/load)
+				i += 1
+				MwSimRecording.dir_override = args[i]
 			"--draw-fixture":
 				draw_fixture = true
 			"--fresh":
@@ -262,13 +272,13 @@ func _run(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, show
 	var en_shown := 0
 	ring = rec.ring_start()
 	for k in range(from, mini(rec.count() - 1, from + count)):
-		var p: Dictionary = rec.passes[k]
-		var q: Dictionary = rec.passes[k + 1]
-		if int(p["visit"]) != int(q["visit"]) or int(p["screen"]) != int(q["screen"]):
+		var this_pass: Dictionary = rec.passes[k]
+		var next_pass: Dictionary = rec.passes[k + 1]
+		if int(this_pass["visit"]) != int(next_pass["visit"]) or int(this_pass["screen"]) != int(next_pass["screen"]):
 			en += 1
-			var e := check_entry(rom, rec, k, tick_logs)
-			var ed: PackedInt32Array = e[0]
-			for note in e[1]:
+			var entry := check_entry(rom, rec, k, tick_logs)
+			var ed: PackedInt32Array = entry[0]
+			for note in entry[1]:
 				en_notes[note] = int(en_notes.get(note, 0)) + 1
 			if ed.is_empty():
 				en_same += 1
@@ -280,12 +290,12 @@ func _run(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, show
 				en_fields[f] = int(en_fields.get(f, 0)) + 1
 			if en_shown < show:
 				en_shown += 1
-				var got: PackedByteArray = e[2]
+				var got: PackedByteArray = entry[2]
 				var out := []
 				for addr in ed.slice(0, 10):
 					out.append("%s ours %02X want %02X (was %02X)" % [MwRinkRam.describe(addr), MwRinkRam.u8(got, addr),
 							MwRinkRam.u8(rec.start(k + 1), addr), MwRinkRam.u8(rec.end(k), addr)])
-				print("  %s entry %d -> %d %s: %s%s" % [rec.name, k, k + 1, e[3], "; ".join(out),
+				print("  %s entry %d -> %d %s: %s%s" % [rec.name, k, k + 1, entry[3], "; ".join(out),
 						(" ... %d bytes" % ed.size()) if ed.size() > 10 else ""])
 			continue
 		n += 1
@@ -307,7 +317,8 @@ func _run(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, show
 			by_field[f] = int(by_field.get(f, 0)) + 1
 		if shown < show and match_only:
 			shown += 1
-			print("  %s pass %d -> %d (e %d/%d, phase %d -> %d): %s" % [rec.name, k, k + 1, rec.elapsed(k), rec.elapsed(k + 1),
+			print("  %s pass %d -> %d (e %d/%d, phase %d -> %d): %s"
+					% [rec.name, k, k + 1, rec.elapsed(k), rec.elapsed(k + 1),
 					MwRinkRam.u16(rec.end(k), MwRinkRam.PHASE), MwRinkRam.u16(rec.start(k + 1), MwRinkRam.PHASE),
 					_explain(rom, rec, k, d, tick_logs)])
 	var worst := by_field.keys()
@@ -327,7 +338,8 @@ func _run(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, show
 	var rows := unmodelled.keys()
 	rows.sort()
 	unmodelled.clear()
-	print("%s: %d/%d entries identical%s%s%s" % [rec.name, en_same, en, ("  (" + ", ".join(etop) + ")") if not etop.is_empty() else "",
+	print("%s: %d/%d entries identical%s%s%s" % [rec.name, en_same, en,
+			("  (" + ", ".join(etop) + ")") if not etop.is_empty() else "",
 			("  [" + ", ".join(ent) + "]") if not ent.is_empty() else "",
 			("  unmodelled rows: " + " ".join(rows)) if not rows.is_empty() else ""])
 	return same + same_other < n or en_same < en
@@ -390,7 +402,8 @@ static func make_plan(rec: MwSimRecording, k: int, tick_logs: Dictionary) -> Tic
 
 ## Pair (k, k+1): [differences, whether other ticks than the base ones were
 ## needed, (unused), our RAM, the tick plan of the run returned].
-func check_pair(rom: PackedByteArray, rec: MwSimRecording, k: int, tick_logs: Dictionary, from := PackedByteArray()) -> Array:
+func check_pair(rom: PackedByteArray, rec: MwSimRecording, k: int, tick_logs: Dictionary,
+		from := PackedByteArray()) -> Array:
 	var plan := make_plan(rec, k, tick_logs)
 	var b := rec.start(k + 1)
 	var start_ring := ring
@@ -515,7 +528,8 @@ func _explain(rom: PackedByteArray, rec: MwSimRecording, k: int, d: PackedInt32A
 		if seen.has(desc):
 			continue
 		seen[desc] = true
-		out.append("%s ours %02X want %02X (was %02X)" % [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(b, addr), MwRinkRam.u8(a, addr)])
+		out.append("%s ours %02X want %02X (was %02X)" % [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(b, addr),
+				MwRinkRam.u8(a, addr)])
 		if out.size() >= 8:
 			out.append("... %d bytes" % d.size())
 			break
@@ -532,16 +546,20 @@ func _detail(rom: PackedByteArray, rec: MwSimRecording, k: int) -> void:
 	var plan: TickPlan = r[4]
 	print("pair %d -> %d: e %d/%d, phase %d/%d -> %d/%d, ticks end %d pass %d start %d; %d bytes differ" % [k, k + 1,
 			rec.elapsed(k), rec.elapsed(k + 1), MwRinkRam.u16(a, MwRinkRam.PHASE), MwRinkRam.u16(a, MwRinkRam.SUBPHASE),
-			MwRinkRam.u16(b, MwRinkRam.PHASE), MwRinkRam.u16(b, MwRinkRam.SUBPHASE), plan.t_end, plan.t_pass, plan.t_start, d.size()])
+			MwRinkRam.u16(b, MwRinkRam.PHASE), MwRinkRam.u16(b, MwRinkRam.SUBPHASE), plan.t_end, plan.t_pass,
+			plan.t_start, d.size()])
 	var got: PackedByteArray = r[3]
 	for addr in d.slice(0, 60):
-		print("  $%06X %s: ours %02X want %02X (was %02X)" % [addr, MwRinkRam.describe(addr), MwRinkRam.u8(got, addr), MwRinkRam.u8(b, addr), MwRinkRam.u8(a, addr)])
+		print("  $%06X %s: ours %02X want %02X (was %02X)"
+				% [addr, MwRinkRam.describe(addr), MwRinkRam.u8(got, addr), MwRinkRam.u8(b, addr),
+				MwRinkRam.u8(a, addr)])
 	print("original rng_next after the segment (caller, state before):")
 	for e in rec.log_entries("rn", k, true):
 		print("  $%06X  %08X" % [int(e[0]) & 0xFFFFFF, int(e[1])])
 	print("original rng_range after the segment (caller, lo, hi, state):")
 	for e in rec.log_entries("rr", k, true):
-		print("  $%06X  %d %d  %08X" % [int(e[0]) & 0xFFFFFF, MwRinkSim.s16(int(e[1])), MwRinkSim.s16(int(e[2])), int(e[3])])
+		print("  $%06X  %d %d  %08X" % [int(e[0]) & 0xFFFFFF, MwRinkSim.s16(int(e[1])), MwRinkSim.s16(int(e[2])),
+				int(e[3])])
 	print("ours: ", _up.sim.rng_log)
 	print("phase handler log: ", rec.log_entries("ph", k, true), " sounds: ", rec.log_entries("sd", k, true))
 	print("ticks read: ", plan.values, " other ticks: ", r[1], " logged: ", plan.logged)
@@ -552,7 +570,8 @@ func _detail(rom: PackedByteArray, rec: MwSimRecording, k: int) -> void:
 ## [param from], default the recorded segment end); without a tick log the
 ## handler's tick is not known (0-4 ticks after the segment): later ticks
 ## are tried until the exit is [param want].
-func exit_of(rom: PackedByteArray, rec: MwSimRecording, k: int, plan: TickPlan, want: int, from := PackedByteArray()) -> int:
+func exit_of(rom: PackedByteArray, rec: MwSimRecording, k: int, plan: TickPlan, want: int,
+		from := PackedByteArray()) -> int:
 	var start_ring := ring
 	var r := run_pair(rom, rec, k, plan, from)
 	var to := int(r[3])
@@ -600,6 +619,11 @@ func _last_exit(rom: PackedByteArray, rec: MwSimRecording, k: int, logs: Diction
 ## next pass's segment start are compared with the original's.
 func _visits(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, show: int) -> bool:
 	var logs := _tick_logs(rec)
+	var pass_load := MwPassLoad.new(rom) if load_out != "" or tick_model else null
+	var tm := {"passes": 0, "ticks": 0, "rec": 0, "same": 0, "model": {}, "orig": {}}
+	var ta := {"passes": 0, "ticks": 0, "rec": 0, "same": 0, "model": {}, "orig": {}, "gap": 0, "gaps": 0}
+	var approx := MwPassApprox.new(rom) if tick_model else null
+	var load_lines: Array[String] = []
 	ring = rec.ring_start()
 	var parts := _parts(rom)
 	var up: MwRinkUpdate = parts[0]
@@ -625,6 +649,13 @@ func _visits(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, s
 			continue
 		visits += 1
 		var img := rec.start(k0)
+		if pass_load != null:
+			pass_load.reset_visit()
+		var pacer := MwPassPacer.new() if tick_model else null
+		var pacer_a := MwPassPacer.new() if tick_model else null
+		if approx != null:
+			approx.reset_visit()
+		var clock: Variant = null
 		var segs := 0
 		var gaps := 0
 		var first := ""
@@ -633,9 +664,15 @@ func _visits(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, s
 			var s := sim.s
 			MwRinkRam.decode_into(rom, s, img)
 			s.tick = MwRinkRam.u32(rec.start(j), MwRinkRam.TICK)
-			sim.cpu = ai
+			sim.cpu = ai if pass_load == null else pass_load.wrap(ai)
+			if approx != null:
+				sim.cpu = approx.wrap(sim.cpu)
 			sim.hooks = MwReplayControl.new(rom, rec, j)
 			sim.log_rng = false
+			if pass_load != null:
+				pass_load.begin(sim, rec.elapsed(j))
+			if approx != null:
+				approx.begin(sim, rec.elapsed(j))
 			sim.run(rec.elapsed(j))
 			var seg := MwRinkRam.encode(s, rec.end(j))
 			var d := MwRinkRam.diff(seg, rec.end(j))
@@ -664,6 +701,32 @@ func _visits(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, s
 					_draw_pass(rom, rec, j, true)
 				break
 			var c := check_pair(rom, rec, j, logs, seg)
+			if pass_load != null:
+				var lf := pass_load.features(_up, _ph)
+				lf["n"] = j
+				lf["visit"] = int(rec.passes[k0]["visit"])
+				if load_out != "":
+					load_lines.append(JSON.stringify(lf))
+				if pacer != null:
+					# closed loop: the pacer's pass lengths through the visit (the sound driver at its mean)
+					var want := rec.elapsed(j + 1)
+					var wo := MwPassCost.work_mclk(lf, clock)
+					clock = lf["clock_next"]
+					pacer.begin(wo, j == k0)
+					while not pacer.vblank():
+						pass
+					_tally(tm, pacer.last_elapsed, want)
+					var wa := approx.work(_up, _ph)
+					approx.clock_now(_up.window_ops)          # the next pass's start, after these draws
+					pacer_a.begin(wa, j == k0)
+					while not pacer_a.vblank():
+						pass
+					_tally(ta, pacer_a.last_elapsed, want)
+					var gap := 0
+					for key in ["before", "rink_update", "after"]:
+						gap += absi(int(wa[key]) - int(wo[key]))
+					ta.gap = maxi(int(ta.gap), gap)
+					ta.gaps += gap
 			if draws_check:
 				_draw_pass(rom, rec, j, false)
 			var dg: PackedInt32Array = c[0]
@@ -686,11 +749,42 @@ func _visits(rom: PackedByteArray, rec: MwSimRecording, from: int, count: int, s
 				("; " + exit_note) if exit_note != "" else "", ("; first: " + first) if first != "" else ""])
 	for l in lines.slice(0, maxi(show, 0) if show < lines.size() else lines.size()):
 		print(l)
-	print("%s: %d/%d visits identical throughout; passes: %d/%d segments, %d/%d gaps identical" % [rec.name, whole, visits,
+	print("%s: %d/%d visits identical throughout; passes: %d/%d segments, %d/%d gaps identical"
+			% [rec.name, whole, visits,
 			seg_same, seg_total, gap_same, gap_total])
 	if draws_check:
 		failed = _draw_report(rec) or failed
+	if tick_model and tm.passes > 0:
+		for pair in [["tick model", tm], ["APPROXIMATED", ta]]:
+			var t: Dictionary = pair[1]
+			var dist := []
+			for e in range(1, 10):
+				dist.append("%d:%.3f/%.3f" % [e, float(t.model.get(e, 0)) / t.passes,
+						float(t.orig.get(e, 0)) / t.passes])
+			print(("%s %s: %d passes, %d ticks against the original's %d (%+.2f %%), mean %.3f / %.3f; e "
+					+ "(model/original) %s") % [
+					rec.name, pair[0], t.passes, t.ticks, t.rec, 100.0 * (t.ticks - t.rec) / t.rec,
+					float(t.ticks) / t.passes, float(t.rec) / t.passes, " ".join(dist)])
+		print("%s APPROXIMATED against ORIGINAL's model: work apart by %.0f master clocks a pass on average, %d at most"
+				% [
+				rec.name, float(ta.gaps) / ta.passes, ta.gap])
+	if load_out != "":
+		var fa := FileAccess.open(load_out.path_join(rec.name + ".jsonl"), FileAccess.WRITE)
+		fa.store_string("\n".join(load_lines) + "\n")
+		fa.close()
+		print("load features: %d passes -> %s" % [load_lines.size(), load_out.path_join(rec.name + ".jsonl")])
 	return failed
+
+
+## `--tick-model`: one pass's predicted elapsed ticks [param e] against the
+## recording's [param want].
+static func _tally(t: Dictionary, e: int, want: int) -> void:
+	t.passes += 1
+	t.ticks += e
+	t.rec += want
+	t.same += 1 if e == want else 0
+	t.model[e] = int(t.model.get(e, 0)) + 1
+	t.orig[want] = int(t.orig.get(want, 0)) + 1
 
 
 func _describe_diff(got: PackedByteArray, want: PackedByteArray, was: PackedByteArray, d: PackedInt32Array) -> String:
@@ -701,7 +795,8 @@ func _describe_diff(got: PackedByteArray, want: PackedByteArray, was: PackedByte
 		if seen.has(desc):
 			continue
 		seen[desc] = true
-		out.append("%s ours %02X want %02X (was %02X)" % [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(want, addr), MwRinkRam.u8(was, addr)])
+		out.append("%s ours %02X want %02X (was %02X)" % [desc, MwRinkRam.u8(got, addr), MwRinkRam.u8(want, addr),
+				MwRinkRam.u8(was, addr)])
 		if out.size() >= 6:
 			out.append("... %d bytes" % d.size())
 			break
@@ -712,10 +807,16 @@ func _describe_diff(got: PackedByteArray, want: PackedByteArray, was: PackedByte
 
 const WINDOW_PLANE := 0xFFFFB0CA      ## the window's plane object `$FFB0CA` (as the code holds it)
 const WINDOW_VRAM := 0xF000           ## its name table: 64 x 32 cells
-const WIDGET_MAPS := [0x25D0, 0x25FC] ## `$25AA`'s map copies (the widget's frame, power-play or normal: part of "widget")
+## `$25AA`'s map copies (the widget's frame, power-play or normal: part of "widget")
+const WIDGET_MAPS := [0x25D0, 0x25FC]
 const RAM_TEXT := 8                   ## bytes of a RAM string the recorder logs
 
 var draws_check := false
+## Plan 36: `--load-features DIR` (MwPassLoad features per pass, visits).
+var load_out := ""
+## Plan 36: `--tick-model` (TICK RATE ORIGINAL's closed loop per visit:
+## MwPassCost, MwPassPacer; the recordings' elapsed ticks to compare).
+var tick_model := false
 ## [identical passes, passes, entries compared] by part: "win" (the phase
 ## share's window writes), "spr" (its sprite pieces), "clock" (the next
 ## pass start's clock texts).
@@ -877,7 +978,8 @@ static func window_list(rom: PackedByteArray, ops: Array) -> Array[String]:
 				out.append("box (%d,%d) %dx%d filled %d erase 0" % [int(op[1]), int(op[2]), int(op[3]), int(op[4]),
 						1 if op[5] else 0])
 			"quote":
-				out.append("quote %X (%d,%d) %dx%d %02X %s" % [int(op[1]), int(op[2]), int(op[3]), int(op[6]), int(op[7]),
+				out.append("quote %X (%d,%d) %dx%d %02X %s"
+						% [int(op[1]), int(op[2]), int(op[3]), int(op[6]), int(op[7]),
 						int(op[4]) & 0xFF, _ascii(op[5])])
 			"widget":
 				# `$25AA`: the frame, [the power-play clock,] the period, ["[]",] the clock
@@ -886,12 +988,14 @@ static func window_list(rom: PackedByteArray, ops: Array) -> Array[String]:
 				if pp:
 					out.append(text_text(rom, MwClockHud.FONT, MwClockHud.PP_CLOCK_AT.x, MwClockHud.PP_CLOCK_AT.y,
 							MwClockHud.ATTR, _time_bytes(int(op[4]) if op.size() > 4 else 0)))
-				out.append(text_text(rom, MwClockHud.FONT, MwClockHud.PERIOD_AT.x, MwClockHud.PERIOD_AT.y, MwClockHud.ATTR,
+				out.append(text_text(rom, MwClockHud.FONT, MwClockHud.PERIOD_AT.x, MwClockHud.PERIOD_AT.y,
+						MwClockHud.ATTR,
 						MwClockHud.period_text(rom, int(op[2]))))
 				if pp:
 					out.append(text_text(rom, MwClockHud.FONT, MwClockHud.PP_LABEL_AT.x, MwClockHud.PP_LABEL_AT.y,
 							MwClockHud.ATTR, PackedByteArray([0x5B, 0x5D])))
-				out.append(text_text(rom, MwClockHud.FONT, MwClockHud.CLOCK_AT.x, MwClockHud.CLOCK_AT.y, MwClockHud.ATTR,
+				out.append(text_text(rom, MwClockHud.FONT, MwClockHud.CLOCK_AT.x, MwClockHud.CLOCK_AT.y,
+						MwClockHud.ATTR,
 						_time_bytes(int(op[3]))))
 			_:
 				out.append("? " + str(op))
@@ -901,7 +1005,8 @@ static func window_list(rom: PackedByteArray, ops: Array) -> Array[String]:
 ## The recorder's "win" records [param records] as entries ([method
 ## window_list]'s form); writes to other planes go to [param other]
 ## instead. RAM strings: the logged bytes; the quote from [param snap].
-static func recorded_window(rom: PackedByteArray, records: Array, snap: PackedByteArray, other: Array[String]) -> Array[String]:
+static func recorded_window(rom: PackedByteArray, records: Array, snap: PackedByteArray,
+		other: Array[String]) -> Array[String]:
 	var out: Array[String] = []
 	for e in records:
 		var kind := int(e[0])
@@ -925,7 +1030,8 @@ static func recorded_window(rom: PackedByteArray, records: Array, snap: PackedBy
 				if int(e[4]) & 0xFFFFFFFF != WINDOW_PLANE:
 					other.append("glyph from $%X" % ret)
 					continue
-				out.append("glyph %X (%d,%d) %02X %s" % [int(e[3]) & 0xFFFFFF, _w(int(e[5])), _w(int(e[6])), int(e[7]) & 0xFF,
+				out.append("glyph %X (%d,%d) %02X %s"
+						% [int(e[3]) & 0xFFFFFF, _w(int(e[5])), _w(int(e[6])), int(e[7]) & 0xFF,
 						_ascii(PackedByteArray([int(e[2]) & 0xFF]))])
 			3:
 				if int(e[3]) & 0xFFFFFFFF != WINDOW_PLANE:
@@ -940,7 +1046,8 @@ static func recorded_window(rom: PackedByteArray, records: Array, snap: PackedBy
 					other.append("VRAM fill from $%X" % ret)
 					continue
 				var off := addr - WINDOW_VRAM
-				out.append(fill_text((off % 128) / 2, off / 128, (int(e[2]) & 0xFFFF) / 2, int(e[6]) & 0xFFFF, int(e[5])))
+				out.append(fill_text((off % 128) / 2, off / 128, (int(e[2]) & 0xFFFF) / 2, int(e[6]) & 0xFFFF,
+						int(e[5])))
 			5:
 				if ret in WIDGET_MAPS:
 					continue
@@ -949,7 +1056,8 @@ static func recorded_window(rom: PackedByteArray, records: Array, snap: PackedBy
 				if int(e[3]) & 0xFFFFFFFF != WINDOW_PLANE:
 					other.append("frame from $%X" % ret)
 					continue
-				out.append("box (%d,%d) %dx%d filled %d erase %d" % [_w(int(e[4])), _w(int(e[5])), _w(int(e[6])), _w(int(e[7])),
+				out.append("box (%d,%d) %dx%d filled %d erase %d"
+						% [_w(int(e[4])), _w(int(e[5])), _w(int(e[6])), _w(int(e[7])),
 						1 if int(e[8]) & 0xFFFF else 0, 1 if int(e[9]) & 0xFFFF else 0])
 			7:
 				var a0 := int(e[2]) & 0xFFFFFF
@@ -961,7 +1069,8 @@ static func recorded_window(rom: PackedByteArray, records: Array, snap: PackedBy
 						a += 1
 				else:
 					b = MwGfx.rom_string(rom, a0)
-				out.append("quote %X (%d,%d) %dx%d %02X %s" % [int(e[5]) & 0xFFFFFF, _w(int(e[6])), _w(int(e[7])), _w(int(e[8])),
+				out.append("quote %X (%d,%d) %dx%d %02X %s"
+						% [int(e[5]) & 0xFFFFFF, _w(int(e[6])), _w(int(e[7])), _w(int(e[8])),
 						_w(int(e[9])), int(e[4]) & 0xFF, _ascii(b)])
 			8:
 				out.append("widget pp %d" % (int(e[2]) & 1))
@@ -986,7 +1095,7 @@ const ENTRY_RNG_SITES := [0xF52E, 0xF554, 0xF57C, 0x826, 0xF60E, 0xF690, 0x3A9A]
 ## The screen visit runner (recorder v5: the screens between two rink visits on our state).
 const ScreenVisit := preload("res://test/sim/screen_visit.gd")
 ## Game text in the fixtures by ROM address.
-const RomText := preload("res://test/sim/rom_text.gd")
+const FixtureText := preload("res://test/sim/rom_text.gd")
 ## `$7F8` player_create's draw (+$3C).
 const PLAYER_CREATE_RNG := 0x826
 
@@ -1048,10 +1157,10 @@ static func _chain(rec: MwSimRecording, k: int, from: int) -> Array:
 	for e in rec.log_entries("rr", k, true):
 		by[int(e[3]) & 0xFFFFFFFF] = int(e[0]) & 0xFFFFFF
 	var out := []
-	var r := MlhRng.new(from)
-	while by.has(r.state) and out.size() < 4096:
-		out.append([r.state, by[r.state]])
-		r.next_state()
+	var rng := MlhRng.new(from)
+	while by.has(rng.state) and out.size() < 4096:
+		out.append([rng.state, by[rng.state]])
+		rng.next_state()
 	return out
 
 
@@ -1162,10 +1271,12 @@ func _run_entry(rom: PackedByteArray, rec: MwSimRecording, k: int, screens: Arra
 			for i in 3:
 				var at: int = MwRinkRam.TEAMS[t] + MwRinkPenalties.entry(i)
 				for off in [8, 9, 0xA]:
-					if s.teams[t].stats[MwRinkPenalties.entry(i) + off - MwRinkState.Team.STATS_AT] != MwRinkRam.u8(b, at + off):
+					if s.teams[t].stats[MwRinkPenalties.entry(i) + off - MwRinkState.Team.STATS_AT] != MwRinkRam.u8(b,
+							at + off):
 						if not "screen 17's box display" in notes:
 							notes.append("screen 17's box display")
-						s.teams[t].stats[MwRinkPenalties.entry(i) + off - MwRinkState.Team.STATS_AT] = MwRinkRam.u8(b, at + off)
+						s.teams[t].stats[MwRinkPenalties.entry(i) + off - MwRinkState.Team.STATS_AT] = MwRinkRam.u8(b,
+								at + off)
 	# the scoreboards' coach comment (12-17: `$F420` and the text box, plan 11)
 	if not ran and screens.size() > 1:
 		var bs := MwRinkRam.decode(rom, b)
@@ -1248,10 +1359,10 @@ func _run_entry(rom: PackedByteArray, rec: MwSimRecording, k: int, screens: Arra
 ## the ref icons (MwRinkMatch.boot_icons) - and what this check sets
 ## around it (the tick, the net slack, plane B's scroll).
 static func fresh_state(s: MwRinkState) -> MwRinkState:
-	var f := MwRinkState.new()
+	var state := MwRinkState.new()
 	for k in ["rng", "playoffs", "penalty", "stoppage", "tick", "net_slack", "scroll_b"]:
-		f.set(k, s.get(k))
-	return f
+		state.set(k, s.get(k))
+	return state
 
 
 ## `--fresh`: each matchup entry (a new match) as the RAM gives it and on a
@@ -1263,9 +1374,9 @@ func _fresh_audit(rom: PackedByteArray, rec: MwSimRecording, show: int) -> bool:
 	var bad := 0
 	var shown := 0
 	for k in rec.count() - 1:
-		var p: Dictionary = rec.passes[k]
-		var q: Dictionary = rec.passes[k + 1]
-		if int(p["visit"]) == int(q["visit"]) and int(p["screen"]) == int(q["screen"]):
+		var this_pass: Dictionary = rec.passes[k]
+		var next_pass: Dictionary = rec.passes[k + 1]
+		if int(this_pass["visit"]) == int(next_pass["visit"]) and int(this_pass["screen"]) == int(next_pass["screen"]):
 			continue
 		var screens: Array[int] = []
 		for e in rec.meta["screens"]:
@@ -1303,14 +1414,16 @@ func _fresh_audit(rom: PackedByteArray, rec: MwSimRecording, show: int) -> bool:
 		for addr in fresh_only:
 			var key := _field_key(MwRinkRam.describe(addr))
 			if not here.has(key):
-				here[key] = "%s ours %02X want %02X" % [MwRinkRam.describe(addr), MwRinkRam.u8(got, addr), MwRinkRam.u8(want, addr)]
+				here[key] = "%s ours %02X want %02X" \
+						% [MwRinkRam.describe(addr), MwRinkRam.u8(got, addr), MwRinkRam.u8(want, addr)]
 		for key in here:
 			if not fields.has(key):
 				fields[key] = [0, here[key]]
 			fields[key][0] += 1
 		if shown < show:
 			shown += 1
-			print("  %s entry %d -> %d %s: %d bytes only on a fresh state: %s" % [rec.name, k, k + 1, screens, fresh_only.size(),
+			print("  %s entry %d -> %d %s: %d bytes only on a fresh state: %s"
+					% [rec.name, k, k + 1, screens, fresh_only.size(),
 					"; ".join(here.values().slice(0, 12))])
 	var keys := fields.keys()
 	keys.sort_custom(func(x: String, y: String) -> bool: return fields[x][0] > fields[y][0])
@@ -1329,9 +1442,9 @@ func _fresh_visits(rom: PackedByteArray, rec: MwSimRecording) -> bool:
 	var logs := _tick_logs(rec)
 	var any := false
 	for k in rec.count() - 1:
-		var p: Dictionary = rec.passes[k]
-		var q: Dictionary = rec.passes[k + 1]
-		if int(p["visit"]) == int(q["visit"]) and int(p["screen"]) == int(q["screen"]):
+		var this_pass: Dictionary = rec.passes[k]
+		var next_pass: Dictionary = rec.passes[k + 1]
+		if int(this_pass["visit"]) == int(next_pass["visit"]) and int(this_pass["screen"]) == int(next_pass["screen"]):
 			continue
 		var screens: Array[int] = []
 		for e in rec.meta["screens"]:
@@ -1379,7 +1492,8 @@ func _fresh_visits(rom: PackedByteArray, rec: MwSimRecording) -> bool:
 			if last.has(key):
 				left[key] = true
 		any = any or not spread.is_empty()
-		print("%s: new match at pass %d, visit passes %d-%d: %d entry fields only fresh; still wrong at the visit's end: %s" % [
+		print(("%s: new match at pass %d, visit passes %d-%d: %d entry fields only fresh; still wrong at the visit's "
+				+ "end: %s") % [
 				rec.name, k + 1, k0, k1, at_entry.size(), ", ".join(left.keys()) if not left.is_empty() else "none"])
 		var keys := spread.keys()
 		keys.sort_custom(func(x: String, y: String) -> bool: return spread[x][0] < spread[y][0])
@@ -1448,7 +1562,8 @@ static func _spread_count(base: Array, fresh: Array, at_entry: Dictionary) -> in
 ## A rink visit (passes [param k0]-[param k1]) played on from RAM image
 ## [param img] as `--visit` does: per pass ["pass j segment" / "gap", the
 ## differing addresses].
-func _visit_diffs(rom: PackedByteArray, rec: MwSimRecording, logs: Dictionary, k0: int, k1: int, img: PackedByteArray) -> Array:
+func _visit_diffs(rom: PackedByteArray, rec: MwSimRecording, logs: Dictionary, k0: int, k1: int,
+		img: PackedByteArray) -> Array:
 	var out := []
 	var parts := _parts(rom)
 	var up: MwRinkUpdate = parts[0]
@@ -1527,17 +1642,17 @@ static func run_replay(rom: PackedByteArray, rec: MwSimRecording, v: Array, s: M
 	var sim := MwReplaySim.new(rom)
 	sim.enter(s, 7, int(v[2]))
 	for j in range(first + 1, last + 1):
-		var e: Array = rec.screen_passes[j]
+		var screen_pass: Array = rec.screen_passes[j]
 		var held := [0, 0, 0, 0]
 		var new := [0, 0, 0, 0]
-		if j + 1 < rec.screen_passes.size() and (j < last or int(rec.screen_passes[j + 1][0]) == int(e[0])):
+		if j + 1 < rec.screen_passes.size() and (j < last or int(rec.screen_passes[j + 1][0]) == int(screen_pass[0])):
 			var r := rec.screen_ram(j + 1)
 			for pad in 4:
 				held[pad] = MwRinkRam.u8(r, MwRinkRam.PADS + 2 * pad)
 				new[pad] = MwRinkRam.u8(r, MwRinkRam.PADS + 2 * pad + 1)
 		elif j == last:
 			new[sim.replay.pad] = MwInstantReplay.START
-		if sim.step(int(e[4]), held, new) >= 0:
+		if sim.step(int(screen_pass[4]), held, new) >= 0:
 			break
 
 
@@ -1561,7 +1676,8 @@ static func _modeled(s: MwRinkState) -> Dictionary:
 ## The entry's differences in the bytes our state models (the rest belongs
 ## to the other screens, the main loop, the sound driver or unported code;
 ## only counted, in [param notes]).
-func _entry_masked(got: PackedByteArray, want: PackedByteArray, modeled: Dictionary, notes: Array[String]) -> PackedInt32Array:
+func _entry_masked(got: PackedByteArray, want: PackedByteArray, modeled: Dictionary,
+		notes: Array[String]) -> PackedInt32Array:
 	var out := PackedInt32Array()
 	var other := {}
 	for addr in MwRinkRam.diff(got, want):
@@ -1594,7 +1710,8 @@ const GAP_FEATURES := {"throw": 2, "fire": 1, "shark": 2, "under_ice": 2, "pit":
 ## the original's (no masked difference).
 func _build_fixture(rom: PackedByteArray, names: Array[String]) -> void:
 	if names == RUNS:
-		names.assign(["p1p2_s4", "cpu_s16", "coop_s14", "p1_s9", "soak_22_v1", "soak_1_v5", "soak_2_v11", "soak_144_v15"])
+		names.assign(["p1p2_s4", "cpu_s16", "coop_s14", "p1_s9", "soak_22_v1", "soak_1_v5", "soak_2_v11",
+				"soak_144_v15"])
 	var paths: Array = MwSimDict.leaves(MwSimDict.to_dict(MwRinkState.new())).keys()
 	var index := {}
 	for i in paths.size():
@@ -1610,23 +1727,24 @@ func _build_fixture(rom: PackedByteArray, names: Array[String]) -> void:
 		ring = rec.ring_start()
 		var logs := _tick_logs(rec)
 		for k in rec.count() - 1:
-			var p: Dictionary = rec.passes[k]
-			var q: Dictionary = rec.passes[k + 1]
+			var this_pass: Dictionary = rec.passes[k]
+			var next_pass: Dictionary = rec.passes[k + 1]
 			var a := rec.end(k)
 			var b := rec.start(k + 1)
-			if int(p["visit"]) != int(q["visit"]) or int(p["screen"]) != int(q["screen"]):
+			if int(this_pass["visit"]) != int(next_pass["visit"]) \
+					or int(this_pass["screen"]) != int(next_pass["screen"]):
 				var kinds := _entry_kinds(rec, k, a, b)
 				var fresh := false
 				for kd in kinds:
 					fresh = fresh or not entry_kinds.has(kd)
 				if not fresh:
 					continue
-				var e := check_entry(rom, rec, k, logs)
-				if not (e[0] as PackedInt32Array).is_empty() or "rng" in e[1]:
+				var entry := check_entry(rom, rec, k, logs)
+				if not (entry[0] as PackedInt32Array).is_empty() or "rng" in entry[1]:
 					continue
 				for kd in kinds:
 					entry_kinds[kd] = true
-				entries.append(_entry_case(rom, rec, k, e, kinds, paths, index))
+				entries.append(_entry_case(rom, rec, k, entry, kinds, paths, index))
 				continue
 			var feats := _gap_features(rom, a, b)
 			var wanted := false
@@ -1652,7 +1770,8 @@ func _build_fixture(rom: PackedByteArray, names: Array[String]) -> void:
 			gaps.append(g)
 	var doc := {"format": "mw-rink-gaps/1",
 			"note": "Rink passes between segments and rink entries from pass-check --fixture (decoded fields only).",
-			"rom_sha1": MwSimRecording.open(names[0]).meta["rom_sha1"], "paths": paths, "gaps": gaps, "entries": entries}
+			"rom_sha1": MwSimRecording.open(names[0]).meta["rom_sha1"], "paths": paths, "gaps": gaps,
+			"entries": entries}
 	var f := FileAccess.open(FIXTURE, FileAccess.WRITE)
 	f.store_string(JSON.stringify(doc))
 	f.close()
@@ -1663,7 +1782,8 @@ func _build_fixture(rom: PackedByteArray, names: Array[String]) -> void:
 # --- the phase fixture -------------------------------------------------------------------------
 
 const PHASE_FIXTURE := "res://../compare/fixtures/rink_phases.json"
-const PHASE_RUNS := ["match_p1_s6", "pause_p1_s7", "goalie_p1_s12", "match_cpu_s13", "playoff_p1_s19", "attract", "p1_s9",
+const PHASE_RUNS := ["match_p1_s6", "pause_p1_s7", "goalie_p1_s12", "match_cpu_s13", "playoff_p1_s19", "attract",
+		"p1_s9",
 		"soak_22_v1", "soak_1_v5", "soak_1_v10", "soak_21_v4", "soak_5_v5", "soak_144_v15"]
 
 
@@ -1695,14 +1815,15 @@ func _build_phase_fixture(rom: PackedByteArray, names: Array[String]) -> void:
 		ring = rec.ring_start()
 		var logs := _tick_logs(rec)
 		for k in rec.count() - 1:
-			var p: Dictionary = rec.passes[k]
-			var q: Dictionary = rec.passes[k + 1]
+			var this_pass: Dictionary = rec.passes[k]
+			var next_pass: Dictionary = rec.passes[k + 1]
 			var a := rec.end(k)
 			var b := rec.start(k + 1)
 			var ring_before := ring
 			var feats: Array = []
 			var exit := -1
-			if int(p["visit"]) != int(q["visit"]) or int(p["screen"]) != int(q["screen"]):
+			if int(this_pass["visit"]) != int(next_pass["visit"]) \
+					or int(this_pass["screen"]) != int(next_pass["screen"]):
 				for e in rec.meta["screens"]:
 					if int(e[0]) == k + 1:
 						exit = int(e[1])
@@ -1735,14 +1856,16 @@ func _build_phase_fixture(rom: PackedByteArray, names: Array[String]) -> void:
 			base = _values(rom, a, paths)
 			cases.append(c2)
 	var doc := {"format": "mw-rink-phases/1",
-			"note": "Match-flow transitions of the rink pass (MwRinkPhases) from pass-check --phase-fixture (decoded fields only).",
+			"note": "Match-flow transitions of the rink pass (MwRinkPhases) from pass-check --phase-fixture"
+					+ " (decoded fields only).",
 			"rom_sha1": MwSimRecording.open(names[0]).meta["rom_sha1"], "paths": paths, "cases": cases}
 	var f := FileAccess.open(PHASE_FIXTURE, FileAccess.WRITE)
 	f.store_string(JSON.stringify(doc))
 	f.close()
 	var keys := have.keys()
 	keys.sort()
-	print("%d cases: %s -> %s" % [cases.size(), ", ".join(keys), ProjectSettings.globalize_path(PHASE_FIXTURE).simplify_path()])
+	print("%d cases: %s -> %s" % [cases.size(), ", ".join(keys),
+			ProjectSettings.globalize_path(PHASE_FIXTURE).simplify_path()])
 
 
 ## The match-flow transitions gap (k, k+1) shows (from the RAM).
@@ -1803,7 +1926,6 @@ static func _phase_features(rec: MwSimRecording, k: int, a: PackedByteArray, b: 
 func _phase_case(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Array, plan: TickPlan, paths: Array,
 		index: Dictionary, base: Array, exit: int) -> Dictionary:
 	var a := rec.end(k)
-	var b := rec.start(k + 1)
 	var c := _gap_case(rom, rec, k, feats, plan, paths, index)
 	if exit >= 0:
 		c["end"] = []
@@ -1823,7 +1945,7 @@ func _phase_case(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Array
 
 
 ## What gap (k, k+1) shows (from the RAM: no simulation).
-static func _gap_features(rom: PackedByteArray, a: PackedByteArray, b: PackedByteArray) -> Array:
+static func _gap_features(_rom: PackedByteArray, a: PackedByteArray, b: PackedByteArray) -> Array:
 	var out := []
 	for i in 8:
 		var o := MwRinkRam.OBJECTS + MwRinkRam.OBJECT_SIZE * i
@@ -1856,7 +1978,8 @@ static func _gap_features(rom: PackedByteArray, a: PackedByteArray, b: PackedByt
 	for t in 2:
 		var tb: int = MwRinkRam.TEAMS[t]
 		for i in 3:
-			if MwRinkRam.u16(a, tb + MwRinkPenalties.entry(i) + 0xC) != MwRinkRam.u16(b, tb + MwRinkPenalties.entry(i) + 0xC):
+			if MwRinkRam.u16(a, tb + MwRinkPenalties.entry(i) + 0xC) != MwRinkRam.u16(b,
+					tb + MwRinkPenalties.entry(i) + 0xC):
 				out.append("box_countdown")
 		if MwRinkRam.u8(b, tb + MwRinkPenalties.COUNT) < MwRinkRam.u8(a, tb + MwRinkPenalties.COUNT):
 			out.append("box_release")
@@ -1903,7 +2026,8 @@ static func _values(rom: PackedByteArray, r: PackedByteArray, paths: Array) -> A
 
 
 static func _changes(rom: PackedByteArray, from: PackedByteArray, to: PackedByteArray, index: Dictionary) -> Array:
-	var d := MwSimDict.diff(MwSimDict.to_dict(MwRinkRam.decode(rom, from)), MwSimDict.to_dict(MwRinkRam.decode(rom, to)))
+	var d := MwSimDict.diff(MwSimDict.to_dict(MwRinkRam.decode(rom, from)),
+			MwSimDict.to_dict(MwRinkRam.decode(rom, to)))
 	var out := []
 	for p in d:
 		if p != "tick":
@@ -1918,10 +2042,12 @@ static func _pads(b: PackedByteArray) -> Array:
 	return out
 
 
-func _gap_case(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Array, plan: TickPlan, paths: Array, index: Dictionary) -> Dictionary:
+func _gap_case(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Array, plan: TickPlan, paths: Array,
+		index: Dictionary) -> Dictionary:
 	var a := rec.end(k)
 	var b := rec.start(k + 1)
-	return _text_out(rom, {"run": rec.name, "pass": k, "e": rec.elapsed(k), "e_next": rec.elapsed(k + 1), "features": feats,
+	return _text_out(rom, {"run": rec.name, "pass": k, "e": rec.elapsed(k), "e_next": rec.elapsed(k + 1),
+			"features": feats,
 			"start": _values(rom, a, paths), "ticks": plan.values.duplicate(), "voices": plan.voices.duplicate(),
 			"handle": plan.handle, "pause": plan.pause, "pass_tick": MwRinkRam.u32(b, MwRinkRam.PASS_TICK),
 			"pads": _pads(b), "end": _changes(rom, a, b, index)}, "start", paths)
@@ -1930,9 +2056,9 @@ func _gap_case(rom: PackedByteArray, rec: MwSimRecording, k: int, feats: Array, 
 ## A case's text (the quote buffer) as ROM pieces ([code]rom_text.gd[/code]):
 ## no game text in the fixture.
 static func _text_out(rom: PackedByteArray, case: Dictionary, key: String, paths: Array) -> Dictionary:
-	var idx := RomText.text_indices(paths)
-	RomText.values_out(rom, case, key, idx)
-	RomText.changes_out(rom, case, "end", idx)
+	var text_index := FixtureText.text_indices(paths)
+	FixtureText.values_out(rom, case, key, text_index)
+	FixtureText.changes_out(rom, case, "end", text_index)
 	return case
 
 
@@ -1969,10 +2095,11 @@ static func _entry_kinds(rec: MwSimRecording, k: int, a: PackedByteArray, b: Pac
 	return out
 
 
-func _entry_case(rom: PackedByteArray, rec: MwSimRecording, k: int, e: Array, kinds: Array, paths: Array, index: Dictionary) -> Dictionary:
+func _entry_case(rom: PackedByteArray, rec: MwSimRecording, k: int, entry: Array, kinds: Array, paths: Array,
+		index: Dictionary) -> Dictionary:
 	var b := rec.start(k + 1)
-	var before: PackedByteArray = e[4]
-	var screens: Array = e[3]
+	var before: PackedByteArray = entry[4]
+	var screens: Array = entry[3]
 	return _text_out(rom, {"run": rec.name, "pass": k, "screen": screens[screens.size() - 1], "features": kinds,
 			"before": _values(rom, before, paths), "take_tick": MwRinkRam.u32(b, MwRinkRam.PUCK + 0x26),
 			"e_next": rec.elapsed(k + 1), "pass_tick": MwRinkRam.u32(b, MwRinkRam.PASS_TICK), "pads": _pads(b),

@@ -1,30 +1,23 @@
 {
-  "format": "mw-button-verbs/1",
-  "comment": "Original 3-button pad -> verbs per context (docs/re/input.md, approved 2026-10-06). '{p}' = player number. Also the default bindings for plan 04.",
+  "format": "mw-button-verbs/2",
+  "comment": "Original 3-button pad (and the port's Menu Back) -> verbs per context: a mirror of MwVerbs.PAD_TO_VERB (plan 22; docs/re/input.md). '{p}' = player number; menu verbs (ui_*) are shared, each also per player (p{p}_ui_accept). Contexts in BACK_AS_START also take Menu Back as Start.",
   "pad_bits": {"UP": 0, "DOWN": 1, "LEFT": 2, "RIGHT": 3, "B": 4, "C": 5, "A": 6, "START": 7},
+  "back_as_start": ["team_info", "pause", "scoreboard", "stats", "special_plays", "replay"],
   "contexts": {
-    "menu": {
-      "UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right",
-      "A": "ui_option_a", "B": "ui_option_b", "C": "ui_option_c", "START": "ui_accept"
-    },
-    "rink": {
-      "UP": "p{p}_move_up", "DOWN": "p{p}_move_down", "LEFT": "p{p}_move_left", "RIGHT": "p{p}_move_right",
-      "A": "p{p}_check", "B": "p{p}_pass", "C": "p{p}_shoot", "START": "p{p}_pause"
-    },
-    "pause": {
-      "UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right",
-      "A": "ui_option_a", "B": "ui_option_b", "C": "ui_option_c", "START": "ui_accept"
-    },
-    "fight": {
-      "UP": "p{p}_move_up", "DOWN": "p{p}_move_down", "LEFT": "p{p}_move_left", "RIGHT": "p{p}_move_right",
-      "A": "p{p}_fight_block", "B": "p{p}_fight_punch", "C": "p{p}_fight_punch", "START": "ui_accept"
-    },
-    "replay": {
-      "A": "replay_rewind", "B": "replay_slow", "C": "replay_play", "START": "replay_exit"
-    },
-    "zamboni": {
-      "UP": "zamboni_whip", "DOWN": "zamboni_whip", "LEFT": "zamboni_whip", "RIGHT": "zamboni_whip",
-      "A": "ui_option_a", "B": "ui_option_b", "C": "ui_option_c", "START": "ui_accept"
-    }
+    "menu": {"UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right", "START": "ui_accept", "BACK": "ui_back"},
+    "title": {"START": "ui_accept", "A": "ui_skip", "B": "ui_skip", "C": "ui_skip", "BACK": "ui_back"},
+    "setup": {"UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right", "START": "ui_accept", "A": "ui_skip", "B": "ui_skip", "C": "ui_skip", "BACK": "ui_back"},
+    "team_info": {"UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right", "START": "ui_info_return", "A": "ui_next_page", "B": "ui_next_page", "C": "ui_next_page", "BACK": "ui_back"},
+    "matchup": {"START": "ui_accept", "A": "ui_skip", "B": "ui_skip", "C": "ui_skip", "BACK": "ui_back"},
+    "playoffs": {"UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right", "START": "ui_accept", "A": "ui_new_playoffs", "B": "ui_starfield_stop", "C": "ui_starfield_turn", "BACK": "ui_back"},
+    "password": {"UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right", "START": "ui_password_done", "A": "ui_pick_letter", "B": "ui_erase_letter", "C": "ui_cancel", "BACK": "ui_back"},
+    "pause": {"START": "ui_accept", "A": "ui_pause_replay", "B": "ui_pause_timeout", "BACK": "ui_back"},
+    "scoreboard": {"START": "ui_accept", "A": "ui_view_stats", "B": "ui_view_special_plays", "C": "ui_view_replay", "BACK": "ui_back"},
+    "stats": {"UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right", "START": "ui_accept", "A": "ui_stats_switch", "B": "ui_starfield_stop", "C": "ui_starfield_turn", "BACK": "ui_back"},
+    "special_plays": {"UP": "ui_up", "DOWN": "ui_down", "LEFT": "ui_left", "RIGHT": "ui_right", "START": "ui_plays_done", "A": "ui_nasty_play", "B": "ui_choose_play", "C": "ui_phony_play", "BACK": "ui_back"},
+    "gameplay": {"UP": "p{p}_move_up", "DOWN": "p{p}_move_down", "LEFT": "p{p}_move_left", "RIGHT": "p{p}_move_right", "A": ["p{p}_punch", "p{p}_dive", "p{p}_special_play"], "B": ["p{p}_pass", "p{p}_release_puck", "p{p}_change_player"], "C": ["p{p}_wrist_shot", "p{p}_slap_shot", "p{p}_check"], "START": "p{p}_pause"},
+    "fight": {"A": "p{p}_fight_block", "B": "p{p}_fight_punch", "C": "p{p}_fight_punch", "LEFT": "p{p}_move_left", "RIGHT": "p{p}_move_right", "START": "p{p}_fight_pause"},
+    "replay": {"A": "p{p}_replay_rewind", "B": "p{p}_replay_slow", "C": "p{p}_replay_play", "START": "p{p}_replay_exit", "BACK": "ui_back"},
+    "zamboni": {"UP": "p{p}_zamboni_whip", "DOWN": "p{p}_zamboni_whip", "LEFT": "p{p}_zamboni_whip", "RIGHT": "p{p}_zamboni_whip"}
   }
 }

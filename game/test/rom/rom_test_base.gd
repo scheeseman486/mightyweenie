@@ -19,4 +19,4 @@ func need_rom() -> bool:
 
 
 static func repo_path(rel: String) -> String:
-	return ProjectSettings.globalize_path("res://").path_join("..").path_join(rel).simplify_path()
+	return preload("res://test/support/cli.gd").repo_path(rel)

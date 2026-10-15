@@ -29,27 +29,28 @@ func _px(v: Vector3) -> Vector3:
 
 func _points_of(mesh: Mesh) -> PackedVector3Array:
 	var pts := PackedVector3Array()
-	for s in mesh.get_surface_count():
-		for v: Vector3 in mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+	for surface in mesh.get_surface_count():
+		for v: Vector3 in mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]:
 			pts.append(_px(v))
 	return pts
 
 
 func _bounds(pts: PackedVector3Array) -> AABB:
 	var box := AABB(pts[0], Vector3.ZERO)
-	for p in pts:
-		box = box.expand(p)
+	for point in pts:
+		box = box.expand(point)
 	return box
 
 
 func test_parts_and_materials() -> void:
 	for style: int in MwNet3D.MODELS:
 		var parts := _parts(style)
-		assert_eq_deep(parts.keys().map(func(k): return k).filter(func(k): return k in ["frame", "outline", "netting", "shadow"]).size(), 4)
+		assert_eq_deep(parts.keys().map(func(k): return k).filter(func(k): return k in ["frame", "outline", "netting", \
+				"shadow"]).size(), 4)
 		for part: String in parts:
 			var mesh: Mesh = parts[part]
-			for s in mesh.get_surface_count():
-				var mat := mesh.surface_get_material(s)
+			for surface in mesh.get_surface_count():
+				var mat := mesh.surface_get_material(surface)
 				assert_not_null(MwNet3D.material_for(mat.resource_name), "%d %s: %s" % [style, part, mat.resource_name])
 
 
@@ -84,8 +85,8 @@ func test_size_against_the_original() -> void:
 	assert_almost_eq(frame.position.z, 0.0, 0.01, "the frame stands on the ice")
 	assert_gt(box.position.z, -0.5, "only the outline shell's underside below it")
 	var post := 0
-	for p in _points_of(parts["frame"]):
-		if absf(p.y) < 1.0 and p.z > 10.0 and absf(absf(p.x) - 21.0) <= 0.81:
+	for point in _points_of(parts["frame"]):
+		if absf(point.y) < 1.0 and point.z > 10.0 and absf(absf(point.x) - 21.0) <= 0.81:
 			post += 1
 	assert_gt(post, 0, "posts at x +-21")
 
@@ -106,9 +107,9 @@ func test_battle_net_is_the_standard_with_spikes() -> void:
 	# see-through), in the frame and its outline - the standard net has none
 	var greys := []
 	for s in battle["frame"].get_surface_count():
-		var name: String = battle["frame"].surface_get_material(s).resource_name
-		if name.begins_with("spike_"):
-			greys.append(int(name.get_slice("_", 2)))
+		var material_name: String = battle["frame"].surface_get_material(s).resource_name
+		if material_name.begins_with("spike_"):
+			greys.append(int(material_name.get_slice("_", 2)))
 	greys.sort()
 	assert_eq(greys, [1, 7, 8], "up, sideways, down")
 	for part in ["frame", "outline"]:
@@ -117,20 +118,22 @@ func test_battle_net_is_the_standard_with_spikes() -> void:
 
 
 func _materials(mesh: Mesh) -> Array:
-	return range(mesh.get_surface_count()).map(func(s): return mesh.surface_get_material(s).resource_name)
+	return range(mesh.get_surface_count()).map(func(surface): return mesh.surface_get_material(surface).resource_name)
 
 
 ## Every surface of [param mesh] as triangles of rink px points (and UVs).
 func _triangles(mesh: Mesh) -> Array:
 	var out := []
 	for sf in mesh.get_surface_count():
-		var arr := mesh.surface_get_arrays(sf)
-		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-		var uv: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV] if arr[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
-		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
-		for i in range(0, idx.size(), 3):
-			var t := [idx[i], idx[i + 1], idx[i + 2]]
-			out.append([t.map(func(j): return _px(v[j])), t.map(func(j): return uv[j] if not uv.is_empty() else Vector2.ZERO)])
+		var arrays := mesh.surface_get_arrays(sf)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV] != null \
+				else PackedVector2Array()
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		for i in range(0, indices.size(), 3):
+			var t := [indices[i], indices[i + 1], indices[i + 2]]
+			out.append([t.map(func(j): return _px(v[j])), \
+					t.map(func(j): return uv[j] if not uv.is_empty() else Vector2.ZERO)])
 	return out
 
 
@@ -139,11 +142,11 @@ var _points: Array[Vector3] = []
 
 ## A point's index among the points seen, the same for points within
 ## 0.02 px (the import compresses each surface's positions on its own).
-func _key(p: Vector3) -> int:
+func _key(point: Vector3) -> int:
 	for i in _points.size():
-		if _points[i].distance_to(p) < 0.02:
+		if _points[i].distance_to(point) < 0.02:
 			return i
-	_points.append(p)
+	_points.append(point)
 	return _points.size() - 1
 
 
@@ -196,9 +199,9 @@ func test_netting_stipple_is_continuous() -> void:
 		_points.clear()
 		for t: Array in _triangles(_parts(style)["netting"]):
 			for k in 3:
-				var p: Vector3 = t[0][k]
-				if p.z < BAR_Z - 0.01:
-					uvs.get_or_add(_key(p), []).append(t[1][k])
+				var point: Vector3 = t[0][k]
+				if point.z < BAR_Z - 0.01:
+					uvs.get_or_add(_key(point), []).append(t[1][k])
 		assert_gt(uvs.size(), 20)
 		for key: int in uvs:
 			for uv: Vector2 in uvs[key]:
@@ -229,7 +232,7 @@ func test_ground_shadow_rule() -> void:
 func test_models_in_place_of_the_nets() -> void:
 	if not need_rom():
 		return
-	var anims := [0, 1, 2].map(func(s): return MwGfx.u32(rom, MwRinkState.NET_ANIMS + 4 * s))
+	var anims := [0, 1, 2].map(func(style): return MwGfx.u32(rom, MwRinkState.NET_ANIMS + 4 * style))
 	var nets := MwNets3D.new()
 	add_child_autofree(nets)
 	var items := [

@@ -33,6 +33,7 @@ func set_pieces(pieces: Array) -> void:
 	if int(img["w"]) <= 0 or int(img["h"]) <= 0:
 		texture = null
 		return
-	texture = ImageTexture.create_from_image(Image.create_from_data(img["w"], img["h"], false, Image.FORMAT_R8, img["px"]))
+	texture = ImageTexture.create_from_image(Image.create_from_data(img["w"], img["h"], false, Image.FORMAT_R8,
+			img["px"]))
 	centered = false
 	offset = Vector2(-int(img["ox"]), -int(img["oy"]))

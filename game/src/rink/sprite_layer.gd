@@ -15,6 +15,10 @@ extends Node2D
 ## a low-priority piece in front of it covers (the faceoff puck below z 50,
 ## the referee on the ice): it is above the planes but hidden by that piece.
 ##
+## Plan 34: a piece's attr may name a palette line past the four (players
+## 5-12's colours, MwRinkDraw.line_of): its texture's indices are on that
+## line (the palette carries it, RomPalette "player_lines").
+##
 ## Nothing here is saved: the pool and the textures are made at run time.
 
 const SPRITE_ORIGIN := 0x80
@@ -35,6 +39,7 @@ var _pixel_cache := {}               ## the same key -> the texture's indexed pi
 var _cut_cache := {}                 ## a covered piece and what covers it -> its cut texture
 var _operators := {}
 var _material: ShaderMaterial
+var _glyph_generation := -1          ## MwGlyphs.generation the cached live glyph textures show
 
 ## Cut textures kept at most (pieces move every pass; the cache is emptied
 ## when it grows past this).
@@ -48,54 +53,71 @@ var _last_pixels := PackedByteArray()   ## the pixels [method _texture] made las
 func show_list(entries: Array) -> void:
 	if _material == null and palette and palette.texture():
 		_material = palette.material(true)
-	var mine := []
-	var covers := []          # per piece: the pieces in front of it that hide some of its pixels
-	for idx in entries.size():
-		var e: Array = entries[idx]
-		var is_high := (int(e[3]) & 0x80) != 0
-		if is_high != high:
-			continue
-		mine.append(e)
-		var cover := []
-		for j in idx:
-			var f: Array = entries[j]
-			if ((is_high and (int(f[3]) & 0x80) == 0) or _has_operators(f)) and _overlap(f, e):
-				cover.append(f)
-		covers.append(cover)
+	var mc := mine_and_covers(entries)
+	var mine: Array = mc[0]
+	var covers: Array = mc[1]
 	while _pool.size() < mine.size():
-		var s := Sprite2D.new()
-		s.centered = false
-		add_child(s)
-		_pool.append(s)
+		var pooled := Sprite2D.new()
+		pooled.centered = false
+		add_child(pooled)
+		_pool.append(pooled)
 	var n := mine.size()
 	for i in _pool.size():
-		var s := _pool[i]
+		var sprite := _pool[i]
 		if i >= n:
-			s.visible = false
+			sprite.visible = false
 			continue
-		var e: Array = mine[n - 1 - i]          # back to front
+		var piece: Array = mine[n - 1 - i]          # back to front
 		var cover: Array = covers[n - 1 - i]
-		var attr := int(e[3])
-		if cover.is_empty() and e.size() < 7:
-			s.texture = _texture(int(e[4]), int(e[2]), (attr >> 5) & 3)
-			s.flip_h = (attr & 0x08) != 0
-			s.flip_v = (attr & 0x10) != 0
+		var attr := int(piece[3])
+		if cover.is_empty() and piece.size() < 7:
+			sprite.texture = _texture(int(piece[4]), int(piece[2]), MwRinkDraw.line_of(attr))
+			sprite.flip_h = (attr & 0x08) != 0
+			sprite.flip_v = (attr & 0x10) != 0
 		else:
-			s.texture = _cut(e, cover)
-			s.flip_h = false
-			s.flip_v = false
-		s.position = Vector2(int(e[0]) - SPRITE_ORIGIN, int(e[1]) - SPRITE_ORIGIN)
-		s.material = _material
-		s.visible = s.texture != null
+			sprite.texture = _cut(piece, cover)
+			sprite.flip_h = false
+			sprite.flip_v = false
+		sprite.position = Vector2(int(piece[0]) - SPRITE_ORIGIN, int(piece[1]) - SPRITE_ORIGIN)
+		sprite.material = _material
+		sprite.visible = sprite.texture != null
+
+
+## This layer's pieces of [param entries] and, for each, the pieces in front
+## of it that hide some of its pixels (an operator piece; for the high layer
+## also a low piece): [mine, covers]. Plan 42 (speed, second round): whether
+## a piece hides is worked out once a list, not once for every piece behind
+## it (a RAM tile's - the plates' - texture was made again each time).
+func mine_and_covers(entries: Array) -> Array:
+	var mine := []
+	var covers := []
+	var count := entries.size()
+	var hides := PackedByteArray()     # 1: hides what overlaps behind it on this layer
+	hides.resize(count)
+	for j in count:
+		var f: Array = entries[j]
+		if (high and (int(f[3]) & 0x80) == 0) or _has_operators(f):
+			hides[j] = 1
+	for index in count:
+		var piece: Array = entries[index]
+		if ((int(piece[3]) & 0x80) != 0) != high:
+			continue
+		mine.append(piece)
+		var cover := []
+		for j in index:
+			if hides[j] == 1 and _overlap(entries[j], piece):
+				cover.append(entries[j])
+		covers.append(cover)
+	return [mine, covers]
 
 
 ## Whether a piece has shadow/highlight operator pixels (line 3, colours 14-15).
-func _has_operators(e: Array) -> bool:
-	if (int(e[3]) >> 5) & 3 != 3:
+func _has_operators(piece: Array) -> bool:
+	if MwRinkDraw.line_of(int(piece[3])) != 3:
 		return false
-	var key := Vector2i(int(e[4]), int(e[2]))
-	if not _operators.has(key) or int(e[4]) < 0x800:
-		var px := _pixels(e)
+	var key := Vector2i(int(piece[4]), int(piece[2]))
+	if not _operators.has(key) or int(piece[4]) < 0x800:
+		var px := _pixels(piece)
 		var found := false
 		for v in px:
 			if v == 62 or v == 63:
@@ -115,35 +137,36 @@ static func _overlap(a: Array, b: Array) -> bool:
 			and int(a[1]) < int(b[1]) + bh and int(b[1]) < int(a[1]) + ah
 
 
-## Piece [param e]'s pixels as shown (flips applied), less every pixel that
+## Piece [param piece]'s pixels as shown (flips applied), less every pixel that
 ## a piece of [param cover] (in front of it) has opaque, and less its rows
 ## from a cut row on (a seventh value, sprite coordinates: [MwScreenDraw]).
 ## Cached by the pieces and their relative positions (a stoppage icon or
 ## portrait over standing players gives the same cut pass after pass).
-func _cut(e: Array, cover: Array) -> ImageTexture:
-	var key := "%d,%d,%d" % [int(e[2]), int(e[3]), int(e[4])]
-	var cut_at := int(e[6]) - int(e[1]) if e.size() > 6 else 0x7FFF
+func _cut(piece: Array, cover: Array) -> ImageTexture:
+	var key := "%d,%d,%d" % [int(piece[2]), int(piece[3]), int(piece[4])]
+	var cut_at := int(piece[6]) - int(piece[1]) if piece.size() > 6 else 0x7FFF
 	if cut_at != 0x7FFF:
 		key += "|cut%d" % cut_at
-	var cacheable := int(e[4]) >= 0x800          # RAM tiles (the plates) change
+	var cacheable := int(piece[4]) >= 0x800          # RAM tiles (the plates) change
 	for l in cover:
-		key += "|%d,%d,%d,%d,%d" % [int(l[0]) - int(e[0]), int(l[1]) - int(e[1]), int(l[2]), int(l[3]), int(l[4])]
+		key += "|%d,%d,%d,%d,%d" % [int(l[0]) - int(piece[0]), int(l[1]) - int(piece[1]), int(l[2]), int(l[3]),
+				int(l[4])]
 		cacheable = cacheable and int(l[4]) >= 0x800
 	if cacheable and _cut_cache.has(key):
 		return _cut_cache[key]
-	var px := _pixels(e)
-	var w := 8 * (((int(e[2]) >> 2) & 3) + 1)
+	var px := _pixels(piece)
+	var w := 8 * (((int(piece[2]) >> 2) & 3) + 1)
 	var h := px.size() / w
 	for l in cover:
 		var lp := _pixels(l)
 		var lw := 8 * (((int(l[2]) >> 2) & 3) + 1)
 		var lh := lp.size() / lw
 		for y in h:
-			var ly := int(e[1]) + y - int(l[1])
+			var ly := int(piece[1]) + y - int(l[1])
 			if ly < 0 or ly >= lh:
 				continue
 			for x in w:
-				var lx := int(e[0]) + x - int(l[0])
+				var lx := int(piece[0]) + x - int(l[0])
 				if lx >= 0 and lx < lw and lp[ly * lw + lx] != 0:
 					px[y * w + x] = 0
 	for y in range(clampi(cut_at, 0, h), h):
@@ -157,18 +180,18 @@ func _cut(e: Array, cover: Array) -> ImageTexture:
 	return tex
 
 
-## Piece [param e]'s indexed pixels with its flips applied (from the pixel
+## Piece [param piece]'s indexed pixels with its flips applied (from the pixel
 ## cache: reading a texture back from the GPU every pass stalls the frame).
-func _pixels(e: Array) -> PackedByteArray:
-	var attr := int(e[3])
-	var size := int(e[2])
-	var line := (attr >> 5) & 3
-	var key := Vector3i(int(e[4]), size, line)
+func _pixels(piece: Array) -> PackedByteArray:
+	var attr := int(piece[3])
+	var size := int(piece[2])
+	var line := MwRinkDraw.line_of(attr)
+	var key := Vector3i(int(piece[4]), size, line)
 	var src: PackedByteArray
-	if int(e[4]) >= 0x800 and _pixel_cache.has(key):
+	if int(piece[4]) >= 0x800 and _pixel_cache.has(key):
 		src = _pixel_cache[key]
 	else:
-		_texture(int(e[4]), size, line)
+		_texture(int(piece[4]), size, line)
 		src = _pixel_cache.get(key, _last_pixels)
 	var w := 8 * (((size >> 2) & 3) + 1)
 	var h := 8 * ((size & 3) + 1)
@@ -189,30 +212,24 @@ func _texture(tile: int, size: int, line: int) -> ImageTexture:
 	var w := ((size >> 2) & 3) + 1
 	var h := (size & 3) + 1
 	var from_ram := tile < 0x800
+	var glyph := tile >= MwGlyphs.KEY_BASE         # the port's input glyphs (plan 23)
+	if glyph and _glyph_generation != MwGlyphs.generation:
+		_glyph_generation = MwGlyphs.generation    # the live glyphs were redrawn: drop their textures
+		for k in _cache.keys():
+			if k.x >= MwGlyphs.LIVE_BASE:
+				_cache.erase(k)
+				_pixel_cache.erase(k)
 	var key := Vector3i(tile, size, line)
 	if not from_ram and _cache.has(key):
 		return _cache[key]
-	if not MwRom.available():
+	if not glyph and not MwRom.available():
 		return null
-	var rom := MwRom.data()
 	var px := PackedByteArray()
 	px.resize(64 * w * h)
-	for cx in w:
-		for cy in h:
-			var n := cx * h + cy
-			var t: PackedByteArray
-			if from_ram:
-				var raw: PackedByteArray = ram_tiles.get(tile + n, PackedByteArray())
-				t = _indices(raw) if raw.size() == 32 else PackedByteArray()
-			else:
-				# the original's sprite tile cache bug in three pieces (MwSpriteCacheQuirk)
-				var shown := MwSpriteCacheQuirk.tile(tile, size, n)
-				if shown < 0x800:
-					continue
-				t = MwGfx.tile_indices(rom, shown << 5)
-			if t.is_empty():
-				continue
-			MwGfx.blit_tile(px, 8 * w, 8 * cx, 8 * cy, t, line, false, false)
+	# RAM tiles, the live glyphs, or the ROM with the original's sprite tile
+	# cache bug in three pieces (MwSpriteCacheQuirk); plan 40 (R3): MwGfx's walk
+	MwGfx.blit_piece(px, 8 * w, 0, 0, tile, size, line, false, false,
+			MwGfx.TileSource.new(MwRom.data(), true, ram_tiles, true))
 	var tex := ImageTexture.create_from_image(Image.create_from_data(8 * w, 8 * h, false, Image.FORMAT_R8, px))
 	_last_pixels = px
 	if not from_ram:
@@ -220,12 +237,3 @@ func _texture(tile: int, size: int, line: int) -> ImageTexture:
 		_pixel_cache[key] = px
 	return tex
 
-
-## 32 bytes of 4-bit pixels -> 64 colour indices.
-static func _indices(raw: PackedByteArray) -> PackedByteArray:
-	var out := PackedByteArray()
-	out.resize(64)
-	for i in 32:
-		out[2 * i] = raw[i] >> 4
-		out[2 * i + 1] = raw[i] & 15
-	return out

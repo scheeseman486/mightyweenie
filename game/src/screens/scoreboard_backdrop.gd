@@ -15,7 +15,7 @@ const PANELS := 0x1C948              ## by screen - 12: -> (picture.l, map.l, ro
 const NAME_X := 0x1C982              ## per team: centre (doubled) of the name, x of the score
 const MENU_TEXTS := 0x1C98A          ## 12-14, 17: 5 x (x, y, attr .w, string .l)
 const MENU_TEXTS_OVER := 0x1C9BC     ## 15, 16: 3 entries
-const FONT := 0x447F4                ## names, numbers, times, menu texts
+const FONT := MwFonts.LIGHT                ## names, numbers, times, menu texts
 const FONT_SCORE := 0x22D66          ## the scores
 const ATTR := 0x60
 const PLANE_B_VRAM := 0xE000         ## 64 cells a row
@@ -66,7 +66,7 @@ static func numbers(rom: PackedByteArray, s: MwRinkState) -> Array:
 	var ops := []
 	for t in 2:
 		var team := s.teams[t]
-		var name := MwGfx.u32(rom, team.record + 4)
+		var name := MwGfx.u32(rom, team.record + MwTeams.NAME)
 		var w := MwRinkPhases.text_width(rom, FONT, name)
 		ops.append(["text", FONT, ((MwGfx.u16(rom, NAME_X + 4 * t) - w) & 0xFFFF) >> 1, 6, ATTR, name])
 		_two_digits(ops, FONT_SCORE, team.score & 0xFFFF, MwGfx.u16(rom, NAME_X + 4 * t + 2), 7)
@@ -127,3 +127,30 @@ static func menu_texts(rom: PackedByteArray, screen: int, reserves: bool) -> Arr
 
 static func _menu_text(rom: PackedByteArray, a: int) -> Array:
 	return ["text", FONT, MwGfx.u16(rom, a), MwGfx.u16(rom, a + 2), MwGfx.u16(rom, a + 4), MwGfx.u32(rom, a + 6)]
+
+
+## A spectated match (MwRinkState.spectated): whether window operation
+## [param op] draws the menu's B line - the special plays, or Reserves and
+## plays ([method menu_texts]' entries 1 and 2) - left out where nobody
+## picks them.
+static func is_plays_line(rom: PackedByteArray, op: Array) -> bool:
+	if op.size() < 6 or str(op[0]) != "text" or not op[5] is int:
+		return false
+	for i in [1, 2]:
+		if int(op[5]) == MwGfx.u32(rom, MENU_TEXTS + 10 * i + 6):
+			return true
+	return false
+
+
+## Plan 35: whether window operation [param op] draws the menu's instant
+## replay line (a text whose string, read from the ROM, says REPLAY) - left
+## out online, where no replay is watched.
+static func is_replay_line(rom: PackedByteArray, op: Array) -> bool:
+	if op.size() < 6 or str(op[0]) != "text" or not op[5] is int:
+		return false
+	var a := int(op[5])
+	var text := ""
+	while a >= 0 and a < rom.size() and rom[a] != 0 and text.length() < 40:
+		text += char(rom[a])
+		a += 1
+	return text.contains("REPLAY")

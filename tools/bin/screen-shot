@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Any screen's picture after N ticks, through the router and the real scene
+# (game/test/screens/screen_shot.gd), rendered on a virtual display - the
+# review shots of a menu, a page, a pause menu ... (plan 40, T8).
+#   tools/bin/screen-shot ID TICKS OUT.png [--press T:VERB,...] [--session K=V,...]
+#                         [--settings K=V,...] [--frames A;B] [--hide NODE+NODE]
+#   e.g. tools/bin/screen-shot 100 60 out/x/main.png --press 30:ui_down
+# MW_SIZE: the window (default 320x224, the original's picture).
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+bin="$(mw_godot_headless)" || exit 1
+out="$3"
+[[ -n "$out" ]] && mkdir -p "$(dirname "$out")"
+[[ "$out" == /* ]] || set -- "$1" "$2" "$PWD/$out" "${@:4}"
+mw_xvfb "$bin" --path "$MW_ROOT/game" --rendering-driver opengl3 --rendering-method gl_compatibility \
+  --resolution "${MW_SIZE:-320x224}" --audio-driver Dummy -s res://test/screens/screen_shot.gd -- "$@" 2>&1 \
+  | grep -v '^Godot Engine\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)\|^OpenGL API'
+exit "${PIPESTATUS[0]}"

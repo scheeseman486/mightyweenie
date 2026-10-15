@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Plan 45: the real game's frame times, render times and counts per screen
+# and view (game/test/perf/frame_profile.gd), the menu bot driving a CPU
+# match. Needs a display and a GPU - or Xvfb (the desktop's GPU through
+# Vulkan). The player's own data folder is never touched: the game's user
+# data goes to a scratch folder (warm it with one run first: the disk cache).
+#   tools/bin/frame-profile NAME [SECONDS=90] [--view N] [--wide] [--size WxH] [--xvfb]
+# Output: out/perf/NAME.csv (a row a frame) and out/perf/NAME.txt (summary).
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+godot="$(mw_godot)" || exit 1
+name=""; secs=90; view=""; aspect=""; size=1920x1080; xvfb=0
+while (( $# )); do
+  case "$1" in
+    --view) view="$2"; shift 2 ;;
+    --wide) aspect=WIDE; shift ;;
+    --size) size="$2"; shift 2 ;;
+    --xvfb) xvfb=1; shift ;;
+    *) if [[ -z "$name" ]]; then name="$1"; else secs="$1"; fi; shift ;;
+  esac
+done
+[[ -n "$name" ]] || { echo "usage: frame-profile NAME [SECONDS] [--view N] [--wide] [--size WxH] [--xvfb]" >&2; exit 2; }
+out="$MW_ROOT/out/perf"
+mkdir -p "$out" "$MW_ROOT/out/perf/userdata"
+export XDG_DATA_HOME="$MW_ROOT/out/perf/userdata"
+run=("$godot" --path "$MW_ROOT/game" --audio-driver Dummy --rendering-driver vulkan --resolution "$size"
+     -s res://test/perf/frame_profile.gd)
+if (( xvfb )); then
+  w="${size%x*}"; h="${size#*x}"
+  run=(xvfb-run -a -s "-screen 0 ${w}x${h}x24" "${run[@]}")
+fi
+MW_SECONDS="$secs" MW_VIEW="$view" MW_ASPECT="$aspect" MW_SIZE="$size" MW_OUT="$out/$name" \
+  timeout $((secs + 180)) "${run[@]}" 2>&1 \
+  | grep -v '^Godot Engine\|^Vulkan\|ObjectDB instances\|resources still in use\|^   at: \(cleanup\|clear\)\|^\s*$' | tail -n 80
+exit "${PIPESTATUS[0]}"

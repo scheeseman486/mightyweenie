@@ -47,18 +47,25 @@ func _init(sim_: MwRinkSim) -> void:
 
 # --- the box -----------------------------------------------------------------------------------
 
+## [param team]'s byte at team offset [param off] (in its
+## [member MwRinkState.Team.stats]).
 static func byte(team: MwRinkState.Team, off: int) -> int:
 	return team.stats[off - MwRinkState.Team.STATS_AT]
 
 
+## Sets [param team]'s byte at team offset [param off] to [param v]'s low byte.
 static func set_byte(team: MwRinkState.Team, off: int, v: int) -> void:
 	team.stats[off - MwRinkState.Team.STATS_AT] = v & 0xFF
 
 
+## [param team]'s big-endian word at team offset [param off]
+## ([method MwRinkState.Team.stat]).
 static func word(team: MwRinkState.Team, off: int) -> int:
 	return team.stat(off, 2)
 
 
+## Sets [param team]'s word at team offset [param off] to [param v]'s low
+## word, big-endian.
 static func set_word(team: MwRinkState.Team, off: int, v: int) -> void:
 	set_byte(team, off, v >> 8)
 	set_byte(team, off + 1, v)
@@ -69,14 +76,18 @@ static func entry(i: int) -> int:
 	return BOX + ENTRY * i
 
 
+## The players in [param team]'s box (team +`$39F`).
 static func count(team: MwRinkState.Team) -> int:
 	return byte(team, COUNT)
 
 
+## [param team]'s box flags (team +`$3A1`: [constant STOP], [constant DELAYED],
+## [constant NOW], [constant PHANTOM]).
 static func flags(team: MwRinkState.Team) -> int:
 	return byte(team, FLAGS)
 
 
+## Sets [param team]'s box flags (team +`$3A1`) to [param v].
 static func set_flags(team: MwRinkState.Team, v: int) -> void:
 	set_byte(team, FLAGS, v)
 
@@ -97,7 +108,9 @@ static func seconds_for(rom: PackedByteArray, code: int, row: int) -> int:
 ## more, fewer than 3 skaters on the ice, [param p] already called, a
 ## goalie, or penalties off; codes -7, 1 and 4 count in any phase; the
 ## others only in open play, 3 always stops play, the rest only when the
-## offender is on the screen (`$5C3C`), minor ones delayed. A call shows the
+## offender is on the screen (`$5C3C`; plan 44, EXTENDED PENALTIES in an
+## EXTENDED match: anywhere, [member MwRinkState.extended_penalties]), minor
+## ones delayed. A call shows the
 ## penalty icon unless it is one of -7, 1, 4. Returns whether it counted.
 func rule(code: int, p: MwRinkState.Player) -> bool:
 	var s := sim.s
@@ -114,7 +127,7 @@ func rule(code: int, p: MwRinkState.Player) -> bool:
 			return false
 		var bit := NOW
 		if c != 3:
-			if not sim.collide.on_screen(p):
+			if not s.extended_penalties and not sim.collide.on_screen(p):
 				return false
 			if MwRinkSim.s8(c & 0xFF) < 0:
 				bit = DELAYED
@@ -157,9 +170,9 @@ func _decide() -> void:
 			if flags(other) & NOW:
 				set_flags(other, flags(other) | STOP)
 			return
-		var t := own
+		var previous := own
 		own = other
-		other = t
+		other = previous
 	var pk := s.puck
 	for k in 2:
 		if flags(own) & DELAYED and pk.flags & MwRinkState.Puck.CARRIED:
@@ -167,9 +180,9 @@ func _decide() -> void:
 				set_flags(own, flags(own) | STOP)
 				_cancel_minors(other)
 				return
-		var t := own
+		var team := own
 		own = other
-		other = t
+		other = team
 
 
 ## `$A852`: a box with a waiting minor call drops its mark and every minor
@@ -311,13 +324,13 @@ func put_in_box(p: MwRinkState.Player) -> int:
 	while i < 2 and byte(team, entry(i) + 0x10) != 0:
 		i += 1
 	var at := entry(i)
-	var a := p.anim.copy()
-	a.set_record(sim.rom, sim.players.anim_record(p, 0x1C))
-	a.flags = (a.flags | MwAnimState.PLAYING) & ~0x80
-	a.variant = 4
-	var b := PackedByteArray([(a.address >> 24) & 0xFF, (a.address >> 16) & 0xFF, (a.address >> 8) & 0xFF,
-			a.address & 0xFF, (a.speed >> 8) & 0xFF, a.speed & 0xFF, a.flags & 0xFF, a.variant & 0xFF,
-			(a.position >> 8) & 0xFF, a.position & 0xFF, a.frame & 0xFF, 0])
+	var anim := p.anim.copy()
+	anim.set_record(sim.rom, sim.players.anim_record(p, 0x1C))
+	anim.flags = (anim.flags | MwAnimState.PLAYING) & ~0x80
+	anim.variant = 4
+	var b := PackedByteArray([(anim.address >> 24) & 0xFF, (anim.address >> 16) & 0xFF, (anim.address >> 8) & 0xFF,
+			anim.address & 0xFF, (anim.speed >> 8) & 0xFF, anim.speed & 0xFF, anim.flags & 0xFF, anim.variant & 0xFF,
+			(anim.position >> 8) & 0xFF, anim.position & 0xFF, anim.frame & 0xFF, 0])
 	for k in 12:
 		set_byte(team, at + k, b[k])
 	set_byte(team, at + 0x12, sim.rom[(p.record & 0xFFFFFF) + 4] if p.record != 0 else 0)
